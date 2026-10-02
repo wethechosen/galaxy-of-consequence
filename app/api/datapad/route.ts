@@ -15,7 +15,7 @@ function cookieOptions(maxAge?: number) {
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax" as const,
     path: "/",
-    ...(maxAge ? { maxAge } : {}),
+    ...(maxAge !== undefined ? { maxAge } : {}),
   };
 }
 
@@ -68,7 +68,7 @@ export async function GET(request: Request) {
   if (!auth.authorized) return NextResponse.json({ error: auth.status === 401 ? "Unauthorized" : "Forbidden" }, { status: auth.status });
 
   try {
-    const result = await bridgeGet(accountId, true);
+    const result = await bridgeGet(accountId, true, auth.visibleUser?.username);
     const save = result?.save ?? result ?? null;
     const configRow = result?.config ?? null;
     const response = NextResponse.json(
@@ -128,7 +128,7 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "revision and snapshot are required." }, { status: 400 });
     }
 
-    const saved = await bridgeSave(accountId, revision, body.snapshot);
+    const saved = await bridgeSave(accountId, revision, body.snapshot, auth.visibleUser?.username);
     const response = NextResponse.json(
       {
         accountId,
