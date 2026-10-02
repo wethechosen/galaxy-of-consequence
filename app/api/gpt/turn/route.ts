@@ -6,6 +6,8 @@ import { hostedGet, hostedPersistenceEnabled, hydrateHostedSave, saveHostedResul
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+type RecordValue = Record<string, unknown>;
+
 function controlIntent(action: string) {
   const value = action.toLowerCase();
   if (/(load\s+(game|checkpoint|state)|restore\s+(a\s+)?checkpoint)/i.test(value)) return "loadCheckpoint";
@@ -24,9 +26,70 @@ function replayResponse(hosted: Awaited<ReturnType<typeof hostedGet>>, turnId: s
   return {
     revision: hosted.revision, turnId, narration: match.content, roll: null,
     provider: "hosted-replay", fallbackReason: null,
-    hud: { level: hosted.snapshot.character?.level || 1, experience: hosted.snapshot.character?.experience || 0, forcePoints: state.forcePoints || 0, destinyPoints: state.destinyPoints || 0, darkSideScore: state.darkSideScore || 0, notoriety: state.notoriety || 0, carried: (Array.isArray(state.inventory) ? state.inventory : []).reduce((sum: number, item: unknown) => sum + Number((item as Record<string, unknown>)?.qty || 0), 0) },
+    hud: {
+      level: hosted.snapshot.character?.level || 1,
+      experience: hosted.snapshot.character?.experience || 0,
+      forcePoints: state.forcePoints || 0,
+      destinyPoints: state.destinyPoints || 0,
+      darkSideScore: state.darkSideScore || 0,
+      notoriety: state.notoriety || 0,
+      carried: (Array.isArray(state.inventory) ? state.inventory : []).reduce((sum: number, item: unknown) => sum + Number((item as Record<string, unknown>)?.qty || 0), 0),
+    },
     state: { location: state.location, health: state.health, conditionTrack: state.conditionTrack, credits: state.credits, inventory: state.inventory, objectives: state.objectives, combat: state.combat },
   };
+}
+
+function combatActive(state: RecordValue | null | undefined) {
+  const combat = state?.combat;
+  return Boolean(combat && typeof combat === "object" && (combat as RecordValue).status === "active");
+}
+
+function freeMovementDeclaration(action: string) {
+  const lower = action.toLowerCase();
+  if (/\b(?:attack|shoot|fire|strike|punch|kick|stab|slash|lunge)\b/.test(lower)) return false;
+  return /\b(?:walk|walking|go|going|move|moving|proceed|continue|continuing|follow|following|descend|descending|head|heading|travel|leave|leaving|exit|enter|advance|push(?:es|ing)?\s+(?:deeper|forward)|deeper|lower)\b/.test(lower);
+}
+
+function transitLocation(current: string, action: string) {
+  const place = current.trim() || "Current route";
+  const lower = action.toLowerCase();
+  if (/\b(?:deeper|descend|descending|lower|down|below|beneath)\b/.test(lower)) {
+    if (/lower substructure route beyond unit 4-b/i.test(place)) return "Coruscant — deeper lower-city substructure";
+    if (/unit 4-b|concealed bunker/i.test(place)) return "Coruscant — lower substructure route beyond Unit 4-B";
+    if (/deeper lower-city substructure/i.test(place)) return place;
+    return `${place} — deeper access route`;
+  }
+  if (/\b(?:leave|leaving|exit|outbound|away)\b/.test(lower)) return `${place} — outbound access route`;
+  if (/\b(?:climb|ascending|upward|up)\b/.test(lower)) return `${place} — ascending access route`;
+  return `${place} — transit route`;
+}
+
+function movementFallbackNarration(from: string, to: string, action: string) {
+  return `## SCENE\n**Location:** ${to}\n\nYou leave the exact point recorded at ${from || "the prior location"} and continue only as far as the accessible route in front of you allows. Service lighting breaks across worn durasteel and old utility housings while the low vibration of buried Coruscant infrastructure carries through the floor. The movement is real, but the destination you are pursuing is not treated as discovered merely because you intend to reach it.\n\nThe route carries you one scene-length increment farther. Nothing here confirms a hidden vergence, secret chamber, or other player-assumed destination; those facts still have to emerge from the world through play. Your declared movement is preserved without inventing an arrival or forcing another decision.\n\n## GM RESOLUTION\nNo Saga check is required for this increment of ordinary movement. The declared travel advances one step; no hidden destination is confirmed.\n\n## STATE UPDATE\nLocation advances to ${to}. Campaign time advances by 5 minutes.\n\n## PLAYER OPTIONS\nA. Examine the immediate route and nearby access points.\nB. Continue moving in the same general direction.\nC. Stop and listen or observe before proceeding.\nYou may declare another action.`;
+}
+
+function anchorNarrationLocation(narration: string, location: string) {
+  if (!location) return narration;
+  let next = narration;
+  if (!/level 1313/i.test(location)) {
+    next = next.replace(/^At\s+Coruscant\s*[—-]\s*Level\s*1313\s*[,.:]?/im, `At ${location},`);
+  }
+  const scene = /^(?:#{1,6}\s*)?SCENE\s*$/im.exec(next);
+  if (!scene) return next;
+  const after = next.slice(scene.index + scene[0].length, scene.index + scene[0].length + 320);
+  if (after.includes(location)) return next;
+  return `${next.slice(0, scene.index + scene[0].length)}\n**Location:** ${location}${next.slice(scene.index + scene[0].length)}`;
+}
+
+function rewriteAssistantMessage(snapshot: RecordValue, turnId: string, narration: string) {
+  const messages = Array.isArray(snapshot.messages) ? [...snapshot.messages] as Array<Record<string, unknown>> : [];
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === "assistant" && messages[index]?.turnId === turnId) {
+      messages[index] = { ...messages[index], content: narration };
+      break;
+    }
+  }
+  return messages;
 }
 
 export async function POST(request: Request) {
@@ -49,25 +112,71 @@ export async function POST(request: Request) {
         gameplayAdvanced: false,
       }, { status: 422, headers: { "Cache-Control": "no-store" } });
     }
+
+    let hostedBefore: Awaited<ReturnType<typeof hostedGet>> = null;
     if (hostedPersistenceEnabled()) {
-      const hosted = await hostedGet(actor.username);
-      if (!hosted?.snapshot) throw new GptActionError("No campaign is initialized for the configured action account.", 409);
-      if (hosted.revision !== revision) {
-        const replay = replayResponse(hosted, turnId);
+      hostedBefore = await hostedGet(actor.username);
+      if (!hostedBefore?.snapshot) throw new GptActionError("No campaign is initialized for the configured action account.", 409);
+      if (hostedBefore.revision !== revision) {
+        const replay = replayResponse(hostedBefore, turnId);
         if (replay) return NextResponse.json(replay, { headers: { "Cache-Control": "no-store" } });
         throw new GptActionError("The campaign changed. Reload state and submit the action again.", 409);
       }
-      hydrateHostedSave(actor, hosted);
+      hydrateHostedSave(actor, hostedBefore);
     }
+
     const result = await runGmTurn(actor, { accountId: actor.id, revision, action, turnId });
-    if (hostedPersistenceEnabled()) await saveHostedResult(actor, revision, result.snapshot);
-    const state = result.snapshot.gameState;
+    let snapshot = result.snapshot;
+    let narration = result.narration;
+    let recoveredMovement = false;
+
+    const beforeState = hostedBefore?.snapshot?.gameState as RecordValue | undefined;
+    const beforeLocation = String(beforeState?.location || snapshot.gameState.location || "");
+    const locationChanged = beforeState ? String(snapshot.gameState.location || "") !== String(beforeState.location || "") : false;
+    const timeChanged = beforeState ? Number(snapshot.gameState.campaignTimeMinutes || 0) !== Number(beforeState.campaignTimeMinutes || 0) : false;
+    const deterministicFallback = Boolean(result.fallbackReason || result.provider === "local-safe-fallback");
+
+    if (!result.roll && deterministicFallback && freeMovementDeclaration(action) && !combatActive(beforeState) && !locationChanged && !timeChanged) {
+      const nextLocation = transitLocation(beforeLocation, action);
+      const nextTime = Math.max(0, Number(snapshot.gameState.campaignTimeMinutes || beforeState?.campaignTimeMinutes || 0)) + 5;
+      narration = movementFallbackNarration(beforeLocation, nextLocation, action);
+      snapshot = {
+        ...snapshot,
+        gameState: { ...snapshot.gameState, location: nextLocation, campaignTimeMinutes: nextTime },
+      };
+      snapshot = { ...snapshot, messages: rewriteAssistantMessage(snapshot as unknown as RecordValue, turnId, narration) };
+      recoveredMovement = true;
+    }
+
+    const authoritativeLocation = String(snapshot.gameState.location || beforeLocation || "");
+    const anchored = anchorNarrationLocation(narration, authoritativeLocation);
+    if (anchored !== narration) {
+      narration = anchored;
+      snapshot = { ...snapshot, messages: rewriteAssistantMessage(snapshot as unknown as RecordValue, turnId, narration) };
+    }
+
+    if (hostedPersistenceEnabled()) await saveHostedResult(actor, revision, snapshot);
+    const state = snapshot.gameState;
+    console.info("[gpt/turn] committed", {
+      turnId,
+      provider: result.provider,
+      fallbackReason: result.fallbackReason || null,
+      recoveredMovement,
+      location: state.location,
+      revision: result.revision,
+    });
+
     return NextResponse.json({
-      revision: result.revision, turnId, narration: result.narration, roll: result.roll,
-      provider: result.provider, fallbackReason: result.fallbackReason || null,
+      revision: result.revision,
+      turnId,
+      narration,
+      roll: result.roll,
+      provider: result.provider,
+      fallbackReason: result.fallbackReason || null,
+      movementRecovery: recoveredMovement,
       hud: {
-        level: result.snapshot.character?.level || 1,
-        experience: result.snapshot.character?.experience || 0,
+        level: snapshot.character?.level || 1,
+        experience: snapshot.character?.experience || 0,
         forcePoints: state.forcePoints || 0,
         destinyPoints: state.destinyPoints || 0,
         darkSideScore: state.darkSideScore || 0,
