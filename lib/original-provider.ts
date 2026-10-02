@@ -1,5 +1,5 @@
 import { assertAuthenticatedRequest } from "./local-http";
-import { sourceGrounding } from "./source-library.mjs";
+import { runtimeSourceGrounding } from "./runtime-source-grounding";
 export const TEST_AI_MODEL = "nvidia/nemotron-3-super-120b-a12b";
 export function testAiStatus() {
   return { provider: "nvidia", model: process.env.NVIDIA_MODEL || TEST_AI_MODEL,
@@ -29,7 +29,7 @@ export async function invokeNvidia(body: NvidiaRequest) {
     return { role: message.role, content: message.content };
   });
   const query = typeof body.sourceQuery === "string" ? body.sourceQuery.slice(0, 1000) : "";
-  const grounding = query ? sourceGrounding(query) : "";
+  const grounding = query ? await runtimeSourceGrounding(query) : "";
   const system = [typeof body.system === "string" ? body.system : "", grounding].filter(Boolean).join("\n\n");
   let upstream: Response;
   try {

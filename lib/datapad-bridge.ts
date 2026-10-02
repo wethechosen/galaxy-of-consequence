@@ -45,6 +45,22 @@ export async function bridgeGetHud(accountId: string) {
   return bridgeRequest(target);
 }
 
+export async function bridgeSearchRag(query: string, limit = 6) {
+  const { url } = bridgeConfig();
+  const target = new URL(url);
+  target.searchParams.set("mode", "rag");
+  target.searchParams.set("q", query);
+  target.searchParams.set("limit", String(Math.max(1, Math.min(Number(limit) || 6, 12))));
+  return bridgeRequest(target);
+}
+
+export async function bridgeRagStats() {
+  const { url } = bridgeConfig();
+  const target = new URL(url);
+  target.searchParams.set("mode", "rag_stats");
+  return bridgeRequest(target);
+}
+
 export async function bridgeListCheckpoints(accountId: string) {
   const { url } = bridgeConfig();
   const target = new URL(url);
