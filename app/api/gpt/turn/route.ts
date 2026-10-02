@@ -135,8 +135,9 @@ export async function POST(request: Request) {
     const locationChanged = beforeState ? String(snapshot.gameState.location || "") !== String(beforeState.location || "") : false;
     const timeChanged = beforeState ? Number(snapshot.gameState.campaignTimeMinutes || 0) !== Number(beforeState.campaignTimeMinutes || 0) : false;
     const deterministicFallback = Boolean(result.fallbackReason || result.provider === "local-safe-fallback");
+    const stalledNoRoll = !result.roll && /(?:No persistent change is confirmed|The declaration is recorded without granting|RESULT\s*:\s*FAILURE)/i.test(narration);
 
-    if (!result.roll && deterministicFallback && freeMovementDeclaration(action) && !combatActive(beforeState) && !locationChanged && !timeChanged) {
+    if (!result.roll && (deterministicFallback || stalledNoRoll) && freeMovementDeclaration(action) && !combatActive(beforeState) && !locationChanged && !timeChanged) {
       const nextLocation = transitLocation(beforeLocation, action);
       const nextTime = Math.max(0, Number(snapshot.gameState.campaignTimeMinutes || beforeState?.campaignTimeMinutes || 0)) + 5;
       narration = movementFallbackNarration(beforeLocation, nextLocation, action);
@@ -161,6 +162,7 @@ export async function POST(request: Request) {
       turnId,
       provider: result.provider,
       fallbackReason: result.fallbackReason || null,
+      stalledNoRoll,
       recoveredMovement,
       location: state.location,
       revision: result.revision,
