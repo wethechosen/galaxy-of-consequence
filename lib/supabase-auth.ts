@@ -54,11 +54,8 @@ export function publicUser(user: SupabaseAuthUser | null | undefined): HostedUse
   if (!user?.id) return null;
   const username = String(user.email || user.id);
   const appRole = user.app_metadata?.role;
-  const userRole = user.user_metadata?.role;
   const role: HostedUser["role"] =
-    appRole === "admin" || userRole === "admin" || username.toLowerCase() === "gm@galaxy.local"
-      ? "admin"
-      : "user";
+    appRole === "admin" || username.toLowerCase() === "gm@galaxy.local" ? "admin" : "user";
   const displayName = String(
     user.user_metadata?.display_name ||
       user.user_metadata?.displayName ||
@@ -104,7 +101,7 @@ export async function registerUser(username: string, password: string, displayNa
     body: JSON.stringify({
       email: username.trim().toLowerCase(),
       password,
-      data: { display_name: displayName, role: "user" },
+      data: { display_name: displayName },
     }),
   });
   if (!response.ok) {
