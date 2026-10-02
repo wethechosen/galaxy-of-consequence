@@ -1,0 +1,289 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Galaxy of Consequence Controller Actions",
+    "version": "1.1.0",
+    "description": "Authoritative Galaxy of Consequence controller. Gameplay turns, HUD reads, exact checkpoints, checkpoint restores, and OOC state reconciliation are separate operations so administrative requests can never be resolved as Saga gameplay."
+  },
+  "servers": [
+    {
+      "url": "https://galaxy-local.vercel.app"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/gpt/state": {
+      "get": {
+        "operationId": "getCampaignState",
+        "summary": "Read the latest authoritative campaign state",
+        "description": "Read the full authoritative persisted state and revision. Call this before a gameplay turn, before a load, and before an OOC reconciliation. This operation never advances gameplay.",
+        "responses": {
+          "200": {
+            "description": "Authoritative campaign state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gpt/turn": {
+      "post": {
+        "operationId": "submitPlayerAction",
+        "summary": "Resolve one in-world player action",
+        "description": "GAMEPLAY ONLY. Use only when the player declares an in-world action for D'mir. NEVER use this operation for save, load, checkpoint, HUD, sync, reconciliation, correction, OOC, admin, or state-edit requests. Those requests must use their dedicated operations. A successful gameplay turn persists its result to Supabase and the web app automatically.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["revision", "action", "turnId"],
+                "properties": {
+                  "revision": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Latest revision returned by getCampaignState."
+                  },
+                  "action": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "One in-world player action only."
+                  },
+                  "turnId": {
+                    "type": "string",
+                    "minLength": 8,
+                    "description": "Unique idempotency key for this player action. Reuse the same turnId only when retrying the exact same request."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resolved and persisted gameplay turn",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision conflict or idempotent replay"
+          }
+        }
+      }
+    },
+    "/api/gpt/hud": {
+      "get": {
+        "operationId": "getCampaignHUD",
+        "summary": "Read the authoritative web-app HUD",
+        "description": "Read the player-facing HUD data used by the web app: character data, HP, credits, location, inventory, condition track, combat state, objectives, relationships, properties, investments, travel access, and revision. Read-only; never resolves gameplay.",
+        "responses": {
+          "200": {
+            "description": "Authoritative HUD state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gpt/save": {
+      "post": {
+        "operationId": "saveCheckpoint",
+        "summary": "Save an exact campaign checkpoint",
+        "description": "Use when the user says save, save game, create a checkpoint, or preserve the current state. Copies the current authoritative Supabase snapshot exactly. It MUST NOT roll dice, generate initiative, narrate an event, advance combat, award XP, change inventory, or change any gameplay value.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "maxLength": 120,
+                    "description": "Optional human-readable checkpoint name."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact checkpoint created without gameplay advancement",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gpt/checkpoints": {
+      "get": {
+        "operationId": "listCheckpoints",
+        "summary": "List saved campaign checkpoints",
+        "description": "List recent exact checkpoints so the user can choose one to load. Read-only and never advances gameplay.",
+        "responses": {
+          "200": {
+            "description": "Checkpoint list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gpt/load": {
+      "post": {
+        "operationId": "loadCheckpoint",
+        "summary": "Restore an exact checkpoint",
+        "description": "Use only when the user explicitly asks to load or restore a checkpoint. Restores the selected snapshot exactly and increments the persistence revision once. It MUST NOT roll dice, generate initiative, narrate an event, advance combat, award XP, or infer any extra change. Call getCampaignState immediately before this operation and pass its revision as expectedRevision.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["checkpointId", "expectedRevision"],
+                "properties": {
+                  "checkpointId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "expectedRevision": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Checkpoint restored exactly",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision conflict; reread state before retrying"
+          }
+        }
+      }
+    },
+    "/api/gpt/reconcile": {
+      "post": {
+        "operationId": "reconcileCampaignState",
+        "summary": "Apply an explicit OOC state correction without gameplay resolution",
+        "description": "Use for explicit user-directed corrections such as set HP, XP, credits, location, inventory, combat round, active side, combatants, actions, or condition track. This is an administrative state edit, not a player action. Apply ONLY fields the user explicitly supplied. Do not invent missing values. Do not roll dice, generate initiative, narrate, award XP, alter combat beyond the supplied patch, or infer consequences. Call getCampaignState immediately before this operation and pass its revision as expectedRevision.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["expectedRevision", "patch"],
+                "properties": {
+                  "expectedRevision": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "patch": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "minProperties": 1,
+                    "properties": {
+                      "level": { "type": "integer", "minimum": 1 },
+                      "experience": { "type": "integer", "minimum": 0 },
+                      "health": { "type": "integer" },
+                      "credits": { "type": "number" },
+                      "location": { "type": "string" },
+                      "conditionTrack": { "type": "integer" },
+                      "inventory": {
+                        "type": "array",
+                        "items": {}
+                      },
+                      "combat": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact OOC correction persisted without gameplay advancement",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision conflict; reread state before retrying"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}
