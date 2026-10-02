@@ -1,9 +1,16 @@
 node_modules/
 .next/
-.env.local
+.vercel/
 .env
+.env.local
+.env.*
+!.env.example
 *.tsbuildinfo
 data/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+*.log
+coverage/
+playwright-report/
+test-results/
