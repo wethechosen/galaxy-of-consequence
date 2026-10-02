@@ -11,20 +11,11 @@ export const STARTING_LORE: LoreFact[] = [
   {
     id: "legacy-era",
     label: "Legacy era baseline",
-    classification: "established_lore",
-    source: "Star Wars: Legacy era reference",
-    verified: true,
-    playerVisible: true,
-    detail: "The campaign begins in 200 ABY, after the Sith-Imperial War.",
-  },
-  {
-    id: "celanon-spur",
-    label: "Celanon Spur",
     classification: "compatible_adaptation",
-    source: "Galaxy of Consequence campaign setting",
+    source: "Campaign design: 150 ABY continuation, pending source audit",
     verified: false,
     playerVisible: true,
-    detail: "A campaign sandbox at the intersection of Imperial, Corporate Sector, and Hapan interests.",
+    detail: "The campaign begins in 150 ABY. Its future events are campaign adaptations, not published history.",
   },
   {
     id: "saga-core-lock",

@@ -1,0 +1,15 @@
+[
+  {"id":"galaxy-overview","title":"The Galaxy — overview","file":"The Galaxy.png","width":1600,"height":1600,"category":"Galaxy","note":"Mixed-date annotations include Imperial Remnant (40 ABY) and Zonama Sekot (137 ABY). Not a 150 ABY political chart."},
+  {"id":"galaxy-alternate","title":"The Galaxy — alternate projection","file":"The Galaxy.jpg","width":2400,"height":1695,"category":"Galaxy","note":"Different orientation and projection. Its pixel coordinates cannot be transferred to the overview."},
+  {"id":"outer-rim","title":"The Outer Rim","file":"The Outer Rim.jpg","width":1452,"height":2000,"category":"Region","note":"Regional reference; includes a labeled Celanon Spur. Routes and destinations still require campaign-era review."},
+  {"id":"mid-rim","title":"The Mid Rim","file":"The Mid Rim.jpg","width":1441,"height":2000,"category":"Region","note":"Regional geography reference; no current political control is inferred."},
+  {"id":"expansion-region","title":"The Expansion Region","file":"The Expansion Region.jpg","width":1665,"height":2312,"category":"Region","note":"Regional geography reference; no current political control is inferred."},
+  {"id":"inner-rim","title":"The Inner Rim","file":"The Inner Rim.jpg","width":1678,"height":2312,"category":"Region","note":"Regional geography reference; no current political control is inferred."},
+  {"id":"colonies","title":"The Colonies","file":"The Colonies.jpg","width":1678,"height":2312,"category":"Region","note":"Regional geography reference; no current political control is inferred."},
+  {"id":"core","title":"The Core","file":"The Core.jpg","width":1666,"height":2312,"category":"Region","note":"A printed location label does not establish that a world remains intact or habitable in 150 ABY."},
+  {"id":"corporate-sector","title":"The Corporate Sector","file":"The Corporate Sector.jpg","width":1161,"height":889,"category":"Special region","note":"Historical sector and route reference. Boundaries and authority are not automatically current."},
+  {"id":"hutt-space","title":"Hutt Space","file":"Hutt Space.jpg","width":659,"height":864,"category":"Special region","note":"Historical territorial reference, not proof of present-day ownership. Small source image; zoom cannot restore missing detail."},
+  {"id":"chiss-ascendancy","title":"The Chiss Ascendancy","file":"The Chiss Ascendancy.jpg","width":736,"height":736,"category":"Special region","note":"Reference-library chart, not knowledge automatically granted to the player character."},
+  {"id":"sith-space","title":"Sith Space","file":"Sith Space.png","width":748,"height":754,"category":"Special region","note":"Historical geographic label. Does not establish an active Sith state, presence, or mandatory storyline in 150 ABY."},
+  {"id":"population","title":"Galactic Population — c. 25 ABY","file":"Galactic Population.jpg","width":666,"height":873,"category":"Historical overlay","note":"Explicitly dated circa 25 ABY. Never use these figures as 150 ABY population, income, or faction strength."}
+]

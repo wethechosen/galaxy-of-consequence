@@ -1,147 +1,43 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { bridgeGet, bridgeSave, bridgeSaveConfig } from "../../../lib/datapad-bridge";
-import { getAuthUser, publicUser, refreshSession } from "../../../lib/supabase-auth";
-
+import { requireAccount } from "@/lib/accounts";
+import { assertLocalRequest } from "@/lib/local-http";
+import { DatapadError, readDatapad, saveDatapad, saveDatapadConfig } from "@/lib/datapad-save";
+import { hostedGet, hostedPersistenceEnabled, hydrateHostedSave, hostedPut } from "@/lib/hosted-bridge";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const ACCESS_COOKIE = "goc_access_token";
-const REFRESH_COOKIE = "goc_refresh_token";
-
-function cookieOptions(maxAge?: number) {
-  return {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax" as const,
-    path: "/",
-    ...(maxAge !== undefined ? { maxAge } : {}),
-  };
-}
-
-async function authorizeAccount(accountId: string) {
-  const store = await cookies();
-  let accessToken = store.get(ACCESS_COOKIE)?.value || "";
-  const refreshToken = store.get(REFRESH_COOKIE)?.value || "";
-  let refreshed: Awaited<ReturnType<typeof refreshSession>> | null = null;
-  let user = accessToken ? await getAuthUser(accessToken) : null;
-
-  if (!user && refreshToken) {
-    refreshed = await refreshSession(refreshToken);
-    if (refreshed?.access_token) {
-      accessToken = refreshed.access_token;
-      user = refreshed.user || (await getAuthUser(accessToken));
-    }
-  }
-
-  if (!user) return { authorized: false as const, status: 401, refreshed: null };
-  const visibleUser = publicUser(user);
-  const isAdmin = visibleUser?.role === "admin";
-  if (!isAdmin && user.id !== accountId) {
-    return { authorized: false as const, status: 403, refreshed };
-  }
-  return { authorized: true as const, user, visibleUser, refreshed };
-}
-
-function applyRefreshCookies(response: NextResponse, refreshed: Awaited<ReturnType<typeof refreshSession>> | null) {
-  if (!refreshed?.access_token || !refreshed.refresh_token) return;
-  response.cookies.set(ACCESS_COOKIE, refreshed.access_token, cookieOptions(refreshed.expires_in || 3600));
-  response.cookies.set(REFRESH_COOKIE, refreshed.refresh_token, cookieOptions(60 * 60 * 24 * 30));
-}
-
 function errorResponse(error: unknown) {
-  const statusRaw = (error as { status?: unknown })?.status;
-  const status = typeof statusRaw === "number" && statusRaw >= 400 && statusRaw < 600 ? statusRaw : 500;
-  const currentRevision = (error as { currentRevision?: unknown })?.currentRevision;
-  const message = error instanceof Error ? error.message : "Datapad request failed.";
-  return NextResponse.json(
-    { error: message, ...(typeof currentRevision === "number" ? { revision: currentRevision } : {}) },
-    { status },
-  );
+  return NextResponse.json({ error: error instanceof Error ? error.message : "Campaign save failed." },
+    { status: error instanceof DatapadError ? error.status : 403 });
 }
-
 export async function GET(request: Request) {
-  const accountId = new URL(request.url).searchParams.get("accountId")?.trim() || "";
-  if (!accountId) return NextResponse.json({ error: "accountId is required." }, { status: 400 });
-
-  const auth = await authorizeAccount(accountId);
-  if (!auth.authorized) return NextResponse.json({ error: auth.status === 401 ? "Unauthorized" : "Forbidden" }, { status: auth.status });
-
   try {
-    const result = await bridgeGet(accountId, true, auth.visibleUser?.username);
-    const save = result?.save ?? result ?? null;
-    const configRow = result?.config ?? null;
-    const response = NextResponse.json(
-      {
-        accountId,
-        revision: Number(save?.revision || 0),
-        snapshot: save?.snapshot ?? null,
-        configRevision: Number(configRow?.revision || 0),
-        config: configRow?.config ?? null,
-        updatedAt: save?.updated_at ?? null,
-      },
-      { status: 200 },
-    );
-    applyRefreshCookies(response, auth.refreshed);
-    return response;
-  } catch (error) {
-    console.error("[api/datapad] load failed", error);
-    return errorResponse(error);
-  }
+    assertLocalRequest(request);
+    const actor = requireAccount(request);
+    if (hostedPersistenceEnabled()) {
+      const hosted = await hostedGet(actor.username);
+      if (hosted) hydrateHostedSave(actor, hosted);
+    }
+    return NextResponse.json(readDatapad(actor, new URL(request.url).searchParams.get("accountId")), { headers: { "Cache-Control": "no-store" } });
+  } catch (error) { return errorResponse(error); }
 }
-
 export async function PUT(request: Request) {
-  let body: any;
   try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
-  }
-
-  const queryAccountId = new URL(request.url).searchParams.get("accountId")?.trim() || "";
-  const accountId = String(body?.accountId || queryAccountId).trim();
-  if (!accountId) return NextResponse.json({ error: "accountId is required." }, { status: 400 });
-
-  const auth = await authorizeAccount(accountId);
-  if (!auth.authorized) return NextResponse.json({ error: auth.status === 401 ? "Unauthorized" : "Forbidden" }, { status: auth.status });
-
-  try {
-    if (body?.action === "config") {
-      const revision = Number(body?.revision);
-      if (!Number.isInteger(revision) || revision < 0 || !body?.config || typeof body.config !== "object") {
-        return NextResponse.json({ error: "revision and config are required." }, { status: 400 });
-      }
-      if (auth.visibleUser?.role !== "admin") {
-        return NextResponse.json({ error: "Admin access is required to change GM configuration." }, { status: 403 });
-      }
-      const saved = await bridgeSaveConfig(accountId, revision, body.config);
-      const response = NextResponse.json(
-        { accountId, configRevision: Number(saved?.revision || revision + 1), config: saved?.config ?? body.config },
-        { status: 200 },
-      );
-      applyRefreshCookies(response, auth.refreshed);
-      return response;
+    assertLocalRequest(request);
+    const actor = requireAccount(request);
+    if (Number(request.headers.get("content-length")) > 8_100_000) throw new DatapadError("Campaign save is too large.", 413);
+    const text = await request.text();
+    if (text.length > 8_100_000) throw new DatapadError("Campaign save is too large.", 413);
+    const body = JSON.parse(text);
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new DatapadError("Invalid save request.");
+    if (body.action === "config") return NextResponse.json(saveDatapadConfig(actor, body.revision, body.config));
+    if (hostedPersistenceEnabled()) {
+      const hosted = await hostedGet(actor.username);
+      if (hosted && body.revision !== hosted.revision) throw new DatapadError("The campaign changed elsewhere. Reload the saved game before saving.", 409);
+      const result = await hostedPut(actor.username, actor.id, Number(body.revision), body.snapshot);
+      hydrateHostedSave(actor, result);
+      return NextResponse.json({ accountId: actor.id, revision: result.revision, updatedAt: result.updated_at });
     }
-
-    const revision = Number(body?.revision);
-    if (!Number.isInteger(revision) || revision < 0 || !body?.snapshot || typeof body.snapshot !== "object") {
-      return NextResponse.json({ error: "revision and snapshot are required." }, { status: 400 });
-    }
-
-    const saved = await bridgeSave(accountId, revision, body.snapshot, auth.visibleUser?.username);
-    const response = NextResponse.json(
-      {
-        accountId,
-        revision: Number(saved?.revision || revision + 1),
-        snapshot: saved?.snapshot ?? body.snapshot,
-        updatedAt: saved?.updated_at ?? null,
-      },
-      { status: 200 },
-    );
-    applyRefreshCookies(response, auth.refreshed);
-    return response;
-  } catch (error) {
-    console.error("[api/datapad] save failed", error);
-    return errorResponse(error);
-  }
+    const result = saveDatapad(actor, typeof body.accountId === "string" ? body.accountId : null, body.revision, body.snapshot);
+    return NextResponse.json(result);
+  } catch (error) { return errorResponse(error); }
 }
