@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "controller:smoke": "node scripts/controller-smoke.mjs"
   },
   "dependencies": {
     "next": "^15.5.0",
