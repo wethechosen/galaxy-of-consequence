@@ -48,16 +48,25 @@ function controllerAuth(req: Request) {
   return auth.startsWith("Bearer ") && auth.length > 12 ? auth : "";
 }
 
-async function vercelState(auth: string) {
-  const response = await fetch(`${VERCEL_BASE}/api/gpt/state`, {
-    method: "GET",
-    headers: { Authorization: auth, Accept: "application/json" },
+async function callVercel(auth: string, path: string, method = "GET", bodyText?: string) {
+  const response = await fetch(`${VERCEL_BASE}${path}`, {
+    method,
+    headers: {
+      Authorization: auth,
+      Accept: "application/json",
+      ...(bodyText !== undefined ? { "Content-Type": "application/json" } : {}),
+    },
+    ...(bodyText !== undefined ? { body: bodyText } : {}),
     cache: "no-store",
   });
   const text = await response.text();
   let data: any = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
-  return { response, data };
+  return { response, data, text };
+}
+
+async function vercelState(auth: string) {
+  return await callVercel(auth, "/api/gpt/state");
 }
 
 async function validate(auth: string) {
@@ -83,18 +92,15 @@ function controlIntent(action: string) {
   return null;
 }
 
-async function proxyVercel(req: Request, path: string, bodyText?: string) {
-  const response = await fetch(`${VERCEL_BASE}${path}`, {
-    method: req.method,
-    headers: {
-      Authorization: req.headers.get("authorization") || "",
-      ...(bodyText !== undefined ? { "Content-Type": "application/json" } : {}),
-    },
-    ...(bodyText !== undefined ? { body: bodyText } : {}),
-    cache: "no-store",
-  });
-  const text = await response.text();
-  return new Response(text, { status: response.status, headers: headers() });
+async function stableTurnId(accountId: string, revision: number, action: string) {
+  const bytes = new TextEncoder().encode(`${accountId}\n${revision}\n${action}`);
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  return `ctl-${Array.from(digest.slice(0, 12)).map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function revisionOf(value: any) {
+  const revision = Number(value?.revision);
+  return Number.isInteger(revision) ? revision : null;
 }
 
 Deno.serve(async (req: Request) => {
@@ -107,7 +113,8 @@ Deno.serve(async (req: Request) => {
 
   try {
     if (route === "/state" && req.method === "GET") {
-      return await proxyVercel(req, "/api/gpt/state");
+      const current = await vercelState(auth);
+      return new Response(current.text, { status: current.response.status, headers: headers() });
     }
 
     const validated = await validate(auth);
@@ -118,16 +125,100 @@ Deno.serve(async (req: Request) => {
       const bodyText = await req.text();
       let body: any = {};
       try { body = bodyText ? JSON.parse(bodyText) : {}; } catch { return json({ error: "Invalid JSON body." }, 400); }
-      const operation = controlIntent(String(body?.action || ""));
+
+      const action = String(body?.action || "").trim();
+      const requestedRevision = Number(body?.revision);
+      if (!action) return json({ error: "action is required." }, 400);
+      if (!Number.isInteger(requestedRevision)) return json({ error: "revision is required." }, 400);
+
+      const operation = controlIntent(action);
       if (operation) {
         return json({
           error: "control_command_requires_control_action",
           message: "This request is administrative, not gameplay. No roll or state mutation was attempted.",
           useOperation: operation,
-          revision: validated.state?.revision,
+          revision: revisionOf(validated.state),
+          gameplayAdvanced: false,
         }, 422);
       }
-      return await proxyVercel(req, "/api/gpt/turn", JSON.stringify(body));
+
+      const currentRevision = revisionOf(validated.state);
+      if (currentRevision !== null && requestedRevision !== currentRevision) {
+        return json({
+          error: "revision_conflict",
+          message: "The GPT submitted a stale campaign revision. Re-read state before retrying the action.",
+          revision: currentRevision,
+          gameplayAdvanced: false,
+        }, 409);
+      }
+
+      // Self-heal missing runtime arrays/objects before a real gameplay turn. If a repair
+      // advances the revision, do NOT execute the player's action under the stale revision.
+      const normalized = await rpc("goc_normalize_state_shape", {
+        p_account_id: accountId,
+        p_expected_revision: requestedRevision,
+      });
+      if (normalized?.ok === false) {
+        return json(normalized, normalized?.error === "revision_conflict" ? 409 : 400);
+      }
+      if (normalized?.changed === true) {
+        return json({
+          error: "state_shape_normalized_reload_required",
+          message: "The campaign save required a structural repair. No gameplay action was executed. Re-read state and retry the same declared action.",
+          revision: normalized.revision,
+          gameplayAdvanced: false,
+          stateRepaired: true,
+        }, 409);
+      }
+
+      const turnId = typeof body?.turnId === "string" && body.turnId.trim()
+        ? body.turnId.trim()
+        : await stableTurnId(accountId, requestedRevision, action);
+      const forwarded = { ...body, action, revision: requestedRevision, turnId };
+      const upstream = await callVercel(auth, "/api/gpt/turn", "POST", JSON.stringify(forwarded));
+
+      // Always re-read authoritative state after the upstream call. This detects partial
+      // commits and prevents an upstream 500 from being misrepresented as a harmless retry.
+      const after = await vercelState(auth);
+      const afterRevision = after.response.ok ? revisionOf(after.data) : null;
+
+      if (!upstream.response.ok) {
+        const stateChanged = afterRevision !== null && afterRevision !== requestedRevision;
+        return json({
+          error: stateChanged ? "upstream_turn_failed_after_state_change" : "upstream_turn_failure",
+          message: stateChanged
+            ? "The gameplay engine returned an error after the authoritative revision changed. Re-read state before any retry."
+            : "The gameplay engine failed and the authoritative revision did not change. The declared action was not committed.",
+          upstreamStatus: upstream.response.status,
+          upstream: upstream.data,
+          revision: afterRevision ?? requestedRevision,
+          turnId,
+          gameplayAdvanced: stateChanged ? "unknown" : false,
+          retryRequiresStateRead: true,
+        }, stateChanged ? 500 : 502);
+      }
+
+      const returnedRevision = revisionOf(upstream.data);
+      if (afterRevision === null || afterRevision <= requestedRevision || (returnedRevision !== null && returnedRevision !== afterRevision)) {
+        return json({
+          error: "turn_commit_verification_failed",
+          message: "The gameplay engine returned success but the committed revision could not be verified. Re-read authoritative state before continuing.",
+          upstream: upstream.data,
+          revision: afterRevision,
+          turnId,
+          gameplayAdvanced: "unknown",
+          retryRequiresStateRead: true,
+        }, 502);
+      }
+
+      return json({
+        ...(upstream.data && typeof upstream.data === "object" ? upstream.data : { result: upstream.data }),
+        revision: afterRevision,
+        turnId,
+        controllerMode: "gameplay-turn",
+        committedRevisionVerified: true,
+        gameplayAdvanced: true,
+      });
     }
 
     if (route === "/hud" && req.method === "GET") {
