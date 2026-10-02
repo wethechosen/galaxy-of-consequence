@@ -1,42 +1,90 @@
 # Galaxy of Consequence
 
-A solo, lore-governed web GM for a 200 ABY, Legends-first Star Wars Saga Edition campaign.
+Galaxy of Consequence is a persistent Star Wars Saga Edition RPG platform with a Custom GPT gameplay controller, a web client, server-side GM/rules resolution, and Supabase-backed saves.
 
-> Current implementation update: Node.js 22.16+ is required for built-in SQLite.
-> Campaigns and full checkpoint snapshots now persist in `data/campaign.sqlite`;
-> restore is not implemented yet. `CAMPAIGN_DB_PATH` overrides the local path.
-> Gameplay is blocked in both server and UI until rules are verified. Do not
-> unlock the existing provisional keyword checks. The agreed target is 150 ABY
-> with OpenAI as GM and Nemotron for flavor; the old sample scene is not migrated.
-> Run on localhost only: `npm run dev -- --hostname 127.0.0.1`.
-> The PostgreSQL production checklist below is historical, not the current local
-> persistence plan. Source indexing, OpenAI integration and character creation
-> remain unimplemented. Back up the data directory with the app stopped.
+## Production architecture
 
-## Run locally
+```text
+CODE DELIVERY
+Local Codex project
+  -> GitHub: wethechosen/galaxy-of-consequence
+  -> Vercel: galaxy-local
 
-1. Install Node.js 22.16+.
-2. Copy `.env.example` to `.env.local`.
-3. Add `NVIDIA_API_KEY` only to `.env.local`; never use a `NEXT_PUBLIC_` prefix.
-4. Run `npm install`, then `npm run dev`.
+GAMEPLAY
+Player
+  -> Galaxy of Consequence Custom GPT (controller)
+  -> Vercel /api/gpt/state + /api/gpt/turn
+  -> authoritative GM / Saga resolution
+  -> Supabase persistent save
+  -> response back to GPT
+  -> same committed revision displayed by the Vercel web app
+```
 
-The application works without an NVIDIA key using a deliberately limited lore-safe fallback narrator. With a key, `/api/gm` calls NVIDIA from the server only. It never sends the key to the browser and it disables visible reasoning output.
+GitHub is the code record. It is **not** in the live turn-response path. Supabase is the persistent gameplay source of truth. The browser is a client surface, not a competing gameplay authority.
 
-## Rules and source safeguards
+## Important migration status
 
-- `Saga Edition Core Rulebook.pdf` is the mechanical authority. It is currently a scanned PDF and must be OCR-indexed with page citations before rule-specific checks are marked verified.
-- The app begins with a `provisional_until_saga_core_is_indexed` lock. This prevents the UI and GM route from claiming its temporary action checks are official Saga rules.
-- Legends/EU controls the Legacy Era; Canon may fill compatible gaps. Campaign adaptations are labelled and may not overwrite historical lore.
-- Do not upload or distribute sourcebook text through the public app. Keep any source index private to the rights holder's account.
+The complete current application is still maintained in the local Codex working tree at:
 
-## Production checklist
+`C:\Users\Passi\OneDrive\Desktop\GalaxyOfConsequence`
 
-1. Provision a private PostgreSQL database and apply [`db/schema.sql`](db/schema.sql).
-2. Add a real authentication provider and enforce the authenticated campaign owner in every route before public deployment.
-3. For any future hosted version, migrate the local SQLite adapter to authenticated database access.
-4. OCR the authorized Saga Core Rulebook locally, review each imported page, and create verified citations for mechanics before changing `rulesStatus` to `verified`.
-5. Configure `NVIDIA_API_KEY` in the host's secret manager, not in repository files.
+The repository `main` branch still represents an older prototype. Do **not** deploy `main` over the current Vercel application until the complete local Codex working tree has been uploaded and validated.
 
-## Verification
+Migration work is staged on `codex-master-sync` and tracked in Draft PR #2.
 
-Run `npm run typecheck`, `npm test`, and `npm run build`. The rules tests exercise server-side d20 ranges, arithmetic, intent detection, and the lore classification guard.
+Before uploading the local project, run:
+
+```powershell
+./scripts/verify-local-master.ps1
+```
+
+That check must confirm that the local `origin` is this repository:
+
+`wethechosen/galaxy-of-consequence`
+
+Then use the guarded sync helper:
+
+```powershell
+./scripts/sync-codex-to-github.ps1
+```
+
+The helper refuses to push if the remote is wrong, runtime/secret files are tracked, obvious secret values are staged, or validation fails.
+
+## Required controller behavior
+
+For every gameplay action:
+
+1. GPT reads `/api/gpt/state` and receives revision `N`.
+2. GPT submits exactly one action to `/api/gpt/turn` with revision `N` and a unique `turnId`.
+3. The server performs deterministic rules/world-state resolution.
+4. The server commits exactly once to Supabase as revision `N+1`.
+5. GPT receives narration/state for `N+1`.
+6. GPT re-reads `/api/gpt/state` and verifies `N+1`.
+7. The Vercel web client displays that same committed revision.
+
+A stale revision must return `409`; replaying a `turnId` must not duplicate damage, XP, credits, inventory, movement, or narrative consequences.
+
+## Hosted persistence
+
+Hosted Vercel routes must not use SQLite or local filesystem saves. Server-side integration variables are documented in `.env.example`. Never expose service-role, bridge, NVIDIA, OpenAI, or GPT action secrets through `NEXT_PUBLIC_*` variables or commit real secret values.
+
+The Supabase bridge/save layer is revisioned. The current migration contract is documented in [`docs/production-sync.md`](docs/production-sync.md).
+
+## Validation
+
+Run locally before pushing the authoritative Codex source:
+
+```bash
+npm install
+npm run typecheck
+npm test
+npm run build
+```
+
+After deployment, run the controller smoke test with server-side test credentials configured:
+
+```bash
+node scripts/controller-smoke.mjs
+```
+
+A production cutover is complete only when GPT -> Vercel -> Supabase -> GPT/web round-trip persistence succeeds and the same source commit is recorded in GitHub and deployed by Vercel.
