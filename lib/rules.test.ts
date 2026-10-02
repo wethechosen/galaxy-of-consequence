@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { canIntroduceFact } from "./lore";
-import { inferProvisionalCheck, rollD20 } from "./rules";
+import { rollDice, rollD20 } from "./rules";
 
 describe("secure dice resolution", () => {
   it("produces a d20 result in the legal range and preserves the arithmetic", () => {
@@ -13,9 +13,12 @@ describe("secure dice resolution", () => {
     }
   });
 
-  it("only creates automatic checks for recognised consequential intents", () => {
-    expect(inferProvisionalCheck("I sneak through the cargo bay")?.label).toBe("Stealth");
-    expect(inferProvisionalCheck("I ask the droid about its shift")).toBeNull();
+  it("logs every die and rejects invalid dice requests", () => {
+    const roll = rollDice(3, 6, 2);
+    expect(roll.raw).toHaveLength(3);
+    expect(roll.total).toBe(roll.raw.reduce((a, b) => a + b, 2));
+    expect(() => rollDice(0, 20)).toThrow();
+    expect(() => rollDice(1, NaN)).toThrow();
   });
 });
 

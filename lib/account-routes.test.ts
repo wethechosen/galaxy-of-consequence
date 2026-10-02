@@ -1,0 +1,37 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { expect, it } from "vitest";
+
+it("protects API data and the GM console, persists requests without changing campaign state", async () => {
+  process.env.CAMPAIGN_DB_PATH = join(mkdtempSync(join(tmpdir(), "goc-auth-routes-")), "test.sqlite");
+  const auth = await import("../app/api/auth/route");
+  const admin = await import("../app/api/admin/route");
+  const campaign = await import("../app/api/campaign/route");
+  const maps = await import("../app/api/maps/route");
+  const requests = await import("../app/api/requests/route");
+  const request = (path: string, cookie = "", body?: object) => new Request(`http://localhost:3101/api/${path}`, { method: body ? "POST" : "GET", headers: { cookie, origin: "http://localhost:3101", "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  expect((await campaign.GET(request("campaign"))).status).toBe(403);
+  expect((await admin.GET(request("admin"))).status).toBe(403);
+  expect((await auth.GET(request("auth"))).status).toBe(200);
+  const ownerResponse = await auth.POST(request("auth", "", { action: "setup", username: "owner", password: "test-only-password-123", displayName: "Owner" }));
+  const ownerCookie = ownerResponse.headers.get("set-cookie")!.split(";")[0];
+  expect(ownerResponse.headers.get("set-cookie")).toContain("HttpOnly");
+  expect(ownerResponse.headers.get("set-cookie")).toContain("SameSite=strict");
+  expect((await admin.GET(request("admin", ownerCookie))).status).toBe(200);
+  expect((await maps.GET(request("maps?id=../../.env", ownerCookie))).status).toBe(404);
+  expect((await admin.POST(request("admin", ownerCookie, { action: "create_player", username: "pilot", password: "test-only-password-123", displayName: "Pilot", role: "admin" }))).status).toBe(200);
+  const playerResponse = await auth.POST(request("auth", "", { action: "login", username: "pilot", password: "test-only-password-123" }));
+  const playerCookie = playerResponse.headers.get("set-cookie")!.split(";")[0];
+  expect((await playerResponse.json()).user.role).toBe("player");
+  expect((await admin.GET(request("admin", playerCookie))).status).toBe(403);
+  expect((await admin.POST(request("admin", playerCookie, { action: "create_player", username: "evil", password: "test-only-password-123", displayName: "Evil" }))).status).toBe(403);
+  const original = (await (await campaign.GET(request("campaign", playerCookie))).json()).campaign;
+  expect((await requests.POST(request("requests", playerCookie, { campaignId: original.id, category: "Hangar Bay", detail: "Request a ship" }))).status).toBe(200);
+  const after = (await (await campaign.GET(request("campaign", playerCookie))).json()).campaign;
+  expect(after).toEqual(original);
+  expect((await auth.POST(request("auth", playerCookie, { action: "logout" }))).status).toBe(200);
+  expect((await campaign.GET(request("campaign", playerCookie))).status).toBe(403);
+  const crossOrigin = new Request("http://localhost:3101/api/auth", { method: "POST", headers: { origin: "https://evil.example" }, body: JSON.stringify({ action: "logout" }) });
+  expect((await auth.POST(crossOrigin)).status).toBe(400);
+});

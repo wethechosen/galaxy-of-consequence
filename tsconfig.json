@@ -29,12 +29,28 @@
     "esModuleInterop": true
   },
   "include": [
-    "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
-    ".next/types/**/*.ts"
+    ".next-atlas/types/**/*.ts",
+    ".next-datapad/types/**/*.ts",
+    ".next-local/types/**/*.ts",
+    ".next-reconcile-dev/types/**/*.ts",
+    ".next-run-1789930887715/types/**/*.ts",
+    ".next-run-1790086746835/types/**/*.ts",
+    ".next-run-1790107792030/types/**/*.ts",
+    ".next-run-1790151187487/types/**/*.ts",
+    ".next-run-1790550663231/types/**/*.ts",
+    ".next-ui-dev/types/**/*.ts",
+    ".next-ui-final/types/**/*.ts",
+    ".next-ui-review/types/**/*.ts",
+    ".next/types/**/*.ts",
+    "next-env.d.ts",
+    ".next-check/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "vendor",
+    ".venv-nvidia-rag",
+    "supabase/functions"
   ]
 }

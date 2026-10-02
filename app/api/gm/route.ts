@@ -1,21 +1,39 @@
 import { NextResponse } from "next/server";
-import { runGmTurn } from "@/lib/gm";
+import { requireAccount } from "@/lib/accounts";
+import { GmTurnError, runGmTurn } from "@/lib/gm";
+import { assertLocalRequest, readLocalObject } from "@/lib/local-http";
+import { NvidiaProviderError } from "@/lib/original-provider";
+import { hostedGet, hostedPersistenceEnabled, hydrateHostedSave, saveHostedResult } from "@/lib/hosted-bridge";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  const body = (await request.json().catch(() => null)) as { action?: unknown } | null;
-  const action = typeof body?.action === "string" ? body.action.trim() : "";
-  if (!action || action.length > 2000) {
-    return NextResponse.json({ error: "Provide an action between 1 and 2,000 characters." }, { status: 400 });
-  }
   try {
-    const result = await runGmTurn(action);
-    return NextResponse.json(result);
-  } catch (error) {
-    if (error instanceof Error && error.message === "RULES_NOT_VERIFIED") {
-      return NextResponse.json({ error: "Gameplay is locked until Saga rules are verified. No roll or campaign change occurred." }, { status: 409 });
+    assertLocalRequest(request);
+    const actor = requireAccount(request);
+    const body = await readLocalObject(request);
+    const hosted = hostedPersistenceEnabled() ? await hostedGet(actor.username) : null;
+    if (hosted) {
+      if (typeof body.revision !== "number" || body.revision !== hosted.revision) {
+        return NextResponse.json({ error: "The campaign changed elsewhere. Reload the saved game before continuing.", revision: hosted.revision }, { status: 409 });
+      }
+      hydrateHostedSave(actor, hosted);
     }
-    return NextResponse.json({ error: "The GM request failed." }, { status: 503 });
+    const result = await runGmTurn(actor, {
+      accountId: typeof body.accountId === "string" ? body.accountId : undefined,
+      revision: Number(body.revision),
+      action: typeof body.action === "string" ? body.action : "",
+      turnId: typeof body.turnId === "string" ? body.turnId : "",
+      openScene: body.openScene === true,
+      statePolicy: body.statePolicy === "committed-trade" ? "committed-trade" : null,
+    });
+    if (hosted) await saveHostedResult(actor, hosted.revision, result.snapshot);
+    return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    const status = error instanceof GmTurnError || error instanceof NvidiaProviderError ? error.status
+      : error instanceof Error && /sign in/i.test(error.message) ? 401
+      : error instanceof Error && /local access|cross-origin|cross-site/i.test(error.message) ? 403 : 500;
+    return NextResponse.json({ error: error instanceof Error ? error.message : "The GM request failed. No outcome was applied." }, { status });
   }
 }

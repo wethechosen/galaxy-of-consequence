@@ -57,14 +57,21 @@ export interface Checkpoint {
 }
 
 export interface CampaignState {
+  economyCatchUpPending?: boolean;
+  revision?: number;
+  world?: import("./world").WorldState;
+  transcript?: Array<{ id: string; role: "player" | "gm"; text: string; createdAt: string }>;
+  worldClock?: import("./world-clock").WorldClock;
   id: string;
   title: string;
-  era: "200 ABY";
+  era: "150 ABY" | "200 ABY";
+  parentTimelineId?: string;
+  restoredCheckpointId?: string;
   continuity: "Legends-first";
   currentLocation: string;
   currentScene: string;
   rulesStatus: "provisional_until_saga_core_is_indexed" | "verified";
-  character: CharacterState;
+  character: CharacterState | null;
   objectives: string[];
   loreFacts: LoreFact[];
   rolls: RollRecord[];

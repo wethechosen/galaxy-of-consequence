@@ -2,24 +2,42 @@
   "name": "galaxy-of-consequence",
   "version": "0.1.0",
   "private": true,
-  "engines": { "node": ">=22.16.0" },
+  "engines": {
+    "node": ">=22.16.0"
+  },
   "scripts": {
+    "play": "node scripts/start-local.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "index:sources": "node scripts/index-sourcebooks.mjs",
+    "nvidia:verify": "node scripts/verify-nvidia-stack.mjs"
   },
   "dependencies": {
+    "@fontsource/chakra-petch": "^5.3.0",
+    "@fontsource/orbitron": "^5.3.0",
+    "@fontsource/space-grotesk": "^5.3.0",
+    "@napi-rs/canvas": "^1.0.9",
+    "jose": "^6.2.12",
+    "lucide-react": "^1.47.0",
     "next": "^15.5.0",
+    "pdfjs-dist": "^6.3.289",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "react-router-dom": "^6.30.6",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
+    "autoprefixer": "^10.6.1",
+    "postcss": "^8.5.28",
+    "supabase": "2.118.0",
+    "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3",
-    "vitest": "^3.2.4"
+    "vitest": "^4.1.11"
   }
 }

@@ -1,0 +1,12 @@
+.env*
+node_modules
+.next*
+db
+data
+*.log
+*.crdownload
+.venv-nvidia-rag
+vendor
+tests
+docs
+scripts

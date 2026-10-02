@@ -1,5 +1,6 @@
 node_modules/
 .next/
+.next-*/
 .env.local
 .env
 *.tsbuildinfo
@@ -7,3 +8,17 @@ data/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+.venv-nvidia-rag/
+vendor/nvidia-rag/
+
+.vercel
+.env*
+
+*.log
+*.bak
+
+
+.agents/
+eng.traineddata
+supabase/.temp/
+

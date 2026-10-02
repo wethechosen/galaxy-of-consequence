@@ -2,6 +2,7 @@ import { randomInt, randomUUID } from "node:crypto";
 import type { RollRecord } from "./types";
 
 export function rollD20(input: { modifier: number; target?: number; reason: string }): RollRecord {
+  if (!Number.isSafeInteger(input.modifier) || Math.abs(input.modifier) > 100000 || (input.target !== undefined && !Number.isSafeInteger(input.target))) throw new Error("Invalid roll parameters");
   const raw = randomInt(1, 21);
   const total = raw + input.modifier;
   const outcome = input.target === undefined ? "unresolved" : total >= input.target ? "success" : "failure";
@@ -19,21 +20,9 @@ export function rollD20(input: { modifier: number; target?: number; reason: stri
   };
 }
 
-type ProvisionalCheck = { modifier: number; target: number; reason: string; label: string } | null;
-
-export function inferProvisionalCheck(action: string): ProvisionalCheck {
-  const normalized = action.toLowerCase();
-  if (/shoot|fire|attack|strike|blaster/.test(normalized)) {
-    return { modifier: 5, target: 15, reason: "Provisional ranged attack resolution", label: "Attack" };
-  }
-  if (/sneak|hide|infiltrat|slip past/.test(normalized)) {
-    return { modifier: 7, target: 15, reason: "Provisional Stealth resolution", label: "Stealth" };
-  }
-  if (/negotiate|persuade|convince|bargain/.test(normalized)) {
-    return { modifier: 6, target: 15, reason: "Provisional Persuasion resolution", label: "Persuasion" };
-  }
-  if (/search|inspect|investigat|scan/.test(normalized)) {
-    return { modifier: 5, target: 15, reason: "Provisional Perception resolution", label: "Perception" };
-  }
-  return null;
+// Generic primitive; Saga-specific authorization belongs to reviewed rule handlers.
+export function rollDice(count: number, sides: number, modifier = 0) {
+  if (!Number.isSafeInteger(count) || count < 1 || count > 100 || !Number.isSafeInteger(sides) || sides < 2 || sides > 1000 || !Number.isSafeInteger(modifier) || Math.abs(modifier) > 100000) throw new Error("Invalid dice parameters");
+  const raw = Array.from({ length: count }, () => randomInt(1, sides + 1));
+  return { formula: `${count}d${sides}${modifier >= 0 ? "+" : ""}${modifier}`, raw, modifier, total: raw.reduce((a, b) => a + b, modifier) };
 }
