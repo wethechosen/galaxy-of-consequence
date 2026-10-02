@@ -82,6 +82,17 @@ Deno.serve(async (req: Request) => {
         return new Response(JSON.stringify({ ok: true, checkpoints }), { headers: cors() });
       }
 
+      if (mode === "rag") {
+        const query = url.searchParams.get("q")?.trim() || "";
+        const limit = Math.max(1, Math.min(Number(url.searchParams.get("limit")) || 6, 12));
+        if (!query) return new Response(JSON.stringify({ error: "q is required for RAG search" }), { status: 400, headers: cors() });
+        const hits = await rpc("goc_rag_search", { p_query: query, p_limit: limit });
+        return new Response(JSON.stringify({ ok: true, hits }), { headers: cors() });
+      }
+      if (mode === "rag_stats") {
+        const stats = await rpc("goc_rag_stats", {});
+        return new Response(JSON.stringify({ ok: true, stats }), { headers: cors() });
+      }
       if (!username && accountId) username = (await lookupUsername(accountId)) || "";
       if (!username) return new Response(JSON.stringify({ error: "username or accountId is required" }), { status: 400, headers: cors() });
       const save = await rpc("goc_bridge_get", { p_username: username });
@@ -138,7 +149,21 @@ Deno.serve(async (req: Request) => {
         }));
       }
 
+      if (action === "rag_document") {
+        if (!body?.document || typeof body.document !== "object" || Array.isArray(body.document)) {
+          return new Response(JSON.stringify({ error: "document is required" }), { status: 400, headers: cors() });
+        }
+        return resultResponse(await rpc("goc_rag_upsert_document", { p_document: body.document }));
+      }
+      if (action === "rag_chunks") {
+        const documentId = String(body?.documentId || "").trim();
+        if (!documentId || !Array.isArray(body?.chunks) || body.chunks.length > 50) {
+          return new Response(JSON.stringify({ error: "documentId and up to 50 chunks are required" }), { status: 400, headers: cors() });
+        }
+        return resultResponse(await rpc("goc_rag_upsert_chunks", { p_document_id: documentId, p_chunks: body.chunks }));
+      }
       let username = String(body?.username || "").trim();
+
       if (!username && accountId) username = (await lookupUsername(accountId)) || "";
       if (!username || !accountId || !Number.isInteger(body?.expectedRevision) || !body?.snapshot) {
         return new Response(JSON.stringify({ error: "username/accountId, expectedRevision, and snapshot are required" }), { status: 400, headers: cors() });
