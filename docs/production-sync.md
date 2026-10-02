@@ -4,11 +4,48 @@
 
 1. **Codex local project is the code master**: `C:\Users\Passi\OneDrive\Desktop\GalaxyOfConsequence`.
 2. **GitHub is the versioned code record**: `wethechosen/galaxy-of-consequence`.
-3. **Vercel is the production mirror** of the GitHub-approved Codex master.
+3. **Vercel is the production execution environment** for the GitHub-approved Codex master.
 4. **Supabase is the persistent gameplay source of truth** for campaign saves/loads and GPT-facing state.
 5. **The Galaxy of Consequence Custom GPT is the gameplay controller.** Player decisions made in the GPT must travel through the production API, commit exactly once to Supabase, become visible in the web app, and be returned to the GPT on the next state read.
 
 Do not deploy the older September SQLite prototype over the current Codex build.
+
+## Important architecture correction
+
+GitHub does **not** send gameplay responses back to the GPT. GitHub only versions and delivers code. The runtime loop is GPT <-> Vercel API <-> Supabase. The code-delivery loop is Codex -> GitHub -> Vercel.
+
+```text
+CODE DELIVERY
+Codex local master
+   -> GitHub
+      -> Vercel deployment
+
+GAMEPLAY RUNTIME
+Player
+   -> GOC Custom GPT controller
+      -> Vercel /api/gpt/state and /api/gpt/turn
+         -> authoritative GM/Saga resolution
+         -> Supabase persistence
+      <- committed response
+   <- narration/HUD
+
+Web app
+   <-> Vercel API
+   <-> same Supabase revision
+```
+
+## Current deployment wiring
+
+The currently observed Vercel production deployments were created without Git commit metadata and behave like CLI/local deployments. Therefore, **do not assume Vercel is already tracking this GitHub repository**. The safe cutover order is:
+
+1. Verify the local Codex checkout `origin` is exactly `wethechosen/galaxy-of-consequence`.
+2. Push the complete current Codex working tree to `codex-master-sync` without secrets or build artifacts.
+3. Validate typecheck, tests, build, controller routes, and persistence on that exact commit.
+4. Promote that exact commit to `main`.
+5. Only then connect/configure Vercel Git deployment against `wethechosen/galaxy-of-consequence` and `main`.
+6. Confirm a Git commit produces the expected Vercel deployment before retiring CLI deployment as the normal path.
+
+The repository includes `scripts/verify-local-master.ps1` for step 1 and `scripts/controller-smoke.mjs` for the controller round-trip acceptance test.
 
 ## Required live flow
 
@@ -61,6 +98,10 @@ The browser is a presentation/client surface, not a competing gameplay authority
 - `/api/gm` commits a GM turn using the current account revision and returns the updated snapshot/revision.
 - `/api/gpt/state` exposes the latest confirmed state to the Custom GPT.
 - `/api/gpt/turn` submits exactly one player action and must persist the resulting authoritative GM state.
+
+## Known production failure mode
+
+Historical Vercel runtime logs show `/api/gpt/turn` attempting to open SQLite in hosted execution (`:memory:` or a database file) and failing or losing persistence. This confirms the production turn path must hydrate from and commit to Supabase rather than using Vercel-local SQLite/filesystem storage. A `409` stale-revision response is expected and healthy when the controller submits an old revision; a SQLite open error is not.
 
 ## Combat state surface
 
@@ -119,6 +160,8 @@ The Supabase project already contains the private datapad-save table and bridge 
 
 Do not promote a deployment unless all of the following pass:
 
+- local Codex `origin` is verified as `wethechosen/galaxy-of-consequence`;
+- the complete current Codex source exists in GitHub on the exact commit being deployed;
 - production login/auth works without the local-only gate;
 - D'mir's latest Codex save loads on Vercel;
 - a save made from one client is visible after reload on another client;
