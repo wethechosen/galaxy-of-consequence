@@ -7,10 +7,11 @@ function bridgeConfig() {
   return { url, key };
 }
 
-export async function bridgeGet(accountId: string, includeConfig = false) {
+export async function bridgeGet(accountId: string, includeConfig = false, username?: string) {
   const { url, key } = bridgeConfig();
   const target = new URL(url);
   target.searchParams.set("accountId", accountId);
+  if (username) target.searchParams.set("username", username);
   if (includeConfig) target.searchParams.set("includeConfig", "1");
 
   const response = await fetch(target, {
@@ -25,7 +26,7 @@ export async function bridgeGet(accountId: string, includeConfig = false) {
   return data;
 }
 
-export async function bridgeSave(accountId: string, expectedRevision: number, snapshot: unknown) {
+export async function bridgeSave(accountId: string, expectedRevision: number, snapshot: unknown, username?: string) {
   const { url, key } = bridgeConfig();
   const response = await fetch(url, {
     method: "POST",
@@ -34,7 +35,7 @@ export async function bridgeSave(accountId: string, expectedRevision: number, sn
       Authorization: `Bearer ${key}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ accountId, expectedRevision, snapshot }),
+    body: JSON.stringify({ accountId, username, expectedRevision, snapshot }),
   });
   const data = (await response.json().catch(() => ({}))) as BridgeResponse;
   if (!response.ok) {
