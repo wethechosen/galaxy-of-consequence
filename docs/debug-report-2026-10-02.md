@@ -30,6 +30,18 @@
 4. Current Vercel deployments do not show Git commit metadata, so GitHub -> Vercel automatic deployment is not yet proven/configured.
 5. The GitHub branch does not yet contain the complete current Codex source. In particular, `app/api/gpt` is absent from `codex-master-sync`; the working GPT routes exist only in the newer local/Vercel source until that tree is pushed.
 
+## GitHub Actions status
+
+The `Validate Codex Master Sync` workflow is syntactically normal, but the latest run failed before any workflow step executed. The failed job shows:
+
+- `runner_id: 0`
+- empty runner name
+- zero steps
+- roughly two seconds from job start to failure
+- no downloadable job log
+
+That means this failure is **not evidence that typecheck, tests, or build failed**; the GitHub-hosted runner never started. Treat this as a repository/Actions runner provisioning or account-level CI issue until a job actually receives a runner and executes steps. Local validation in `scripts/sync-codex-to-github.ps1` remains the required gate in the meantime.
+
 ## AI draft / validator mismatch
 
 A successful `POST /api/gpt/turn` logged this warning:
