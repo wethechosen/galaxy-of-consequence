@@ -42,10 +42,14 @@ The currently observed Vercel production deployments were created without Git co
 2. Push the complete current Codex working tree to `codex-master-sync` without secrets or build artifacts.
 3. Validate typecheck, tests, build, controller routes, and persistence on that exact commit.
 4. Promote that exact commit to `main`.
-5. Only then connect/configure Vercel Git deployment against `wethechosen/galaxy-of-consequence` and `main`.
+5. Connect/configure Vercel Git deployment against `wethechosen/galaxy-of-consequence` and `main`.
 6. Confirm a Git commit produces the expected Vercel deployment before retiring CLI deployment as the normal path.
 
-The repository includes `scripts/verify-local-master.ps1` for step 1 and `scripts/controller-smoke.mjs` for the controller round-trip acceptance test.
+The repository includes:
+
+- `scripts/verify-local-master.ps1` — verifies local Git `origin`, branch, tracked files, and secret/runtime exclusions.
+- `scripts/sync-codex-to-github.ps1` — guarded staging, validation, secret scanning, commit, and push to `codex-master-sync`.
+- `scripts/controller-smoke.mjs` — controller round-trip acceptance test.
 
 ## Required live flow
 
@@ -99,6 +103,15 @@ The browser is a presentation/client surface, not a competing gameplay authority
 - `/api/gpt/state` exposes the latest confirmed state to the Custom GPT.
 - `/api/gpt/turn` submits exactly one player action and must persist the resulting authoritative GM state.
 
+## Verified hosted behavior
+
+- `GET /api/gpt/state` has returned HTTP 200 from the Custom GPT controller.
+- `POST /api/gpt/turn` has returned HTTP 200 in production.
+- A GPT/controller write advanced D'mir's Supabase save to revision 39.
+- A controlled reconciliation then backed up revision 39 and advanced D'mir to revision 40.
+- `/api/auth` and `/api/datapad` still return `403 Local access only` in production, so the browser/auth surface is not fully moved to hosted Supabase yet.
+- Historical hosted GM turns attempted SQLite and produced `unable to open database file`; hosted routes must never depend on local SQLite.
+
 ## Known production failure mode
 
 Historical Vercel runtime logs show `/api/gpt/turn` attempting to open SQLite in hosted execution (`:memory:` or a database file) and failing or losing persistence. This confirms the production turn path must hydrate from and commit to Supabase rather than using Vercel-local SQLite/filesystem storage. A `409` stale-revision response is expected and healthy when the controller submits an old revision; a SQLite open error is not.
@@ -131,24 +144,22 @@ The live player UI expects an active combat object with, at minimum:
 
 Server-side combat resolution may require additional fields. Preserve the complete Codex snapshot; do not reconstruct a partial combat object when syncing production.
 
-## Controller test-game checkpoint
+## Current persisted controller checkpoint
 
-The controller/test UI screenshot is a **test loop checkpoint**, not a database migration source. Visible values are useful for regression comparison, but the complete persisted snapshot is authoritative.
-
-The screenshot currently shows D'mir Holloran at:
+D'mir's Supabase revision 40 currently reflects the controller screenshot checkpoint:
 
 - 4 HP
 - 1,199,999,770 galactic credits
 - 0 underworld credits
-- Coruscant — Black Sun–controlled apartment bloc, Unit 4-B sublevel (concealed bunker access)
+- Coruscant — Black Sun-controlled apartment bloc, Unit 4-B sublevel (concealed bunker access)
 - Level 1 / 250 XP
-- 1 carried item
+- 1 carried item (identity unresolved from the screenshot)
 - Combat round 3
 - Player turn
 - Guard Blocking The Corridor: 6/12 HP, CT 0
 - Player actions: Standard 1, Move 1, Swift 1
 
-Do not manually rebuild a Supabase snapshot from those visible fields. Hidden combat state, initiative, transcript, flags, GM context, relationships, rolls, and other data must travel through the normal controller/server persistence path.
+The prior save was backed up before reconciliation. Future state changes must flow through the normal controller/server persistence path.
 
 ## Production blockers to remove
 
@@ -156,14 +167,24 @@ The current Vercel deployment serves the UI but returns `403 {"error":"Local acc
 
 The Supabase project already contains the private datapad-save table and bridge RPC/Edge Function. Keep service credentials server-side only. No bridge or service-role secret may be exposed in client JavaScript or committed to GitHub.
 
+Remaining blockers:
+
+- Upload the complete current local Codex working tree into `codex-master-sync`.
+- Prove the local Codex checkout's `origin` is `wethechosen/galaxy-of-consequence`.
+- Replace `Local access only` production behavior in `/api/auth` and `/api/datapad` with the shared Supabase-backed path.
+- Remove hosted SQLite/file persistence from all GM/GPT state helpers.
+- Connect Vercel to this same GitHub repository and production branch after the authoritative local source is uploaded.
+- Move any hard-coded bridge credential into protected secret storage and rotate it only after all callers are updated together.
+
 ## Deployment rule
 
 Do not promote a deployment unless all of the following pass:
 
 - local Codex `origin` is verified as `wethechosen/galaxy-of-consequence`;
 - the complete current Codex source exists in GitHub on the exact commit being deployed;
+- the Vercel deployment identifies that exact Git commit as its source;
 - production login/auth works without the local-only gate;
-- D'mir's latest Codex save loads on Vercel;
+- D'mir's latest save loads on Vercel;
 - a save made from one client is visible after reload on another client;
 - stale revision writes return a conflict rather than overwriting newer state;
 - GPT state reads the same revision shown by the web UI;
