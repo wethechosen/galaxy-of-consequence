@@ -6,6 +6,15 @@ import { hostedGet, hostedPersistenceEnabled, hydrateHostedSave, saveHostedResul
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function controlIntent(action: string) {
+  const value = action.toLowerCase();
+  if (/(load\s+(game|checkpoint|state)|restore\s+(a\s+)?checkpoint)/i.test(value)) return "loadCheckpoint";
+  if (/(save\s+(game|checkpoint|state)|create\s+(a\s+)?checkpoint)/i.test(value)) return "saveCheckpoint";
+  if (/\bhud\b|show\s+(my\s+)?status/i.test(value)) return "getCampaignHUD";
+  if (/(out[- ]of[- ]character|\booc\b|reconcil(e|iation)|sync\s+(state|save)|authoritative\s+save|set\s+and\s+persist)/i.test(value)) return "reconcileCampaignState";
+  return null;
+}
+
 function replayResponse(hosted: Awaited<ReturnType<typeof hostedGet>>, turnId: string) {
   if (!hosted?.snapshot) return null;
   const messages = Array.isArray(hosted.snapshot.messages) ? hosted.snapshot.messages as Array<Record<string, unknown>> : [];
@@ -30,6 +39,16 @@ export async function POST(request: Request) {
     if (!action || action.length > 2000) throw new GptActionError("Provide one player action between 1 and 2,000 characters.", 400);
     if (!/^[a-zA-Z0-9_-]{8,100}$/.test(turnId)) throw new GptActionError("turnId must contain 8–100 letters, numbers, underscores, or hyphens.", 400);
     if (!Number.isSafeInteger(revision) || revision < 0) throw new GptActionError("Provide the current campaign revision from GET /api/gpt/state.", 400);
+    const operation = controlIntent(action);
+    if (operation) {
+      return NextResponse.json({
+        error: "control_command_requires_control_action",
+        message: "This is an administrative request, not gameplay. No roll or state mutation was attempted.",
+        useOperation: operation,
+        revision,
+        gameplayAdvanced: false,
+      }, { status: 422, headers: { "Cache-Control": "no-store" } });
+    }
     if (hostedPersistenceEnabled()) {
       const hosted = await hostedGet(actor.username);
       if (!hosted?.snapshot) throw new GptActionError("No campaign is initialized for the configured action account.", 409);

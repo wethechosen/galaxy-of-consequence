@@ -1,8 +1,8 @@
 type BridgeResponse = Record<string, any>;
 
 function bridgeConfig() {
-  const url = process.env.GOC_SUPABASE_BRIDGE_URL?.replace(/\/$/, "");
-  const key = process.env.GOC_SUPABASE_BRIDGE_KEY;
+  const url = (process.env.GOC_SUPABASE_BRIDGE_URL || process.env.SUPABASE_GOC_BRIDGE_URL)?.replace(/\/$/, "");
+  const key = process.env.GOC_SUPABASE_BRIDGE_KEY || process.env.SUPABASE_GOC_BRIDGE_KEY;
   if (!url || !key) throw new Error("Hosted datapad persistence is not configured.");
   return { url, key };
 }
