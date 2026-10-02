@@ -54,8 +54,10 @@ const combat = {
 const inventoryItem = {
   type: "object",
   properties: {
+    id: { type: "string" },
     name: { type: "string" },
-    quantity: { type: "integer" },
+    qty: { type: "integer", minimum: 0 },
+    tag: { type: "string" },
   },
   additionalProperties: true,
 };
@@ -109,8 +111,8 @@ export async function GET(request: Request) {
       post: {
         operationId: "reconcileCampaignState",
         summary: "Apply an explicit OOC state correction",
-        description: "Administrative correction only. Never narrates, rolls, creates initiative, or advances combat.",
-        requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["expectedRevision", "patch"], properties: { expectedRevision: revision, patch: { type: "object", properties: { level: { type: "integer", minimum: 1 }, experience: { type: "integer", minimum: 0 }, health: { type: "integer" }, credits: { type: "integer" }, location: { type: "string" }, conditionTrack: { type: "integer" }, inventory: { type: "array", items: inventoryItem }, combat }, additionalProperties: false }, reason: { type: "string", maxLength: 200 } }, additionalProperties: false } } } },
+        description: "Administrative correction only. Never narrates, rolls, creates initiative, or advances combat. The response is intentionally compact and never returns the full campaign snapshot.",
+        requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["expectedRevision", "patch"], properties: { expectedRevision: revision, patch: { type: "object", properties: { level: { type: "integer", minimum: 1 }, experience: { type: "integer", minimum: 0 }, health: { type: "integer" }, credits: { type: "integer" }, creditsCriminal: { type: "integer" }, location: { type: "string" }, conditionTrack: { type: "integer" }, campaignTimeMinutes: { type: "integer", minimum: 0 }, inventory: { type: "array", items: inventoryItem }, objectives: { type: "array", items: { type: "object", properties: { title: { type: "string" }, detail: { type: "string" }, status: { type: "string" } }, additionalProperties: true } }, combat, lastNarration: { type: "string", maxLength: 12000 } }, additionalProperties: false }, reason: { type: "string", maxLength: 200 } }, additionalProperties: false } } } },
         responses: { "200": jsonResponse("State reconciled"), "400": { description: "Invalid patch" }, "409": { description: "Revision conflict" } },
       },
     },
@@ -129,7 +131,7 @@ export async function GET(request: Request) {
     openapi: "3.0.3",
     info: {
       title: "Galaxy of Consequence Custom GPT Controller",
-      version: "2.0.3",
+      version: "2.0.4",
       description: "Authoritative GOC controller: state/HUD/checkpoints/reconciliation are separate from gameplay turns.",
     },
     servers: [{ url: `${url.protocol}//${url.host}` }],

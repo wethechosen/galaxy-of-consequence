@@ -90,10 +90,14 @@ export type ReconciliationPatch = {
   experience?: number;
   health?: number;
   credits?: number;
+  creditsCriminal?: number;
   location?: string;
   inventory?: unknown[];
+  objectives?: unknown[];
   combat?: Record<string, unknown>;
   conditionTrack?: number;
+  campaignTimeMinutes?: number;
+  lastNarration?: string;
 };
 
 export async function bridgeReconcile(

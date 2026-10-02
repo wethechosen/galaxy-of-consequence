@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { GptActionError, authenticateGptAction, readGptActionBody } from "@/lib/gpt-action";
 import { runGmTurn, GmTurnError } from "@/lib/gm";
 import { hostedGet, hostedPersistenceEnabled, hydrateHostedSave, saveHostedResult } from "@/lib/hosted-bridge";
+import { isFreeMovementDeclaration } from "@/lib/gpt-turn-intent";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,12 +43,6 @@ function replayResponse(hosted: Awaited<ReturnType<typeof hostedGet>>, turnId: s
 function combatActive(state: RecordValue | null | undefined) {
   const combat = state?.combat;
   return Boolean(combat && typeof combat === "object" && (combat as RecordValue).status === "active");
-}
-
-function freeMovementDeclaration(action: string) {
-  const lower = action.toLowerCase();
-  if (/\b(?:attack|shoot|fire|strike|punch|kick|stab|slash|lunge)\b/.test(lower)) return false;
-  return /\b(?:walk|walking|go|going|move|moving|proceed|continue|continuing|follow|following|descend|descending|head|heading|travel|leave|leaving|exit|enter|advance|push(?:es|ing)?\s+(?:deeper|forward)|deeper|lower)\b/.test(lower);
 }
 
 function transitLocation(current: string, action: string) {
@@ -137,7 +132,7 @@ export async function POST(request: Request) {
     const deterministicFallback = Boolean(result.fallbackReason || result.provider === "local-safe-fallback");
     const stalledNoRoll = !result.roll && /(?:No persistent change is confirmed|The declaration is recorded without granting|RESULT\s*:\s*FAILURE)/i.test(narration);
 
-    if (!result.roll && (deterministicFallback || stalledNoRoll) && freeMovementDeclaration(action) && !combatActive(beforeState) && !locationChanged && !timeChanged) {
+    if (!result.roll && (deterministicFallback || stalledNoRoll) && isFreeMovementDeclaration(action) && !combatActive(beforeState) && !locationChanged && !timeChanged) {
       const nextLocation = transitLocation(beforeLocation, action);
       const nextTime = Math.max(0, Number(snapshot.gameState.campaignTimeMinutes || beforeState?.campaignTimeMinutes || 0)) + 5;
       narration = movementFallbackNarration(beforeLocation, nextLocation, action);

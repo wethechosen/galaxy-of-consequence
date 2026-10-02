@@ -1,5 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
 import { rollSagaCheck, type SagaCheckPlan } from "./saga-dice";
+import { isExplicitAttackDeclaration } from "./gpt-turn-intent";
 
 type RecordValue = Record<string, unknown>;
 type Roller = (min: number, max: number) => number;
@@ -49,7 +50,7 @@ export function activeCombat(state: RecordValue): SagaCombatState | null {
 }
 
 export function isAttackDeclaration(action: string) {
-  return /\b(?:punch|kick|strike|attack|hit|shoot|fire|stab|slash|lunge)\b/i.test(action);
+  return isExplicitAttackDeclaration(action);
 }
 
 export function isEndTurnDeclaration(action: string) {

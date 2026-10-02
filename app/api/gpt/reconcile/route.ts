@@ -10,15 +10,20 @@ const allowed = new Set([
   "experience",
   "health",
   "credits",
+  "creditsCriminal",
   "location",
   "inventory",
+  "objectives",
   "combat",
   "conditionTrack",
+  "campaignTimeMinutes",
+  "lastNarration",
 ]);
 
 function validatePatch(value: unknown): value is ReconciliationPatch {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  return Object.keys(value as Record<string, unknown>).every((key) => allowed.has(key));
+  const keys = Object.keys(value as Record<string, unknown>);
+  return keys.length > 0 && keys.every((key) => allowed.has(key));
 }
 
 export async function POST(request: Request) {
@@ -38,7 +43,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          "expectedRevision and a strict reconciliation patch are required. Supported fields: level, experience, health, credits, location, inventory, combat, conditionTrack.",
+          "expectedRevision and a non-empty strict reconciliation patch are required. Supported fields: level, experience, health, credits, creditsCriminal, location, inventory, objectives, combat, conditionTrack, campaignTimeMinutes, lastNarration.",
       },
       { status: 400 },
     );
@@ -60,7 +65,7 @@ export async function POST(request: Request) {
       initiativeGenerated: false,
       instruction:
         "This was an administrative state correction only. Do not narrate it as an in-world event and do not infer any additional changes.",
-    });
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("[api/gpt/reconcile] failed", error);
     return controllerError(error, "Unable to reconcile campaign state.");
