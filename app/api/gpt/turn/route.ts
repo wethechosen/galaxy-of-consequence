@@ -39,11 +39,6 @@ function replayResponse(hosted: Awaited<ReturnType<typeof hostedGet>>, turnId: s
   };
 }
 
-function combatActive(state: RecordValue | null | undefined) {
-  const combat = state?.combat;
-  return Boolean(combat && typeof combat === "object" && (combat as RecordValue).status === "active");
-}
-
 function anchorNarrationLocation(narration: string, location: string) {
   if (!location) return narration;
   let next = narration;

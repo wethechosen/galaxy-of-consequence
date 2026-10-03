@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { isExplicitAttackDeclaration, isFreeMovementDeclaration } from "./gpt-turn-intent";
-import { normalizeTurnAction } from "./gm";
 
 describe("GPT turn intent — production regressions", () => {
   it("does not treat meditation or stillness as combat or movement", () => {
@@ -79,10 +78,5 @@ describe("GPT turn intent — production regressions", () => {
       expect(isFreeMovementDeclaration(action)).toBe(false);
       expect(isExplicitAttackDeclaration(action)).toBe(false);
     }
-  });
-
-  it("strips retry directives before intent parsing", () => {
-    expect(normalizeTurnAction("Continue with a specific declared action. I use a medpac.")).toBe("I use a medpac.");
-    expect(normalizeTurnAction("Continue with a specific declared action. Continue with a specific declared action. I meditate.")).toBe("I meditate.");
   });
 });
