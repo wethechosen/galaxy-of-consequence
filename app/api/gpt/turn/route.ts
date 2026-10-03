@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { GptActionError, authenticateGptAction, readGptActionBody } from "@/lib/gpt-action";
 import { runGmTurn, GmTurnError } from "@/lib/gm";
 import { hostedGet, hostedPersistenceEnabled, hydrateHostedSave, saveHostedResult } from "@/lib/hosted-bridge";
-import { isFreeMovementDeclaration } from "@/lib/gpt-turn-intent";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,24 +42,6 @@ function replayResponse(hosted: Awaited<ReturnType<typeof hostedGet>>, turnId: s
 function combatActive(state: RecordValue | null | undefined) {
   const combat = state?.combat;
   return Boolean(combat && typeof combat === "object" && (combat as RecordValue).status === "active");
-}
-
-function transitLocation(current: string, action: string) {
-  const place = current.trim() || "Current route";
-  const lower = action.toLowerCase();
-  if (/\b(?:deeper|descend|descending|lower|down|below|beneath)\b/.test(lower)) {
-    if (/lower substructure route beyond unit 4-b/i.test(place)) return "Coruscant — deeper lower-city substructure";
-    if (/unit 4-b|concealed bunker/i.test(place)) return "Coruscant — lower substructure route beyond Unit 4-B";
-    if (/deeper lower-city substructure/i.test(place)) return place;
-    return `${place} — deeper access route`;
-  }
-  if (/\b(?:leave|leaving|exit|outbound|away)\b/.test(lower)) return `${place} — outbound access route`;
-  if (/\b(?:climb|ascending|upward|up)\b/.test(lower)) return `${place} — ascending access route`;
-  return `${place} — transit route`;
-}
-
-function movementFallbackNarration(from: string, to: string, action: string) {
-  return `## SCENE\n**Location:** ${to}\n\nYou leave the exact point recorded at ${from || "the prior location"} and continue only as far as the accessible route in front of you allows. Service lighting breaks across worn durasteel and old utility housings while the low vibration of buried Coruscant infrastructure carries through the floor. The movement is real, but the destination you are pursuing is not treated as discovered merely because you intend to reach it.\n\nThe route carries you one scene-length increment farther. Nothing here confirms a hidden vergence, secret chamber, or other player-assumed destination; those facts still have to emerge from the world through play. Your declared movement is preserved without inventing an arrival or forcing another decision.\n\n## GM RESOLUTION\nNo Saga check is required for this increment of ordinary movement. The declared travel advances one step; no hidden destination is confirmed.\n\n## STATE UPDATE\nLocation advances to ${to}. Campaign time advances by 5 minutes.\n\n## PLAYER OPTIONS\nA. Examine the immediate route and nearby access points.\nB. Continue moving in the same general direction.\nC. Stop and listen or observe before proceeding.\nYou may declare another action.`;
 }
 
 function anchorNarrationLocation(narration: string, location: string) {
@@ -123,27 +104,9 @@ export async function POST(request: Request) {
     const result = await runGmTurn(actor, { accountId: actor.id, revision, action, turnId });
     let snapshot = result.snapshot;
     let narration = result.narration;
-    let recoveredMovement = false;
 
     const beforeState = hostedBefore?.snapshot?.gameState as RecordValue | undefined;
     const beforeLocation = String(beforeState?.location || snapshot.gameState.location || "");
-    const locationChanged = beforeState ? String(snapshot.gameState.location || "") !== String(beforeState.location || "") : false;
-    const timeChanged = beforeState ? Number(snapshot.gameState.campaignTimeMinutes || 0) !== Number(beforeState.campaignTimeMinutes || 0) : false;
-    const deterministicFallback = Boolean(result.fallbackReason || result.provider === "local-safe-fallback");
-    const stalledNoRoll = !result.roll && /(?:No persistent change is confirmed|The declaration is recorded without granting|RESULT\s*:\s*FAILURE)/i.test(narration);
-
-    if (!result.roll && (deterministicFallback || stalledNoRoll) && isFreeMovementDeclaration(action) && !combatActive(beforeState) && !locationChanged && !timeChanged) {
-      const nextLocation = transitLocation(beforeLocation, action);
-      const nextTime = Math.max(0, Number(snapshot.gameState.campaignTimeMinutes || beforeState?.campaignTimeMinutes || 0)) + 5;
-      narration = movementFallbackNarration(beforeLocation, nextLocation, action);
-      snapshot = {
-        ...snapshot,
-        gameState: { ...snapshot.gameState, location: nextLocation, campaignTimeMinutes: nextTime },
-      };
-      snapshot = { ...snapshot, messages: rewriteAssistantMessage(snapshot as unknown as RecordValue, turnId, narration) };
-      recoveredMovement = true;
-    }
-
     const authoritativeLocation = String(snapshot.gameState.location || beforeLocation || "");
     const anchored = anchorNarrationLocation(narration, authoritativeLocation);
     if (anchored !== narration) {
@@ -157,8 +120,6 @@ export async function POST(request: Request) {
       turnId,
       provider: result.provider,
       fallbackReason: result.fallbackReason || null,
-      stalledNoRoll,
-      recoveredMovement,
       location: state.location,
       revision: result.revision,
     });
@@ -170,7 +131,6 @@ export async function POST(request: Request) {
       roll: result.roll,
       provider: result.provider,
       fallbackReason: result.fallbackReason || null,
-      movementRecovery: recoveredMovement,
       hud: {
         level: snapshot.character?.level || 1,
         experience: snapshot.character?.experience || 0,
