@@ -1,5 +1,6 @@
 import type { SagaCheckPlan } from "./saga-dice";
 import { activeCombat } from "./saga-combat";
+import { positiveActionText } from "./action-intent";
 
 type RecordValue = Record<string, unknown>;
 const ABILITY_KEYS = { strength: "STR", dexterity: "DEX", constitution: "CON", intelligence: "INT", wisdom: "WIS", charisma: "CHA" } as const;
@@ -38,13 +39,21 @@ function basePlan(character: RecordValue, label: string, ability: Ability, targe
 
 /** Plans only common, deterministic Saga Edition checks. The GM narrates; it never chooses the die or modifier. */
 export function planSagaAction(action: string, character: RecordValue, state: RecordValue): SagaCheckPlan | null {
-  const lower = action.trim().toLowerCase();
+  const lower = positiveActionText(action).toLowerCase();
   if (!lower || /^\s*\[\[/.test(lower) || /^(?:i\s+)?(?:say|tell|ask|answer|wait|rest|sleep|read|remember|recall)\b/.test(lower)) return null;
   const skill = (label: string, ability: Ability, target: number, reason: string, stakes: string) => basePlan(character, label, ability, target, reason, stakes);
   if (hasWord(lower, /\binitiative\b|\bdraw first\b|\breact first\b/)) {
     const plan = skill("Initiative", "dexterity", 15, "Determine acting order when timing is contested.", "The result establishes the player's place in the encounter order.");
     plan.kind = "initiative";
     return plan;
+  }
+  const pursuitVerb = /\b(?:follow(?:s|ed|ing)?|trace(?:s|d|ing)?|track(?:s|ed|ing)?|pursu(?:e|es|ed|ing)|seek(?:s|ing)?|search(?:es|ed|ing)?(?:\s+for)?|locat(?:e|es|ed|ing)|find(?:s|ing)?)\b/;
+  const forceLead = /\b(?:pressure|pull|call|vergence|dark[ -]side|force|sith|jedi temple|temple|shrine)\b/;
+  if ((pursuitVerb.test(lower) && forceLead.test(lower)) || /\b(?:pressure|pull|call)\b[^.]{0,80}\b(?:deeper|below|beneath|source)\b/.test(lower)) {
+    if (isTrained(character, "Use the Force")) {
+      return skill("Use the Force", "charisma", 15, "Follow an established Force impression without assuming its source or destination.", "Success identifies one actionable direction or corroborating impression; failure reaches a concrete obstruction or misleading current without confirming the hidden destination.");
+    }
+    return skill("Perception", "wisdom", 15, "Follow physical disturbances and involuntary intuition while searching for a suspected Force-related site.", "Success identifies one actionable route or physical corroboration; failure reaches a concrete obstacle, false lead, or exposure without confirming the hidden destination.");
   }
   if (hasWord(lower, /\buse the force\b|\bforce push\b|\bforce pull\b|\bmove\b.*\bforce\b|\bsense\b.*\bforce\b/)) {
     if (!isTrained(character, "Use the Force")) return null;

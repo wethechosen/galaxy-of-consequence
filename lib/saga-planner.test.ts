@@ -33,6 +33,20 @@ describe("planSagaAction", () => {
     expect(planSagaAction("I rush to his computer console and withdraw all available credits", dmir, { location: "Level 1313 detention library" })).toMatchObject({ label: "Mechanics", target: 20 });
   });
   it("does not grant untrained Use the Force", () => expect(planSagaAction("I use the Force to open it", dmir, {})).toBeNull());
+  it("adjudicates pursuit of the suspected vergence without blocking an untrained Force-sensitive character", () => {
+    expect(planSagaAction("I follow the pressure toward the ancient Sith vergence beneath the Jedi Temple", { ...dmir, forceSensitive: "Yes" }, {})).toMatchObject({
+      label: "Perception",
+      target: 15,
+      reason: expect.stringMatching(/involuntary intuition/i),
+    });
+  });
+  it("uses trained Use the Force when the character has actually earned it", () => {
+    expect(planSagaAction("I trace the dark-side pull toward its source", { ...dmir, trainedSkills: ["Use the Force"] }, {})).toMatchObject({
+      label: "Use the Force",
+      modifier: 5,
+      target: 15,
+    });
+  });
   it("plans a Treat Injury check when the player uses a medpac", () => expect(planSagaAction("I use a medpac", dmir, {})).toMatchObject({ label: "Treat Injury", kind: "skill", target: 15 }));
   it("does not turn backstory narration into a mechanical check", () => {
     const background = "My background: I was born on Coruscant. My father trained me when I was young, and my mother came from Hapes. I remember prison and the people who mentored me, but I am explaining history rather than attempting an action.";

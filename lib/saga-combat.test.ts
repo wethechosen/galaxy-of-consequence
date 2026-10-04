@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { beginCombat, endPlayerTurn, resolvePlayerAttack, spendPlayerMove, type SagaCombatState } from "./saga-combat";
+import { beginCombat, endPlayerTurn, isCombatMovementDeclaration, isEndTurnDeclaration, resolvePlayerAttack, spendPlayerMove, type SagaCombatState } from "./saga-combat";
 
 const character = {
   name: "D'mir Holloran", level: 1,
@@ -24,6 +24,22 @@ function activeFixture(): SagaCombatState {
     ],
   };
 }
+
+describe("Saga combat intent normalization", () => {
+  it("recognizes player and controller phrasing for ending a turn", () => {
+    expect(isEndTurnDeclaration("I end my turn")).toBe(true);
+    expect(isEndTurnDeclaration("D'mir ends his turn without taking further actions.")).toBe(true);
+    expect(isEndTurnDeclaration("continue")).toBe(true);
+    expect(isEndTurnDeclaration("I continue aiming at the guard")).toBe(false);
+  });
+
+  it("recognizes controller-rewritten move declarations", () => {
+    expect(isCombatMovementDeclaration("I take cover")).toBe(true);
+    expect(isCombatMovementDeclaration("D'mir moves into melee range with the guard.")).toBe(true);
+    expect(isCombatMovementDeclaration("D'mir uses his remaining Move action to take the best available cover from the guard.")).toBe(true);
+    expect(isCombatMovementDeclaration("D'mir studies the cover without moving.")).toBe(false);
+  });
+});
 
 describe("Saga combat authority", () => {
   it("establishes initiative and leaves the opening attack unresolved when the player wins", () => {

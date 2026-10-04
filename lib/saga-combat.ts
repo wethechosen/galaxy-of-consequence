@@ -1,6 +1,7 @@
 import { randomInt, randomUUID } from "node:crypto";
 import { rollSagaCheck, type SagaCheckPlan } from "./saga-dice";
 import { isExplicitAttackDeclaration } from "./gpt-turn-intent";
+import { positiveActionText } from "./action-intent";
 
 type RecordValue = Record<string, unknown>;
 type Roller = (min: number, max: number) => number;
@@ -54,11 +55,17 @@ export function isAttackDeclaration(action: string) {
 }
 
 export function isEndTurnDeclaration(action: string) {
-  return /^(?:i\s+)?(?:end|finish)\s+(?:my\s+)?turn\b/i.test(action.trim());
+  const clean = positiveActionText(action);
+  if (/^(?:continue|proceed|next|next turn|continue combat)$/i.test(clean)) return true;
+  return /\b(?:end|ends|finish|finishes|pass|passes)\s+(?:(?:my|his|her|their|the)\s+)?turn\b/i.test(clean);
 }
 
 export function isCombatMovementDeclaration(action: string) {
-  return /^(?:i\s+)?(?:move|advance|retreat|withdraw|step|cross|take cover|stand up)\b/i.test(action.trim());
+  const clean = positiveActionText(action);
+  if (/^(?:i\s+)?(?:move|advance|retreat|withdraw|step|cross|take cover|stand up)\b/i.test(clean)) return true;
+  if (/^d(?:'|\u2019)?mir\b/i.test(clean) && /\b(?:move|moves|advance|advances|retreat|retreats|withdraw|withdraws|step|steps|cross|crosses|stand|stands)\b/i.test(clean)) return true;
+  if (/\bmove action\b/i.test(clean) && /\b(?:move|advance|retreat|withdraw|step|cross|stand|take)\b/i.test(clean)) return true;
+  return /\btake(?:s)?\b[^.]{0,80}\bcover\b/i.test(clean);
 }
 
 export function combatTargetName(action: string) {

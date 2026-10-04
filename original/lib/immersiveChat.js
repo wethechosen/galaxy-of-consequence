@@ -61,12 +61,12 @@ export function summarizeStateUpdate(value = "") {
   ].filter(Boolean);
 }
 
-const SECTION = /^(?:#{1,4}\s*)?(SCENE|GM RESOLUTION|RESOLUTION|OUTCOME|STATE UPDATE|CONSEQUENCES|PLAYER OPTIONS|POSSIBLE APPROACHES)\s*:?[ \t]*$/i;
+const SECTION = /^(?:#{1,4}\s*)?(LOCATION|SCENE|GM ADJUDICATION|GM RESOLUTION|RESOLUTION|GAMEPLAY RESULT|GAMEPLAY|OUTCOME|SAGA CHECK|DICE|STATE UPDATE|CONSEQUENCES|PLAYER OPTIONS|POSSIBLE APPROACHES|SUGGESTIONS)\s*:?[ \t]*$/i;
 
 export function parseImmersiveMessage(content = "") {
   const cleaned = cleanPlayerMessage(content);
   const lines = cleaned.split(/\r?\n/);
-  const buckets = { scene: [], resolution: [], state: [], options: [] };
+  const buckets = { location: [], scene: [], adjudication: [], gameplay: [], dice: [], state: [], options: [] };
   let section = null;
   let structured = false;
 
@@ -76,13 +76,29 @@ export function parseImmersiveMessage(content = "") {
     if (match) {
       structured = true;
       const heading = match[1].toUpperCase();
-      section = heading === "SCENE" ? "scene" : heading === "GM RESOLUTION" || heading === "RESOLUTION" || heading === "OUTCOME" ? "resolution" : heading === "STATE UPDATE" || heading === "CONSEQUENCES" ? "state" : "options";
+      section = heading === "LOCATION" ? "location"
+        : heading === "SCENE" ? "scene"
+          : heading === "GM ADJUDICATION" || heading === "GM RESOLUTION" || heading === "RESOLUTION" ? "adjudication"
+            : heading === "GAMEPLAY RESULT" || heading === "GAMEPLAY" || heading === "OUTCOME" ? "gameplay"
+              : heading === "SAGA CHECK" || heading === "DICE" ? "dice"
+                : heading === "STATE UPDATE" || heading === "CONSEQUENCES" ? "state"
+                  : "options";
       continue;
     }
     if (section) buckets[section].push(rawLine);
   }
 
-  if (!structured) return { structured: false, text: cleaned, scene: "", resolution: "", consequences: [], options: [] };
+  if (!structured) return { structured: false, text: cleaned, location: "", scene: "", adjudication: "", gameplay: "", dice: "", resolution: "", consequences: [], options: [] };
+
+  let scene = cleanPlayerMessage(buckets.scene.join("\n"));
+  let location = cleanPlayerMessage(buckets.location.join("\n"));
+  if (!location) {
+    const inlineLocation = scene.match(/^\*{0,2}Location:\*{0,2}\s*(.+)$/im);
+    if (inlineLocation) {
+      location = cleanPlayerMessage(inlineLocation[1]);
+      scene = scene.replace(inlineLocation[0], "").replace(/^\s+/, "");
+    }
+  }
 
   const optionLines = buckets.options.map((line) => line.trim()).filter(Boolean);
   const options = optionLines.slice(0, 4).map((line, index) => {
@@ -93,8 +109,13 @@ export function parseImmersiveMessage(content = "") {
   return {
     structured: true,
     text: cleaned,
-    scene: cleanPlayerMessage(buckets.scene.join("\n")),
-    resolution: cleanPlayerMessage(buckets.resolution.join("\n")),
+    location,
+    scene,
+    adjudication: cleanPlayerMessage(buckets.adjudication.join("\n")),
+    gameplay: cleanPlayerMessage(buckets.gameplay.join("\n")),
+    dice: cleanPlayerMessage(buckets.dice.join("\n")),
+    // Legacy consumer alias while saved four-section turns remain in history.
+    resolution: cleanPlayerMessage(buckets.adjudication.join("\n")),
     consequences: summarizeStateUpdate(buckets.state.join("\n")),
     options,
   };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attachRepairedLedger, appendTurnEvent, assertCampaignResponseStructure, assertMaterialAuthority, assertMechanicalNarration, assertNarrativeAuthority, assertNarrativeFocus, assertNarrativeLedgerConsistency, assertStoryDirectiveAuthority, authorityWarnings, buildLocalSafeFallback, constrainExperienceAward, constrainFailedCheckDelta, deriveExperienceAward, GM_SYSTEM, normalizePlayerOptions, normalizeTurnAction, sanitizeGmNarration } from "./gm";
+import { attachRepairedLedger, appendTurnEvent, assertCampaignResponseStructure, assertFreshScene, assertMaterialAuthority, assertMechanicalNarration, assertMovementSceneProgress, assertNarrativeAuthority, assertNarrativeFocus, assertNarrativeLedgerConsistency, assertStoryDirectiveAuthority, authorityWarnings, buildLocalSafeFallback, constrainExperienceAward, constrainFailedCheckDelta, deriveExperienceAward, extractSceneNarration, GM_SYSTEM, normalizePlayerOptions, normalizeTurnAction, safeMessages, sanitizeGmNarration, sceneSimilarity, withSceneFrame } from "./gm";
 import { parseEngineResponse } from "@/original/lib/engineState";
 
 describe("authoritative Saga narration", () => {
@@ -19,11 +19,11 @@ describe("authoritative Saga narration", () => {
   });
 
   it("requires the complete GM response contract in order", () => {
-    const valid = "SCENE\nImmediate situation.\nGM RESOLUTION\nNo check.\nSTATE UPDATE\nNo change.\nPLAYER OPTIONS\nA. Observe the hatch.\nB. Secure the room.\nC. Study the controls.\nD. Withdraw to cover.\nYou may declare another action.";
+    const valid = "LOCATION\nCoruscant — lower-city substructure\nSCENE\nImmediate situation.\nGM ADJUDICATION\nThe declared attempt is valid.\nGAMEPLAY RESULT\nThe world answers the attempt.\nSAGA CHECK\nNo check required.\nSTATE UPDATE\nNo persistent change.\nPLAYER OPTIONS\nA. Observe the hatch.\nB. Secure the room.\nC. Study the controls.\nD. Withdraw to cover.\nYou may declare another action.";
     expect(() => assertCampaignResponseStructure(valid)).not.toThrow();
-    expect(() => assertCampaignResponseStructure("SCENE\nText\nSTATE UPDATE\nNone\nPLAYER OPTIONS\nAct")).toThrow(/GM RESOLUTION/);
-    expect(() => assertCampaignResponseStructure("GM RESOLUTION\nNone\nSCENE\nText\nSTATE UPDATE\nNone\nPLAYER OPTIONS\nAct")).toThrow(/GM RESOLUTION/);
-    expect(() => assertCampaignResponseStructure("SCENE\nText\nGM RESOLUTION\nNone\nSTATE UPDATE\nNone\nPLAYER OPTIONS\nA. Act.\nYou may declare another action.")).toThrow(/2–4 alphabetical/);
+    expect(() => assertCampaignResponseStructure("LOCATION\nHere\nSCENE\nText\nSTATE UPDATE\nNone\nPLAYER OPTIONS\nAct")).toThrow(/GM ADJUDICATION/);
+    expect(() => assertCampaignResponseStructure("GM ADJUDICATION\nNone\nLOCATION\nHere\nSCENE\nText\nGAMEPLAY RESULT\nNone\nSAGA CHECK\nNone\nSTATE UPDATE\nNone\nPLAYER OPTIONS\nAct")).toThrow(/GM ADJUDICATION/);
+    expect(() => assertCampaignResponseStructure("LOCATION\nHere\nSCENE\nText\nGM ADJUDICATION\nAttempt.\nGAMEPLAY RESULT\nResult.\nSAGA CHECK\nNone.\nSTATE UPDATE\nNone\nPLAYER OPTIONS\nA. Act.\nYou may declare another action.")).toThrow(/2–4 alphabetical/);
     expect(() => assertCampaignResponseStructure(`${valid}\nWhat do you do?`)).toThrow(/neutral option contract/);
   });
 
@@ -58,7 +58,7 @@ describe("authoritative Saga narration", () => {
     expect(response.content).toContain("RESULT: SUCCESS");
     expect(response.content).not.toMatch(/NVIDIA|provider|quota|API/i);
     const parsed = parseEngineResponse(response.content, { requireState: true });
-    expect(parsed.delta).toEqual({});
+    expect(parsed.delta).toEqual({ timeAdvanceMinutes: 5 });
     expect(() => assertCampaignResponseStructure(parsed.clean)).not.toThrow();
     expect(() => assertMechanicalNarration(parsed.clean, { outcome: "success" })).not.toThrow();
   });
@@ -66,8 +66,62 @@ describe("authoritative Saga narration", () => {
   it("never grants an unverified result when fallback play has no check", () => {
     const response = buildLocalSafeFallback({ mode: "play", action: "I wait and listen", location: "A concealed bunker", roll: null });
     const parsed = parseEngineResponse(response.content, { requireState: true });
-    expect(parsed.delta).toEqual({});
-    expect(parsed.clean).toContain("No persistent change is confirmed.");
+    expect(parsed.delta).toEqual({ timeAdvanceMinutes: 5 });
+    expect(parsed.clean).toContain("Time advances 5 minutes");
+  });
+
+  it("makes deterministic narration react differently to different actions", () => {
+    const meditation = buildLocalSafeFallback({ mode: "play", action: "I meditate without moving", location: "Coruscant — lower-city transit route", roll: null }).content;
+    const movement = buildLocalSafeFallback({ mode: "play", action: "I follow the pressure", location: "Coruscant — lower-city transit route", roll: null }).content;
+    const waiting = buildLocalSafeFallback({ mode: "play", action: "I end my turn", location: "Coruscant — lower-city transit route", roll: null }).content;
+    expect(meditation).toMatch(/hold your position and narrow your attention/i);
+    expect(movement).toMatch(/maintenance junction/i);
+    expect(waiting).toMatch(/ventilation cycle/i);
+    expect(new Set([extractSceneNarration(meditation), extractSceneNarration(movement), extractSceneNarration(waiting)]).size).toBe(3);
+    expect(`${meditation}${movement}${waiting}`).not.toMatch(/\bthe player\b/i);
+  });
+
+  it("rejects copied scene prose and accepts a genuinely new beat", () => {
+    const prior = "Old conduits crowd the left wall while service lights flicker over the damp deck.\n\nA low vibration passes through the floor and fades toward the eastern passage.";
+    const copied = `SCENE\n${prior}\nGM RESOLUTION\nNo check.\nSTATE UPDATE\nNone.\nPLAYER OPTIONS\nA. Wait.\nB. Listen.\nYou may declare another action.`;
+    const fresh = "SCENE\nYou reach a three-way maintenance junction. A recessed service door faces two offset passages, and the vibration is strongest beneath the left-hand threshold.\n\nA cart wheel turns slowly in the airflow, marking a current from the darker branch.\nGM RESOLUTION\nNo check.\nSTATE UPDATE\nPosition advanced.\nPLAYER OPTIONS\nA. Inspect the door.\nB. Compare the passages.\nYou may declare another action.";
+    expect(sceneSimilarity(prior, copied)).toBeGreaterThan(0.7);
+    expect(() => assertFreshScene(copied, prior, "I follow the passage")).toThrow(/repeated the prior scene/);
+    expect(() => assertFreshScene(fresh, prior, "I follow the passage")).not.toThrow();
+  });
+
+  it("requires ordinary movement to reach an observable stopping point", () => {
+    const vague = "SCENE\nYou continue through the same generic corridor. The machinery keeps humming around you.\nGM RESOLUTION\nNo check.\nSTATE UPDATE\nFive minutes pass.\nPLAYER OPTIONS\nA. Continue.\nB. Wait.\nYou may declare another action.";
+    const concrete = "SCENE\nYou reach a maintenance junction and stop opposite a sealed service door.\nGM RESOLUTION\nNo check.\nSTATE UPDATE\nYour position advances.\nPLAYER OPTIONS\nA. Inspect the door.\nB. Compare the branches.\nYou may declare another action.";
+    expect(() => assertMovementSceneProgress(vague, "I follow the route", null, {}, "Transit route")).toThrow(/observable position/);
+    expect(() => assertMovementSceneProgress(concrete, "I follow the route", null, {}, "Transit route")).not.toThrow();
+    expect(() => assertMovementSceneProgress(vague, "I remain still", null, {}, "Transit route")).not.toThrow();
+  });
+
+  it("stores the current narrated beat and advances route progress only through play", () => {
+    const base = { character: { name: "D'mir Holloran" }, gameState: { location: "Transit route" }, messages: [], comms: [], settings: {} };
+    const first = withSceneFrame(base, "SCENE\nYou reach a junction.\nGM RESOLUTION\nNo check.\nSTATE UPDATE\nPosition advanced.\nPLAYER OPTIONS\nA. Wait.\nB. Listen.\nYou may declare another action.", "I follow the route", null, false, "2026-10-03T00:00:00.000Z");
+    expect(first.gameState.scene).toMatchObject({ beat: 1, routeProgress: 1, action: "I follow the route", location: "Transit route" });
+    const refresh = withSceneFrame(first, "SCENE\nAmber light shows the same junction from a sharper angle.\nGM RESOLUTION\nYou have not acted yet. No time passes.\nSTATE UPDATE\nNothing changes.\nPLAYER OPTIONS\nA. Wait.\nB. Listen.\nYou may declare another action.", "", null, true, "2026-10-03T00:01:00.000Z");
+    expect(refresh.gameState.scene).toMatchObject({ beat: 1, routeProgress: 1, action: "Open scene" });
+  });
+
+  it("sends prior outcomes without replaying old scene prose", () => {
+    const snapshot = {
+      character: { name: "D'mir Holloran" }, gameState: {}, comms: [], settings: {},
+      messages: [
+        { role: "user", content: "I follow the pressure" },
+        { role: "assistant", content: "SCENE\nYou are already in the deeper lower-city substructure. Worn durasteel walls and utility conduits show the scars of age and stress.\nGM RESOLUTION\nNo check.\nSTATE UPDATE\nFive minutes pass.\nPLAYER OPTIONS\nA. Continue.\nB. Wait.\nYou may declare another action." },
+        { role: "user", content: "I inspect the junction" },
+        { role: "assistant", content: "SCENE\nA junction opens ahead.\nGM RESOLUTION\nPerception succeeds.\nSTATE UPDATE\nA service mark is discovered.\nPLAYER OPTIONS\nA. Read it.\nB. Wait.\nYou may declare another action.", provider: "nvidia" },
+      ],
+    };
+    const history = safeMessages(snapshot);
+    expect(history).toHaveLength(2);
+    expect(history[0].content).toBe("I inspect the junction");
+    expect(history[1].content).toContain("Perception succeeds");
+    expect(history[1].content).not.toContain("A junction opens ahead");
+    expect(JSON.stringify(history)).not.toContain("Worn durasteel walls");
   });
 });
 
@@ -75,6 +129,22 @@ describe("GM state authority", () => {
   it("removes rewards, discoveries, inventory, and XP from failed checks", () => {
     const delta = constrainFailedCheckDelta({ credits: 500, inventoryAdd: [{ name: "Datapad", qty: 1 }], discoveryAdd: [{ title: "Cache" }], experienceAward: 200, health: -2 }, { outcome: "failure" });
     expect(delta).toEqual({ health: -2 });
+  });
+
+  it("keeps fail-forward costs and declared movement while stripping failed rewards", () => {
+    const delta = constrainFailedCheckDelta({
+      location: "Foundation bulkhead",
+      timeAdvanceMinutes: 10,
+      objectiveAdd: [{ title: "Find another way through the sealed bulkhead" }],
+      discoveryAdd: [{ title: "Ancient Sith vergence confirmed" }],
+      inventoryAdd: [{ name: "Sith holocron", qty: 1 }],
+      experienceAward: 500,
+    }, { outcome: "failure" }, "I follow the pressure deeper");
+    expect(delta).toEqual({
+      timeAdvanceMinutes: 10,
+      location: "Foundation bulkhead",
+      objectiveAdd: [{ title: "Find another way through the sealed bulkhead" }],
+    });
   });
 
   it("removes XP from ordinary descriptive turns", () => {
@@ -118,6 +188,8 @@ describe("GM state authority", () => {
     expect(GM_SYSTEM).toContain("Never turn a player's speculation into canon");
     expect(GM_SYSTEM).toContain("Never narrate the player's unchosen dialogue");
     expect(GM_SYSTEM).toContain("must never contain level or experience");
+    expect(GM_SYSTEM).toContain("Every understandable declaration is an attempted action");
+    expect(GM_SYSTEM).toContain("ancient dark-side vergence and Sith foundations");
   });
 
   it("limits non-mechanical creator direction to D'mir's own campaign", () => {

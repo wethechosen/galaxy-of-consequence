@@ -13,6 +13,7 @@ import { getEconomicSnapshot, getMarket } from "@/original/lib/marketCatalog";
 import { getSellQuote, getTradeAccess } from "@/original/lib/marketCatalog";
 import { useAuth } from "@/original/lib/AuthContext";
 import { cleanPlayerMessage, immersiveTurnError, parseImmersiveMessage } from "@/original/lib/immersiveChat";
+import { sceneDirections, genericDirections } from "@/original/lib/sceneDirections";
 
 const NAV_GROUPS = [
   { label: "Play", items: [{ key: "play", label: "Play", icon: Radio }] },
@@ -105,15 +106,27 @@ function CreationWizard() {
 
 /* ---------- play ---------- */
 
-function AssistantTurn({ content, onChoose }) {
+function NarrativeText({ text }) {
+  return <div className="space-y-3">{String(text).split(/\n\s*\n/).filter(Boolean).map((paragraph, index) => <p key={index} className="whitespace-pre-wrap">{paragraph.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g).map((part, i) => part.startsWith("**") ? <strong key={i}>{part.slice(2, -2)}</strong> : part.startsWith("*") ? <em key={i}>{part.slice(1, -1)}</em> : part)}</p>)}</div>;
+}
+
+function AssistantTurn({ content, onChoose, current = false, gameState = {}, character = {}, rolls = [] }) {
   const turn = parseImmersiveMessage(content);
-  if (!turn.structured) return <>{turn.text}</>;
+  if (!turn.structured) return <NarrativeText text={turn.text} />;
+  const location = current ? gameState.location : turn.location;
+  const diceText = rolls.length ? rolls.join("\n\n") : turn.dice;
+  const options = current && genericDirections(turn.options)
+    ? sceneDirections({ state: gameState, character, scene: turn.scene }).map((text, index) => ({ label: String.fromCharCode(65 + index), text }))
+    : turn.options;
   return (
     <div className="space-y-4 whitespace-normal">
-      {turn.scene && <section><p className="text-[10px] tracking-[0.2em] text-[#22d3ee] mb-2">CURRENT SCENE</p><p className="whitespace-pre-wrap">{turn.scene}</p></section>}
-      {turn.resolution && <section className="rounded-xl border border-white/10 bg-black/15 px-3 py-3"><p className="text-[10px] tracking-[0.2em] text-[#ff9b50] mb-2">WHAT HAPPENS</p><p className="whitespace-pre-wrap text-[#d8d6d0]">{turn.resolution}</p></section>}
+      {location && <section><p className="text-[10px] tracking-[0.2em] text-[#22d3ee] mb-1">LOCATION</p><p className="text-sm font-semibold text-[#f2f0ea]">{location}</p></section>}
+      {turn.scene && <section><p className="text-[10px] tracking-[0.2em] text-[#22d3ee] mb-2">{current ? "HERE AND NOW" : "SCENE"}</p><NarrativeText text={turn.scene} /></section>}
+      {turn.adjudication && <section className="rounded-xl border border-[#ff9b50]/20 bg-[#ff9b50]/[.035] px-3 py-3"><p className="text-[10px] tracking-[0.2em] text-[#ff9b50] mb-2">GM INPUT</p><NarrativeText text={/the player has not declared an action/i.test(turn.adjudication) ? "You have not acted yet. No time passes." : turn.adjudication} /></section>}
+      {turn.gameplay && <section><p className="text-[10px] tracking-[0.2em] text-[#f472b6] mb-2">GAMEPLAY</p><NarrativeText text={turn.gameplay} /></section>}
+      {diceText && <section className="rounded-xl border border-[#22d3ee]/25 bg-[#22d3ee]/[.04] px-3 py-3 font-mono text-xs"><p className="text-[10px] tracking-[0.2em] text-[#22d3ee] mb-2 flex items-center gap-2"><Dice5 size={14} /> SAGA CHECK</p><NarrativeText text={diceText} /></section>}
       {turn.consequences.length > 0 && <section><p className="text-[10px] tracking-[0.2em] text-[#8b93a3] mb-2">PERSONAL RECORD</p><div className="flex flex-wrap gap-2">{turn.consequences.map((item) => <span key={item} className="rounded-full border border-[#22e5c5]/25 bg-[#22e5c5]/5 px-2.5 py-1 text-[11px] text-[#a8f7e8]">{item}</span>)}</div></section>}
-      {turn.options.length > 0 && <section><p className="text-[10px] tracking-[0.2em] text-[#a78bfa] mb-2">YOUR NEXT MOVE</p><div className="grid gap-2 sm:grid-cols-2">{turn.options.map((option) => <button type="button" key={`${option.label}-${option.text}`} onClick={() => onChoose(option.text)} className="rounded-xl border border-white/10 bg-white/[.025] px-3 py-2 text-left text-xs text-[#d8d6d0] transition hover:border-[#a78bfa]/50 hover:bg-[#a78bfa]/10"><span className="mr-2 font-bold text-[#a78bfa]">{option.label}</span>{option.text}</button>)}</div><p className="mt-2 text-[10px] text-[#737988]">Choose a direction—or declare any other action.</p></section>}
+      {current && options.length > 0 && <section><p className="text-[10px] tracking-[0.2em] text-[#a78bfa] mb-2">SUGGESTED APPROACHES</p><div className="grid gap-2 sm:grid-cols-2">{options.map((option) => <button type="button" key={`${option.label}-${option.text}`} onClick={() => onChoose(option.text)} className="rounded-xl border border-white/10 bg-white/[.025] px-3 py-2 text-left text-xs text-[#d8d6d0] transition hover:border-[#a78bfa]/50 hover:bg-[#a78bfa]/10"><span className="mr-2 font-bold text-[#a78bfa]">{option.label}</span>{option.text}</button>)}</div><p className="mt-2 text-[10px] text-[#737988]">These are possible attempts, not promised outcomes. Declare any other action.</p></section>}
     </div>
   );
 }
@@ -172,6 +185,14 @@ function CombatStatus({ combat }) {
 
 function PlayView() {
   const { messages, sending, input, setInput, handleSend, scrollRef, gameState, character, saveReady, saveError, turnError, retryTurn, sendTurn, resetForNewGame } = useGame();
+  // The newest GM reply is the present moment even if a provider returned plain
+  // prose. Never leave an older structured scene labelled as current.
+  const latestScene = messages.findLastIndex((message) => message.role === "assistant");
+  const rollsForAssistant = (assistantIndex) => {
+    const rolls = [];
+    for (let index = assistantIndex - 1; index >= 0 && messages[index]?.role === "roll"; index -= 1) rolls.unshift(cleanPlayerMessage(messages[index].content));
+    return rolls;
+  };
   async function submitAction() {
     if (/^\/?new game$/i.test(input.trim())) {
       if (!character || !window.confirm(`Restart from the beginning with ${character.name || "this saved character"} at level 1? The current campaign timeline will be reset.`)) return;
@@ -188,15 +209,15 @@ function PlayView() {
       <CombatStatus combat={gameState.combat} />
       <div ref={scrollRef} data-gc-play-transcript className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-6 py-5 space-y-4">
         {messages.length === 0 && !sending && <div className="text-sm text-[#a9adb8]"><p>Your dossier is ready. Open the current scene to begin play.</p><button onClick={() => sendTurn(null)} disabled={!saveReady || Boolean(saveError)} className="gc-btn mt-3 px-4 py-2 text-xs disabled:opacity-40">OPEN STARTING SCENE</button></div>}
-        {messages.map((m, i) => (
+        {messages.map((m, i) => m.role === "roll" ? null : (
           <div key={i} className={`gc-msg-in ${m.role === "user" ? "flex justify-end" : ""}`}>
-            <div className="max-w-2xl px-4 py-3 text-sm leading-relaxed rounded-2xl whitespace-pre-wrap break-words [overflow-wrap:anywhere]"
+            <div className={`${m.role === "assistant" ? "max-w-4xl" : "max-w-2xl"} px-4 py-3 text-sm leading-relaxed rounded-2xl whitespace-pre-wrap break-words [overflow-wrap:anywhere]`}
               style={m.role === "user" ? { background: "linear-gradient(135deg, rgba(255,122,26,.18), rgba(255,61,110,.12))", border: "1px solid rgba(255,122,26,.25)", color: "#f2f0ea" } : m.role === "roll" ? { color: "#d9fbff", background: "linear-gradient(135deg, rgba(34,211,238,.12), rgba(168,85,247,.08))", border: "1px solid rgba(34,211,238,.3)", borderLeft: "3px solid #22d3ee", fontFamily: "monospace", fontSize: "12px" } : { color: "#e7e5df", background: "rgba(255,255,255,.03)", borderLeft: "3px solid var(--force-light)" }}>
-              {m.role === "roll" && <span className="flex items-center gap-2 text-[10px] tracking-[0.18em] text-[#22d3ee] mb-2"><Dice5 size={15} /> SAGA CHECK</span>}
-              {m.role === "assistant" ? <AssistantTurn content={m.content} onChoose={setInput} /> : cleanPlayerMessage(m.content)}
+              {m.role === "assistant" ? <AssistantTurn content={m.content} onChoose={setInput} current={i === latestScene} gameState={gameState} character={character} rolls={rollsForAssistant(i)} /> : cleanPlayerMessage(m.content)}
             </div>
           </div>
         ))}
+        {!sending && messages.length > 0 && <button type="button" onClick={() => sendTurn(null)} disabled={!saveReady || Boolean(saveError) || Boolean(turnError)} className="text-xs text-[#8b93a3] hover:text-[#22d3ee] disabled:opacity-40">Take in the current scene · no time passes</button>}
         {sending && <div className="flex items-center gap-2 text-[#8b93a3] text-[11px] tracking-widest pl-4 gc-dot-bounce">THE GALAXY RESPONDS <span>.</span><span>.</span><span>.</span></div>}
       </div>
       {turnError && <div role="alert" className="flex-shrink-0 mx-4 mb-3 rounded-xl border border-[#e23b3b]/40 bg-[#e23b3b]/5 p-3 text-xs text-[#ff9b9b]"><p className="mb-1 text-[10px] font-bold tracking-[0.18em]">COMLINK STATIC</p><p className="text-[#d8d6d0]">{immersiveTurnError(turnError)}</p><button onClick={retryTurn} disabled={sending || !saveReady || Boolean(saveError)} className="gc-btn mt-2 px-3 py-2 disabled:opacity-40">RETRY SCENE</button></div>}
