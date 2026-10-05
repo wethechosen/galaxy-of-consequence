@@ -1,6 +1,7 @@
 import type { SagaCheckPlan } from "./saga-dice";
 import { activeCombat } from "./saga-combat";
 import { positiveActionText } from "./action-intent";
+import { isExplicitAttackDeclaration } from "./gpt-turn-intent";
 
 type RecordValue = Record<string, unknown>;
 const ABILITY_KEYS = { strength: "STR", dexterity: "DEX", constitution: "CON", intelligence: "INT", wisdom: "WIS", charisma: "CHA" } as const;
@@ -84,7 +85,7 @@ export function planSagaAction(action: string, character: RecordValue, state: Re
   if (hasWord(lower, /\b(?:heal|treat|stabilize|medpac|med[- ]?pack)\b|\bfirst aid\b/)) return skill("Treat Injury", "wisdom", 15, "Provide medical treatment under the current conditions.", "Success provides the rules-appropriate treatment; failure expends time without the benefit.");
   // Keep combat verbs token-aware. A substring match turns words such as
   // "chits" into an attack because they contain "hit".
-  if (hasWord(lower, /\b(?:punch|kick|strike|attack|hit|shoot|fire|stab|slash|lunge)\b/)) {
+  if (isExplicitAttackDeclaration(action)) {
     const ranged = /shoot|fire|blaster|rifle|pistol|bow/.test(lower);
     const bab = Number.isFinite(Number(character.baseAttackBonus)) ? Number(character.baseAttackBonus) : 0;
     const combat = activeCombat(state);

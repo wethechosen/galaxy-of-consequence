@@ -27,6 +27,13 @@ describe("authoritative Saga narration", () => {
     expect(() => assertCampaignResponseStructure(`${valid}\nWhat do you do?`)).toThrow(/neutral option contract/);
   });
 
+  it("rejects empty LOCATION and SCENE sections", () => {
+    const emptyLocation = "LOCATION\n\nSCENE\nImmediate situation.\nGM ADJUDICATION\nThe declared attempt is valid.\nGAMEPLAY RESULT\nThe world answers the attempt.\nSAGA CHECK\nNo check required.\nSTATE UPDATE\nNo persistent change.\nPLAYER OPTIONS\nA. Observe the hatch.\nB. Secure the room.\nYou may declare another action.";
+    const emptyScene = "LOCATION\nCoruscant — lower-city substructure\nSCENE\n\nGM ADJUDICATION\nThe declared attempt is valid.\nGAMEPLAY RESULT\nThe world answers the attempt.\nSAGA CHECK\nNo check required.\nSTATE UPDATE\nNo persistent change.\nPLAYER OPTIONS\nA. Observe the hatch.\nB. Secure the room.\nYou may declare another action.";
+    expect(() => assertCampaignResponseStructure(emptyLocation)).toThrow(/LOCATION/);
+    expect(() => assertCampaignResponseStructure(emptyScene)).toThrow(/SCENE/);
+  });
+
   it("normalizes unlettered or markdown-lettered directions without rejecting the turn", () => {
     const base = "SCENE\nA chamber.\nGM RESOLUTION\nNo check.\nSTATE UPDATE\nNo change.\nPLAYER OPTIONS";
     expect(normalizePlayerOptions(`${base}\n- Listen at the hatch.\n- Inspect the controls.\nWhat do you do?`)).toBe(`${base}\nA. Listen at the hatch.\nB. Inspect the controls.\nYou may declare another action.`);
@@ -81,6 +88,18 @@ describe("authoritative Saga narration", () => {
     expect(`${meditation}${movement}${waiting}`).not.toMatch(/\bthe player\b/i);
   });
 
+  it("does not narrate a negated attack as combat in the deterministic fallback", () => {
+    const response = buildLocalSafeFallback({
+      mode: "play",
+      action: "I do not attack anyone; I meditate in place",
+      location: "Coruscant — lower-city transit route",
+      roll: null,
+    }).content;
+    expect(response).toMatch(/hold your position and narrow your attention/i);
+    expect(response).toMatch(/slow your breathing/i);
+    expect(response).not.toMatch(/your attack begins|declared combat action|target, cover, and distance/i);
+  });
+
   it("rejects copied scene prose and accepts a genuinely new beat", () => {
     const prior = "Old conduits crowd the left wall while service lights flicker over the damp deck.\n\nA low vibration passes through the floor and fades toward the eastern passage.";
     const copied = `SCENE\n${prior}\nGM RESOLUTION\nNo check.\nSTATE UPDATE\nNone.\nPLAYER OPTIONS\nA. Wait.\nB. Listen.\nYou may declare another action.`;
@@ -88,6 +107,11 @@ describe("authoritative Saga narration", () => {
     expect(sceneSimilarity(prior, copied)).toBeGreaterThan(0.7);
     expect(() => assertFreshScene(copied, prior, "I follow the passage")).toThrow(/repeated the prior scene/);
     expect(() => assertFreshScene(fresh, prior, "I follow the passage")).not.toThrow();
+  });
+
+  it("rejects an actionable turn whose SCENE is too thin to establish the fiction", () => {
+    const thin = "LOCATION\nCoruscant — lower-city substructure\nSCENE\nYou stand in a corridor.\nGM ADJUDICATION\nThe movement is allowed.\nGAMEPLAY RESULT\nYou continue.\nSAGA CHECK\nNo check required.\nSTATE UPDATE\nTime advances.\nPLAYER OPTIONS\nA. Continue.\nB. Wait.\nYou may declare another action.";
+    expect(() => assertFreshScene(thin, "", "I follow the pressure deeper")).toThrow(/SCENE|scene/);
   });
 
   it("requires ordinary movement to reach an observable stopping point", () => {
@@ -173,6 +197,21 @@ describe("GM state authority", () => {
       null,
       state,
       character,
+    )).toBe(0);
+  });
+
+  it("does not award XP when a failed check claims a story directive was completed", () => {
+    const state = {
+      objectives: [],
+      milestones: [],
+      decisions: [],
+      storyDirectives: [{ title: "Reach the ancient vergence", status: "active" }],
+    };
+    expect(deriveExperienceAward(
+      { storyDirectiveAdd: [{ title: "Reach the ancient vergence", status: "completed" }] },
+      { outcome: "failure", target: 20 },
+      state,
+      { level: 1, experience: 0 },
     )).toBe(0);
   });
 

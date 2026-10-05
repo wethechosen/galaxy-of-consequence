@@ -27,5 +27,13 @@ describe("GPT turn intent parsing", () => {
   it("can still detect a later affirmative action after a negated one", () => {
     expect(isExplicitAttackDeclaration("I do not shoot the first guard; I attack the second guard with a punch.")).toBe(true);
     expect(isFreeMovementDeclaration("I do not leave through the hatch; I move down the corridor instead.")).toBe(true);
+    expect(isFreeMovementDeclaration("I do not attack the guard, I move down the corridor instead.")).toBe(true);
+    expect(isFreeMovementDeclaration("Without moving the crate, I walk to the hatch.")).toBe(true);
+  });
+
+  it("does not treat object or NPC movement as player travel", () => {
+    expect(isFreeMovementDeclaration("I move the datapad from my pocket and inspect it.")).toBe(false);
+    expect(isFreeMovementDeclaration("D'mir moves the crate away from the hatch.")).toBe(false);
+    expect(isFreeMovementDeclaration("The guard moves toward D'mir.")).toBe(false);
   });
 });

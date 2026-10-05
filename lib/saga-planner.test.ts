@@ -7,9 +7,15 @@ describe("planSagaAction", () => {
   it("does not roll ordinary dialogue", () => expect(planSagaAction("I ask the guard his name", dmir, {})).toBeNull());
   it("plans a prison lock Mechanics check before narration", () => expect(planSagaAction("I try to pick the infirmary lock", dmir, { location: "Imperial prison" })).toMatchObject({ label: "Mechanics", modifier: 1, target: 20, provisional: true }));
   it("starts initiative before resolving an opening attack", () => expect(planSagaAction("I punch the guard", dmir, {})).toMatchObject({ kind: "initiative", modifier: 2, targetVisible: false, damage: null }));
+  it("uses the production attack parser for conjugated declarations", () => {
+    expect(planSagaAction("D'mir punches the guard", dmir, {})).toMatchObject({ kind: "initiative", modifier: 2, targetVisible: false });
+    expect(planSagaAction("He shoots the droid", dmir, {})).toMatchObject({ kind: "initiative", modifier: 2, targetVisible: false });
+    expect(planSagaAction("D'mir attacks the trooper", dmir, {})).toMatchObject({ kind: "initiative", modifier: 2, targetVisible: false });
+  });
   it("plans an attack against hidden Reflex Defense during active combat", () => {
     const combat = { status: "active", combatants: [{ side: "opposition", hp: 12, reflex: 13 }] };
     expect(planSagaAction("I punch the guard", dmir, { combat })).toMatchObject({ kind: "attack", modifier: 1, target: 13, targetVisible: false, damage: { count: 1, sides: 4, modifier: 1 } });
+    expect(planSagaAction("D'mir punches the guard", dmir, { combat })).toMatchObject({ kind: "attack", modifier: 1, target: 13, targetVisible: false });
   });
   it("does not turn movement or cred chits into an attack", () => {
     expect(planSagaAction("I charge toward Kelvek's old office; the cred chits would be there", dmir, {})).toBeNull();

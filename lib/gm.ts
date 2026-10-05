@@ -5,7 +5,7 @@ import { readDatapad, saveAuthoritativeDatapad, type DatapadSnapshot } from "./d
 import { invokeNvidia, NvidiaProviderError, type NvidiaMessage } from "./original-provider";
 import { rollSagaCheck } from "./saga-dice";
 import { planSagaAction } from "./saga-planner";
-import { permitsLocationChange } from "./action-intent";
+import { permitsLocationChange, positiveActionText } from "./action-intent";
 import { sceneDirections, genericDirections } from "@/original/lib/sceneDirections";
 import { applyCharacterDelta, applyEngineDelta, applyExperienceAward, parseEngineResponse } from "@/original/lib/engineState";
 import { ensureCampaignScaffold } from "@/original/lib/campaignState";
@@ -196,7 +196,7 @@ export function buildLocalSafeFallback({ mode, action, location, roll, combatSum
   }
 
   const place = location || "your present location";
-  const lowerAction = action.toLowerCase();
+  const lowerAction = positiveActionText(action).toLowerCase();
   const sceneBeat = Number((state.scene as Record<string, unknown> | undefined)?.beat || 0);
   const textureIndex = createHash("sha256").update(`${sceneBeat}:${action}:${priorScene.slice(-240)}`).digest()[0] % 3;
   const lowerCityTextures = [
@@ -214,7 +214,7 @@ export function buildLocalSafeFallback({ mode, action, location, roll, combatSum
   const isMeditation = /\b(?:meditat\w*|trance|focus inward|center myself|remain seated)\b/i.test(lowerAction);
   const isDevice = /\b(?:terminal|console|datapad|computer|control panel|storage module|interface)\b/i.test(lowerAction);
   const isInvestigation = /\b(?:search|examine|inspect|look|study|listen|scan|check)\b/i.test(lowerAction);
-  const isAttack = /\b(?:fire|shoot|blaster|attack|strike|punch|kick)\b/i.test(lowerAction);
+  const isAttack = isAttackDeclaration(action);
   const isForcePursuit = /\b(?:follow\w*|trace\w*|track\w*|pursu\w*|seek\w*|search\w*|locat\w*|find\w*)\b[^.]{0,120}\b(?:pressure|pull|call|vergence|dark[ -]side|force|sith|jedi temple|temple|shrine)\b|\b(?:pressure|pull|call|vergence|dark[ -]side|force|sith|jedi temple|temple|shrine)\b[^.]{0,120}\b(?:follow\w*|trace\w*|track\w*|pursu\w*|seek\w*|search\w*|locat\w*|find\w*)\b/i.test(lowerAction);
   const isMovement = permitsLocationChange(action);
   const appearanceBeat = visibleCharacterBeat(character, state);
@@ -378,8 +378,13 @@ export function constrainFailedCheckDelta(delta: Record<string, unknown> | null,
   if (typeof delta.conditionTrack === "number" && delta.conditionTrack >= 0) safe.conditionTrack = delta.conditionTrack;
   if (typeof delta.timeAdvanceMinutes === "number" && delta.timeAdvanceMinutes > 0) safe.timeAdvanceMinutes = delta.timeAdvanceMinutes;
   if (delta.location && permitsLocationChange(action)) safe.location = delta.location;
-  for (const field of ["conditionAdd", "decisionAdd", "objectiveAdd", "storyDirectiveAdd"]) {
+  for (const field of ["conditionAdd", "decisionAdd", "objectiveAdd"]) {
     if (Array.isArray(delta[field]) && (delta[field] as unknown[]).length) safe[field] = delta[field];
+  }
+  if (Array.isArray(delta.storyDirectiveAdd)) {
+    const directions = delta.storyDirectiveAdd.filter((entry) => entry && typeof entry === "object"
+      && String((entry as Record<string, unknown>).status || "active").trim().toLocaleLowerCase() !== "completed");
+    if (directions.length) safe.storyDirectiveAdd = directions;
   }
   for (const field of ["credits", "creditsCriminal"]) {
     if (typeof delta[field] === "number" && delta[field] <= 0) safe[field] = delta[field];
@@ -430,7 +435,7 @@ export function deriveExperienceAward(
   state: Record<string, unknown>,
   character: Record<string, unknown>,
 ) {
-  if (!delta) return 0;
+  if (!delta || roll?.outcome === "failure") return 0;
   const level = Math.max(1, Math.min(20, Math.floor(Number(character.level) || 1)));
   const existingMilestones = new Set((Array.isArray(state.milestones) ? state.milestones : []).map((entry) => normalizedKey((entry as Record<string, unknown>)?.title)));
   const existingDecisions = new Set((Array.isArray(state.decisions) ? state.decisions : []).map((entry) => normalizedKey((entry as Record<string, unknown>)?.title)));
@@ -597,7 +602,7 @@ export function assertNarrativeLedgerConsistency(narration: string, delta: Recor
 }
 
 export function assertCampaignResponseStructure(narration: string) {
-  const headings = ["LOCATION", "SCENE", "GM ADJUDICATION", "GAMEPLAY RESULT", "SAGA CHECK", "STATE UPDATE", "PLAYER OPTIONS"];
+  const headings: Array<typeof SECTION_HEADINGS[number]> = ["LOCATION", "SCENE", "GM ADJUDICATION", "GAMEPLAY RESULT", "SAGA CHECK", "STATE UPDATE", "PLAYER OPTIONS"];
   let cursor = -1;
   for (const heading of headings) {
     const match = new RegExp(`^(?:#{1,6}\\s*)?${heading}\\s*$`, "im").exec(narration);
@@ -605,6 +610,11 @@ export function assertCampaignResponseStructure(narration: string) {
       throw new GmTurnError(`The GM response omitted or reordered the ${heading} section. No outcome was saved; retry the turn.`, 502);
     }
     cursor = match.index;
+  }
+  for (const heading of headings) {
+    if (!/[\p{L}\p{N}]/u.test(sectionBody(narration, heading))) {
+      throw new GmTurnError(`The GM response left the ${heading} section empty. Rewrite the same turn with a concrete scene and result.`, 502);
+    }
   }
   const optionsStart = narration.search(/^(?:#{1,6}\s*)?PLAYER OPTIONS\s*$/im);
   const options = narration.slice(optionsStart).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
@@ -699,7 +709,10 @@ function normalizedParagraphs(value: string) {
 
 export function assertFreshScene(narration: string, priorScene: string, action: string) {
   const scene = extractSceneNarration(narration);
-  if (!scene || !priorScene) return;
+  if (!scene || (action && sceneTokens(scene).length < 25)) {
+    throw new GmTurnError("The GM SCENE did not narrate the declared attempt in a concrete setting. Rewrite the same turn with D'mir's visible position, surroundings, and immediate world reaction.", 502);
+  }
+  if (!priorScene) return;
   const priorParagraphs = new Set(normalizedParagraphs(priorScene));
   const repeatsParagraph = normalizedParagraphs(scene).some((paragraph) => priorParagraphs.has(paragraph));
   const similarity = sceneSimilarity(scene, priorScene);

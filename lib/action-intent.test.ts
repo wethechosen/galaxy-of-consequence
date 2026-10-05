@@ -31,6 +31,21 @@ describe("declared intent and current scene", () => {
     }
     expect(permitsLocationChange("I do not follow the pressure; I remain here")).toBe(false);
   });
+  it("authorizes only player travel, not moving an object or an NPC", () => {
+    expect(permitsLocationChange("I move down the corridor toward the hatch.")).toBe(true);
+    expect(permitsLocationChange("D'mir moves into cover.")).toBe(true);
+    expect(permitsLocationChange("I move the datapad from my pocket and inspect it.")).toBe(false);
+    expect(permitsLocationChange("D'mir moves the crate away from the door.")).toBe(false);
+    expect(permitsLocationChange("The guard moves toward me.")).toBe(false);
+    expect(permitsLocationChange("I drive the speeder toward the lift concourse.")).toBe(true);
+  });
+  it("preserves a later affirmative movement after a comma or then clause", () => {
+    expect(permitsLocationChange("I do not attack the guard, I move down the corridor instead.")).toBe(true);
+    expect(permitsLocationChange("Without moving the crate, I walk to the hatch.")).toBe(true);
+    expect(permitsLocationChange("I do not shoot, then I run back toward cover.")).toBe(true);
+    expect(permitsLocationChange("I remain still, then I walk to the service door.")).toBe(true);
+    expect(permitsLocationChange("I move the datapad aside and then walk to the service door.")).toBe(true);
+  });
   it("repairs missing or generic options using the actual scene", () => {
     const body = "SCENE\nThe console display glows.\nGM RESOLUTION\nNo check.\nSTATE UPDATE\nNone.";
     const fixed = ensurePlayerOptions(body, { location: "Control room" }, {});
