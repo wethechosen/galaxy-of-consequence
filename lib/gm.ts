@@ -646,6 +646,27 @@ export function assertCampaignResponseStructure(narration: string) {
   }
 }
 
+/**
+ * A valid turn may have no persistent consequences. Some providers correctly
+ * return an empty hidden ledger (`STATE:{}`) but leave the player-facing
+ * STATE UPDATE section blank. Preserve the authored scene instead of rejecting
+ * the whole turn and falling back to generic prose.
+ */
+export function ensureStateUpdateSection(narration: string, delta: Record<string, unknown> | null) {
+  if (/[\p{L}\p{N}]/u.test(sectionBody(narration, "STATE UPDATE"))) return narration;
+  const heading = /^(?:#{1,6}\s*)?STATE UPDATE\s*$/im.exec(narration);
+  if (!heading) return narration;
+  const bodyStart = heading.index + heading[0].length;
+  const next = /^(?:#{1,6}\s*)?PLAYER OPTIONS\s*$/im.exec(narration.slice(bodyStart));
+  if (!next) return narration;
+  const summary = delta && Object.keys(delta).length
+    ? "The resolved consequences are recorded in D'mir's campaign state."
+    : "No persistent change.";
+  const nextStart = bodyStart + next.index;
+  const prefix = narration.slice(0, bodyStart).trimEnd();
+  return `${prefix}\n${summary}\n\n${narration.slice(nextStart)}`;
+}
+
 /** Option lettering is presentation, not game authority. */
 export function normalizePlayerOptions(narration: string) {
   const heading = /^(?:#{1,6}\s*)?PLAYER OPTIONS\s*$/im.exec(narration);
@@ -967,7 +988,13 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
         candidate = attachRepairedLedger(candidate, repair.content);
         parsed = parseEngineResponse(candidate, { requireState: true });
       }
-      parsed = { ...parsed, clean: alignMechanicalResult(sanitizeGmNarration(parsed.clean), roll) };
+      parsed = {
+        ...parsed,
+        clean: ensureStateUpdateSection(
+          alignMechanicalResult(sanitizeGmNarration(parsed.clean), roll),
+          parsed.delta as Record<string, unknown> | null,
+        ),
+      };
       if (mode === "play") parsed = { ...parsed, clean: ensurePlayerOptions(normalizePlayerOptions(parsed.clean), currentSnapshot.gameState, currentSnapshot.character as Record<string, unknown>, action) };
       if (mode === "play") assertCampaignResponseStructure(parsed.clean);
       if (mode === "play") assertNarrativeFocus(parsed.clean, action);

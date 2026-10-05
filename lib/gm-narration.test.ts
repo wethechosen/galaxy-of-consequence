@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attachRepairedLedger, appendTurnEvent, assertCampaignResponseStructure, assertFreshScene, assertMaterialAuthority, assertMechanicalNarration, assertMovementSceneProgress, assertNarrativeAuthority, assertNarrativeFocus, assertNarrativeLedgerConsistency, assertStoryDirectiveAuthority, authorityWarnings, buildLocalSafeFallback, constrainExperienceAward, constrainFailedCheckDelta, deriveExperienceAward, extractSceneNarration, GM_SYSTEM, normalizePlayerOptions, normalizeTurnAction, safeMessages, sanitizeGmNarration, sceneSimilarity, withSceneFrame } from "./gm";
+import { attachRepairedLedger, appendTurnEvent, assertCampaignResponseStructure, assertFreshScene, assertMaterialAuthority, assertMechanicalNarration, assertMovementSceneProgress, assertNarrativeAuthority, assertNarrativeFocus, assertNarrativeLedgerConsistency, assertStoryDirectiveAuthority, authorityWarnings, buildLocalSafeFallback, constrainExperienceAward, constrainFailedCheckDelta, deriveExperienceAward, ensureStateUpdateSection, extractSceneNarration, GM_SYSTEM, normalizePlayerOptions, normalizeTurnAction, safeMessages, sanitizeGmNarration, sceneSimilarity, withSceneFrame } from "./gm";
 import { parseEngineResponse } from "@/original/lib/engineState";
 
 describe("authoritative Saga narration", () => {
@@ -25,6 +25,14 @@ describe("authoritative Saga narration", () => {
     expect(() => assertCampaignResponseStructure("GM ADJUDICATION\nNone\nLOCATION\nHere\nSCENE\nText\nGAMEPLAY RESULT\nNone\nSAGA CHECK\nNone\nSTATE UPDATE\nNone\nPLAYER OPTIONS\nAct")).toThrow(/GM ADJUDICATION/);
     expect(() => assertCampaignResponseStructure("LOCATION\nHere\nSCENE\nText\nGM ADJUDICATION\nAttempt.\nGAMEPLAY RESULT\nResult.\nSAGA CHECK\nNone.\nSTATE UPDATE\nNone\nPLAYER OPTIONS\nA. Act.\nYou may declare another action.")).toThrow(/2–4 alphabetical/);
     expect(() => assertCampaignResponseStructure(`${valid}\nWhat do you do?`)).toThrow(/neutral option contract/);
+  });
+
+  it("preserves an authored turn when an empty ledger leaves STATE UPDATE blank", () => {
+    const draft = "LOCATION\nCoruscant — lower-city substructure\nSCENE\nThe old stone answers with a pulse beneath D'mir's palm.\nGM ADJUDICATION\nThe attempt is valid.\nGAMEPLAY RESULT\nThe resonance distinguishes the older route from the active conduit.\nSAGA CHECK\nNo check required.\nSTATE UPDATE\n\nPLAYER OPTIONS\nA. Follow the older stonework.\nB. Test the active conduit.\nYou may declare another action.";
+    const repaired = ensureStateUpdateSection(draft, {});
+    expect(repaired).toContain("STATE UPDATE\nNo persistent change.");
+    expect(repaired).toContain("The old stone answers with a pulse");
+    expect(() => assertCampaignResponseStructure(repaired)).not.toThrow();
   });
 
   it("rejects empty LOCATION and SCENE sections", () => {
