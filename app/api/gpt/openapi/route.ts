@@ -63,7 +63,9 @@ const inventoryItem = {
 };
 
 export async function GET(request: Request) {
-  const url = new URL(request.url);
+  // An imported GPT action must follow production releases, not the immutable
+  // deployment hostname from which someone happened to open this schema.
+  const controllerUrl = process.env.GOC_GPT_PUBLIC_BASE_URL || "https://galaxy-local.vercel.app";
   const paths = {
     "/api/gpt/state": {
       get: {
@@ -131,10 +133,10 @@ export async function GET(request: Request) {
     openapi: "3.0.3",
     info: {
       title: "Galaxy of Consequence Custom GPT Controller",
-      version: "2.0.4",
+      version: "2.0.5",
       description: "Authoritative GOC controller: state/HUD/checkpoints/reconciliation are separate from gameplay turns.",
     },
-    servers: [{ url: `${url.protocol}//${url.host}` }],
+    servers: [{ url: controllerUrl }],
     security: [{ bearerAuth: [] }],
     paths,
     components: {

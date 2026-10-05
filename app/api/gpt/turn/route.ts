@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { GptActionError, authenticateGptAction, readGptActionBody } from "@/lib/gpt-action";
-import { runGmTurn, GmTurnError } from "@/lib/gm";
+import { runGmTurn, GmTurnError, normalizeTurnAction } from "@/lib/gm";
 import { hostedGet, hostedPersistenceEnabled, hydrateHostedSave, saveHostedResult } from "@/lib/hosted-bridge";
+import { anchorNarrationLocation, replayedPlayerAction } from "@/lib/gpt-narration";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,11 +18,16 @@ function controlIntent(action: string) {
   return null;
 }
 
-function replayResponse(hosted: Awaited<ReturnType<typeof hostedGet>>, turnId: string) {
+function replayResponse(hosted: Awaited<ReturnType<typeof hostedGet>>, turnId: string, action: string) {
   if (!hosted?.snapshot) return null;
   const messages = Array.isArray(hosted.snapshot.messages) ? hosted.snapshot.messages as Array<Record<string, unknown>> : [];
   const match = [...messages].reverse().find((message) => message.role === "assistant" && message.turnId === turnId);
   if (!match || typeof match.content !== "string") return null;
+  const originalAction = replayedPlayerAction(hosted.snapshot, turnId);
+  if (originalAction === null) return null;
+  if (normalizeTurnAction(originalAction) !== normalizeTurnAction(action)) {
+    throw new GptActionError("This turn identifier was already used for a different action.", 409);
+  }
   const state = hosted.snapshot.gameState;
   return {
     revision: hosted.revision, turnId, narration: match.content, roll: null,
@@ -37,19 +43,6 @@ function replayResponse(hosted: Awaited<ReturnType<typeof hostedGet>>, turnId: s
     },
     state: { location: state.location, health: state.health, conditionTrack: state.conditionTrack, credits: state.credits, inventory: state.inventory, objectives: state.objectives, combat: state.combat },
   };
-}
-
-function anchorNarrationLocation(narration: string, location: string) {
-  if (!location) return narration;
-  let next = narration;
-  if (!/level 1313/i.test(location)) {
-    next = next.replace(/^At\s+Coruscant\s*[—-]\s*Level\s*1313\s*[,.:]?/im, `At ${location},`);
-  }
-  const scene = /^(?:#{1,6}\s*)?SCENE\s*$/im.exec(next);
-  if (!scene) return next;
-  const after = next.slice(scene.index + scene[0].length, scene.index + scene[0].length + 320);
-  if (after.includes(location)) return next;
-  return `${next.slice(0, scene.index + scene[0].length)}\n**Location:** ${location}${next.slice(scene.index + scene[0].length)}`;
 }
 
 function rewriteAssistantMessage(snapshot: RecordValue, turnId: string, narration: string) {
@@ -89,7 +82,7 @@ export async function POST(request: Request) {
       hostedBefore = await hostedGet(actor.username);
       if (!hostedBefore?.snapshot) throw new GptActionError("No campaign is initialized for the configured action account.", 409);
       if (hostedBefore.revision !== revision) {
-        const replay = replayResponse(hostedBefore, turnId);
+        const replay = replayResponse(hostedBefore, turnId, action);
         if (replay) return NextResponse.json(replay, { headers: { "Cache-Control": "no-store" } });
         throw new GptActionError("The campaign changed. Reload state and submit the action again.", 409);
       }
