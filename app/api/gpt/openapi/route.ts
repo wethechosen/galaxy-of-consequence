@@ -67,6 +67,15 @@ export async function GET(request: Request) {
   // deployment hostname from which someone happened to open this schema.
   const controllerUrl = process.env.GOC_GPT_PUBLIC_BASE_URL || "https://galaxy-local.vercel.app";
   const paths = {
+    "/api/gpt/ping": {
+      get: {
+        operationId: "pingCampaignService",
+        summary: "Verify the campaign controller is reachable",
+        description: "Public, read-only health check. Returns no campaign or account data and never advances gameplay.",
+        security: [],
+        responses: { "200": jsonResponse("Controller is reachable") },
+      },
+    },
     "/api/gpt/state": {
       get: {
         operationId: "getCampaignState",
@@ -133,7 +142,7 @@ export async function GET(request: Request) {
     openapi: "3.1.0",
     info: {
       title: "Galaxy of Consequence Custom GPT Controller",
-      version: "2.0.5",
+      version: "2.0.6",
       description: "Authoritative GOC controller: state/HUD/checkpoints/reconciliation are separate from gameplay turns.",
     },
     servers: [{ url: controllerUrl }],

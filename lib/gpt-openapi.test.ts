@@ -11,6 +11,8 @@ describe("Custom GPT deployment routing", () => {
     expect(schema.openapi).toBe("3.1.0");
     expect(schema.servers).toEqual([{ url: "https://galaxy-local.vercel.app" }]);
     expect(schema.paths["/api/gpt/turn"].post.operationId).toBe("submitPlayerAction");
+    expect(schema.paths["/api/gpt/ping"].get.operationId).toBe("pingCampaignService");
+    expect(schema.paths["/api/gpt/ping"].get.security).toEqual([]);
     expect(schema.security).toEqual([{ bearerAuth: [] }]);
   });
 
