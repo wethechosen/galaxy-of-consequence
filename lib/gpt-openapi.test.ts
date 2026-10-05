@@ -13,7 +13,9 @@ describe("Custom GPT deployment routing", () => {
     expect(schema.paths["/api/gpt/turn"].post.operationId).toBe("submitPlayerAction");
     expect(schema.paths["/api/gpt/ping"].get.operationId).toBe("pingCampaignService");
     expect(schema.paths["/api/gpt/ping"].get.security).toEqual([]);
-    expect(schema.security).toEqual([{ bearerAuth: [] }]);
+    expect(schema.security).toBeUndefined();
+    expect(schema.paths["/api/gpt/state"].get.security).toEqual([{ bearerAuth: [] }]);
+    expect(schema.paths["/api/gpt/turn"].post.security).toEqual([{ bearerAuth: [] }]);
   });
 
   it("allows an explicitly configured stable controller address", async () => {

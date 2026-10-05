@@ -61,6 +61,7 @@ const inventoryItem = {
   },
   additionalProperties: true,
 };
+const bearerSecurity = [{ bearerAuth: [] }];
 
 export async function GET(request: Request) {
   // An imported GPT action must follow production releases, not the immutable
@@ -81,6 +82,7 @@ export async function GET(request: Request) {
         operationId: "getCampaignState",
         summary: "Load authoritative campaign state",
         description: "Call before gameplay. Returns the current Supabase-backed revision, character, HUD, world state, and last narration.",
+        security: bearerSecurity,
         responses: { "200": jsonResponse("Current campaign state"), "401": { description: "Unauthorized" }, "409": { description: "No campaign initialized" } },
       },
     },
@@ -89,6 +91,7 @@ export async function GET(request: Request) {
         operationId: "getCampaignHUD",
         summary: "Read the authoritative web-app HUD",
         description: "Read-only. Never advances gameplay or rolls dice.",
+        security: bearerSecurity,
         responses: { "200": jsonResponse("Current HUD"), "401": { description: "Unauthorized" } },
       },
     },
@@ -97,6 +100,7 @@ export async function GET(request: Request) {
         operationId: "saveCheckpoint",
         summary: "Create an exact campaign checkpoint",
         description: "Administrative save only. No narration, roll, initiative, or gameplay mutation.",
+        security: bearerSecurity,
         requestBody: { required: false, content: { "application/json": { schema: { type: "object", properties: { label: { type: "string", maxLength: 120 } }, additionalProperties: false } } } },
         responses: { "200": jsonResponse("Checkpoint created"), "401": { description: "Unauthorized" } },
       },
@@ -106,6 +110,7 @@ export async function GET(request: Request) {
         operationId: "listCheckpoints",
         summary: "List campaign checkpoints",
         description: "Read-only checkpoint listing.",
+        security: bearerSecurity,
         responses: { "200": jsonResponse("Checkpoint list"), "401": { description: "Unauthorized" } },
       },
     },
@@ -114,6 +119,7 @@ export async function GET(request: Request) {
         operationId: "loadCheckpoint",
         summary: "Restore an exact campaign checkpoint",
         description: "Administrative restore only. Does not resolve gameplay.",
+        security: bearerSecurity,
         requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["checkpointId", "expectedRevision"], properties: { checkpointId: { type: "string", minLength: 1 }, expectedRevision: revision }, additionalProperties: false } } } },
         responses: { "200": jsonResponse("Checkpoint restored"), "400": { description: "Invalid request" }, "409": { description: "Revision conflict" } },
       },
@@ -123,6 +129,7 @@ export async function GET(request: Request) {
         operationId: "reconcileCampaignState",
         summary: "Apply an explicit OOC state correction",
         description: "Administrative correction only. Never narrates, rolls, creates initiative, or advances combat. The response is intentionally compact and never returns the full campaign snapshot.",
+        security: bearerSecurity,
         requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["expectedRevision", "patch"], properties: { expectedRevision: revision, patch: { type: "object", properties: { level: { type: "integer", minimum: 1 }, experience: { type: "integer", minimum: 0 }, health: { type: "integer" }, credits: { type: "integer" }, creditsCriminal: { type: "integer" }, location: { type: "string" }, conditionTrack: { type: "integer" }, campaignTimeMinutes: { type: "integer", minimum: 0 }, inventory: { type: "array", items: inventoryItem }, objectives: { type: "array", items: { type: "object", properties: { title: { type: "string" }, detail: { type: "string" }, status: { type: "string" } }, additionalProperties: true } }, combat, lastNarration: { type: "string", maxLength: 12000 } }, additionalProperties: false }, reason: { type: "string", maxLength: 200 } }, additionalProperties: false } } } },
         responses: { "200": jsonResponse("State reconciled"), "400": { description: "Invalid patch" }, "409": { description: "Revision conflict" } },
       },
@@ -132,6 +139,7 @@ export async function GET(request: Request) {
         operationId: "submitPlayerAction",
         summary: "Resolve exactly one in-world player action",
         description: "Gameplay only. Never use this operation for save, load, HUD, sync, reconciliation, or OOC corrections. The server owns dice, Saga resolution, consequences, and persistence.",
+        security: bearerSecurity,
         requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["revision", "action"], properties: { revision, action: { type: "string", minLength: 1, maxLength: 2000 }, turnId: { type: "string", minLength: 8, maxLength: 100, pattern: "^[a-zA-Z0-9_-]+$" } }, additionalProperties: false } } } },
         responses: { "200": jsonResponse("Committed gameplay turn"), "400": { description: "Invalid action" }, "401": { description: "Unauthorized" }, "409": { description: "Revision conflict or replay" }, "422": { description: "Administrative command; use the indicated control action" } },
       },
@@ -142,11 +150,10 @@ export async function GET(request: Request) {
     openapi: "3.1.0",
     info: {
       title: "Galaxy of Consequence Custom GPT Controller",
-      version: "2.0.6",
+      version: "2.0.7",
       description: "Authoritative GOC controller: state/HUD/checkpoints/reconciliation are separate from gameplay turns.",
     },
     servers: [{ url: controllerUrl }],
-    security: [{ bearerAuth: [] }],
     paths,
     components: {
       schemas: {
