@@ -1,5 +1,5 @@
 // Suggestions are possible attempts, never discoveries, rewards or resolved actions.
-export function sceneDirections({ state = {}, character = {}, scene = "" } = {}) {
+export function sceneDirections({ state = {}, character = {}, scene = "", action = "", result = "" } = {}) {
   const combat = state.combat;
   if (combat?.status === "active") {
     if (combat.activeSide !== "player") return ["Review the encounter before declaring your next action.", "Ask the GM about the visible battlefield."];
@@ -13,6 +13,7 @@ export function sceneDirections({ state = {}, character = {}, scene = "" } = {})
   }
   // Do not turn negated scenery into an available interactable.
   const evidence = `${state.location || ""} ${scene.split(/(?<=[.!?])\s+/).filter((line) => !/\b(?:no|not|without|absent)\b/i.test(line)).join(" ")}`;
+  const context = `${evidence} ${action} ${result}`;
   const choices = [];
   if (/terminal|console|control panel/i.test(evidence)) choices.push("Read the visible terminal display without changing its settings.");
   if (/junction|intersection|branch|fork/i.test(scene)) choices.push("Compare the visible branches before choosing one.", "Inspect the junction for signs of recent passage.");
@@ -27,7 +28,26 @@ export function sceneDirections({ state = {}, character = {}, scene = "" } = {})
   const carried = (state.inventory || []).filter((item) => Number(item.qty) > 0);
   if (Number(state.health) < Number(character.maxHp || character.hitPoints || 0) && carried.some((item) => /medpac/i.test(item.name))) choices.unshift("Attempt first aid with my carried medpac.");
   const trained = Array.isArray(character.trainedSkills) ? character.trainedSkills : [];
-  if (trained.some((skill) => /^use the force$/i.test(String(skill)))) choices.push("Attempt to sense my surroundings with Use the Force.");
+  const trainedInForce = trained.some((skill) => /^use the force$/i.test(String(skill)));
+  const forcePressure = /\b(?:dark[ -]?side|force|sith|vergence|pressure|pull|presence|jedi temple)\b/i.test(context);
+  const failedAttempt = /\b(?:failure|failed|refused|cannot|could not|does not open|remains locked)\b/i.test(result);
+  if (forcePressure) {
+    const moralChoices = [
+      "[Restraint] Study the pull without feeding it, comparing it to the physical route.",
+      "[Dark-side temptation] Let anger sharpen the attempt, accepting that the GM may impose a moral cost.",
+      trainedInForce
+        ? "[Force] Reach out with Use the Force and test the presence directly."
+        : "[Pragmatic] Map the sensation against airflow, vibration, and the structure around me.",
+    ];
+    return [
+      ...(failedAttempt ? ["Change my method and work from the new obstacle instead of repeating the same attempt."] : []),
+      ...moralChoices,
+      ...choices,
+    ].filter((choice, index, all) => all.indexOf(choice) === index).slice(0, 4);
+  } else if (trainedInForce) choices.push("Attempt to sense my surroundings with Use the Force.");
+  if (failedAttempt) {
+    choices.unshift("Change my method and work from the new obstacle instead of repeating the same attempt.");
+  }
   if (!choices.length) choices.push("Describe what I examine in the immediate area.", "Listen to the activity around me.");
   choices.push("Review my carried equipment before choosing an approach.");
   return [...new Set(choices)].slice(0, 4);

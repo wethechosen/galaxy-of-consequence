@@ -51,7 +51,8 @@ describe("authoritative Saga narration", () => {
     expect(attachRepairedLedger(narration, '{"location":"Detention corridor"}')).toBe(`${narration}\n<!--STATE:{"location":"Detention corridor"}-->`);
     expect(attachRepairedLedger(narration, '<!--STATE:{}-->')).toBe(`${narration}\n<!--STATE:{}-->`);
     expect(attachRepairedLedger(`${narration}\n<!--STATE:{"conditionAdd":"strained"}-->`, '<!--STATE:{"conditionAdd":[{"name":"strained"}]}-->')).toBe(`${narration}\n<!--STATE:{"conditionAdd":[{"name":"strained"}]}-->`);
-    expect(attachRepairedLedger(narration, "not valid JSON")).toBe(narration);
+    expect(attachRepairedLedger(narration, "not valid JSON")).toBe(`${narration}\n<!--STATE:{}-->`);
+    expect(attachRepairedLedger(narration, '```json\n{“timeAdvanceMinutes”: 5,}\n```')).toBe(`${narration}\n<!--STATE:{"timeAdvanceMinutes":5}-->`);
   });
 
   it("keeps gameplay available with a credit-free deterministic fallback", () => {

@@ -93,16 +93,35 @@ export function attachRepairedLedger(narration: string, repair: string) {
     .replace(/<!--\s*STATE\s*:[\s\S]*?-->/gi, "")
     .replace(/<!--\s*STATE\b[\s\S]*$/i, "")
     .trim();
-  const block = repair.match(/<!--\s*STATE\s*:(\{[\s\S]*\})\s*-->/i);
-  if (block) return `${cleanNarration}\n<!--STATE:${block[1]}-->`;
-  const raw = repair.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
-  try {
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid ledger object");
-    return `${cleanNarration}\n<!--STATE:${JSON.stringify(parsed)}-->`;
-  } catch {
-    return narration;
+  const candidates: string[] = [];
+  for (const match of repair.matchAll(/<!--\s*STATE\s*:\s*([\s\S]*?)\s*-->/gi)) candidates.push(match[1]);
+  for (const match of repair.matchAll(/```(?:json)?\s*([\s\S]*?)\s*```/gi)) candidates.push(match[1]);
+  candidates.push(repair.trim());
+
+  // Model ledger repairs occasionally include smart quotes or a trailing comma.
+  // Normalize only those unambiguous serialization mistakes, then re-serialize
+  // parsed objects so downstream state validation always receives strict JSON.
+  for (const candidate of candidates) {
+    const firstBrace = candidate.indexOf("{");
+    const lastBrace = candidate.lastIndexOf("}");
+    if (firstBrace < 0 || lastBrace <= firstBrace) continue;
+    const normalized = candidate.slice(firstBrace, lastBrace + 1)
+      .replace(/[\u201c\u201d]/g, '"')
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/,\s*([}\]])/g, "$1");
+    try {
+      const parsed = JSON.parse(normalized);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) continue;
+      return `${cleanNarration}\n<!--STATE:${JSON.stringify(parsed)}-->`;
+    } catch {
+      // Try the next representation returned by the repair model.
+    }
   }
+
+  // Preserve the valid immersive draft when bookkeeping alone is malformed.
+  // An empty ledger is safe: later authority checks still reject prose that
+  // claims a material change without a matching server-owned delta.
+  return `${cleanNarration}\n<!--STATE:{}-->`;
 }
 
 function rollMessage(roll: Record<string, unknown>) {
@@ -301,7 +320,7 @@ export function buildLocalSafeFallback({ mode, action, location, roll, combatSum
   }
 
   const sceneText = `${appearanceBeat}\n\n${setting}\n\n${actionInProgress}`;
-  const directions = sceneDirections({ state: { ...state, location }, character, scene: sceneText })
+  const directions = sceneDirections({ state: { ...state, location }, character, scene: sceneText, action, result: gameplayResult })
     .map((text, index) => `${String.fromCharCode(65 + index)}. ${text}`)
     .join("\n");
 
@@ -648,13 +667,14 @@ export function normalizePlayerOptions(narration: string) {
  * presentation-only choice block. Add neutral directions without changing
  * the narrated outcome or authoritative ledger.
  */
-export function ensurePlayerOptions(narration: string, state: Record<string, unknown> = {}, character: Record<string, unknown> = {}) {
+export function ensurePlayerOptions(narration: string, state: Record<string, unknown> = {}, character: Record<string, unknown> = {}, action = "") {
   const heading = /^(?:#{1,6}\s*)?PLAYER OPTIONS\s*$/im.exec(narration);
   const choices = heading ? narration.slice(heading.index).split(/\r?\n/).filter((line) => /^[A-D]\.\s/.test(line)) : [];
   if (heading && choices.length >= 2 && !genericDirections(choices)) return narration;
   const body = heading ? narration.slice(0, heading.index).trimEnd() : narration.trim();
   const scene = sectionBody(narration, "SCENE") || body;
-  const directions = sceneDirections({ state, character, scene }).map((text, index) => `${String.fromCharCode(65 + index)}. ${text}`);
+  const result = sectionBody(narration, "GAMEPLAY RESULT");
+  const directions = sceneDirections({ state, character, scene, action, result }).map((text, index) => `${String.fromCharCode(65 + index)}. ${text}`);
   return `${body}\n\nPLAYER OPTIONS\n${directions.join("\n")}\nYou may declare another action.`;
 }
 
@@ -948,7 +968,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
         parsed = parseEngineResponse(candidate, { requireState: true });
       }
       parsed = { ...parsed, clean: alignMechanicalResult(sanitizeGmNarration(parsed.clean), roll) };
-      if (mode === "play") parsed = { ...parsed, clean: ensurePlayerOptions(normalizePlayerOptions(parsed.clean), currentSnapshot.gameState, currentSnapshot.character as Record<string, unknown>) };
+      if (mode === "play") parsed = { ...parsed, clean: ensurePlayerOptions(normalizePlayerOptions(parsed.clean), currentSnapshot.gameState, currentSnapshot.character as Record<string, unknown>, action) };
       if (mode === "play") assertCampaignResponseStructure(parsed.clean);
       if (mode === "play") assertNarrativeFocus(parsed.clean, action);
       if (mode === "play" && response.provider !== "local-safe-fallback") assertFreshScene(parsed.clean, priorScene, action);
@@ -998,7 +1018,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
     parsed = parseEngineResponse(response.content, { requireState: mode === "play" });
     parsed = { ...parsed, clean: alignMechanicalResult(sanitizeGmNarration(parsed.clean), roll) };
     if (mode === "play") {
-      parsed = { ...parsed, clean: ensurePlayerOptions(normalizePlayerOptions(parsed.clean), currentSnapshot.gameState, currentSnapshot.character as Record<string, unknown>) };
+      parsed = { ...parsed, clean: ensurePlayerOptions(normalizePlayerOptions(parsed.clean), currentSnapshot.gameState, currentSnapshot.character as Record<string, unknown>, action) };
       assertCampaignResponseStructure(parsed.clean);
       assertNarrativeFocus(parsed.clean, action);
     }

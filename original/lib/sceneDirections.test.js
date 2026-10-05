@@ -26,4 +26,24 @@ describe("scene-grounded player approaches", () => {
     expect(genericDirections(["A. Examine the immediate route.", "B. Continue moving through the route.", "C. Stop and listen before moving."])).toBe(true);
     expect(genericDirections(["A. Compare the visible branches.", "B. Inspect the sealed service door."])).toBe(false);
   });
+  it("frames scene-specific moral approaches without choosing for the player", () => {
+    const directions = sceneDirections({
+      state: { location: "Coruscant — foundations beneath the Jedi Temple" },
+      scene: "A cold dark-side pressure gathers beyond a sealed foundation threshold.",
+      action: "I search for the ancient Sith vergence.",
+      result: "The route reaches the sealed threshold.",
+    });
+    expect(directions.join(" ")).toMatch(/\[Restraint\]/);
+    expect(directions.join(" ")).toMatch(/\[Dark-side temptation\]/);
+    expect(directions.join(" ")).toMatch(/\[Pragmatic\]/);
+    expect(directions.join(" ")).not.toMatch(/You choose|you must|the vergence is yours/i);
+  });
+  it("suggests a different method after failure instead of repeating the blocked action", () => {
+    const directions = sceneDirections({
+      scene: "A sealed bulkhead blocks the descending route.",
+      action: "I try to open the bulkhead.",
+      result: "The check failed; the bulkhead remains sealed.",
+    });
+    expect(directions[0]).toMatch(/Change my method/);
+  });
 });
