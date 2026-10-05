@@ -130,7 +130,7 @@ export async function GET(request: Request) {
   };
 
   return NextResponse.json({
-    openapi: "3.0.3",
+    openapi: "3.1.0",
     info: {
       title: "Galaxy of Consequence Custom GPT Controller",
       version: "2.0.5",

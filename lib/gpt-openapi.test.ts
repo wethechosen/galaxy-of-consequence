@@ -8,6 +8,7 @@ describe("Custom GPT deployment routing", () => {
     vi.stubEnv("GOC_GPT_PUBLIC_BASE_URL", "");
     const response = await GET(new Request("https://old-immutable-preview.vercel.app/api/gpt/openapi"));
     const schema = await response.json();
+    expect(schema.openapi).toBe("3.1.0");
     expect(schema.servers).toEqual([{ url: "https://galaxy-local.vercel.app" }]);
     expect(schema.paths["/api/gpt/turn"].post.operationId).toBe("submitPlayerAction");
     expect(schema.security).toEqual([{ bearerAuth: [] }]);
