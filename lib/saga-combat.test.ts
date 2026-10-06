@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { beginCombat, endPlayerTurn, isCombatMovementDeclaration, isEndTurnDeclaration, resolvePlayerAttack, spendPlayerMove, type SagaCombatState } from "./saga-combat";
+import { beginCombat, endPlayerTurn, isAttackDeclaration, isCombatMovementDeclaration, isCombatWithdrawDeclaration, isEndTurnDeclaration, resolvePlayerAttack, spendPlayerMove, withdrawFromCombat, type SagaCombatState } from "./saga-combat";
 
 const character = {
   name: "D'mir Holloran", level: 1,
@@ -39,6 +39,17 @@ describe("Saga combat intent normalization", () => {
     expect(isCombatMovementDeclaration("D'mir uses his remaining Move action to take the best available cover from the guard.")).toBe(true);
     expect(isCombatMovementDeclaration("D'mir studies the cover without moving.")).toBe(false);
   });
+
+  it("treats scenery as an object rather than a hostile combatant", () => {
+    expect(isAttackDeclaration("I use my blaster to shoot at the debris")).toBe(false);
+    expect(isAttackDeclaration("I shoot the guard")).toBe(true);
+  });
+
+  it("recognizes explicit disengagement and travel away from an encounter", () => {
+    expect(isCombatWithdrawDeclaration("I end combat, turn around, and head higher toward a market")).toBe(true);
+    expect(isCombatWithdrawDeclaration("I leave Level 1313 and find shelter")).toBe(true);
+    expect(isCombatWithdrawDeclaration("I move behind the overturned table")).toBe(false);
+  });
 });
 
 describe("Saga combat authority", () => {
@@ -76,6 +87,14 @@ describe("Saga combat authority", () => {
     expect(result.combat.playerActions.move).toBe(0);
     expect(result.summary).toMatch(/position remains governed/i);
     expect(() => spendPlayerMove(result.combat, "I move again")).toThrow(/move action/i);
+  });
+
+  it("uses the move action to withdraw and closes the encounter without XP", () => {
+    const result = withdrawFromCombat(activeFixture(), "I disengage and head upward");
+    expect(result.combat).toMatchObject({ status: "escaped", activeSide: "none", playerActions: { move: 0 } });
+    expect(result.combat.endedAt).toBeTruthy();
+    expect(result.combat.log.at(-1)).toMatchObject({ kind: "player-withdraw", distance: "half-speed" });
+    expect(result.experienceAward).toBe(0);
   });
 
   it("resolves the NPC turn and refreshes the next player round", () => {

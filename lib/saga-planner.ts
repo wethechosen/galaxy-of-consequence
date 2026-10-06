@@ -1,7 +1,7 @@
 import type { SagaCheckPlan } from "./saga-dice";
 import { activeCombat } from "./saga-combat";
 import { positiveActionText } from "./action-intent";
-import { isExplicitAttackDeclaration } from "./gpt-turn-intent";
+import { isExplicitAttackDeclaration, isObjectAttackDeclaration } from "./gpt-turn-intent";
 
 type RecordValue = Record<string, unknown>;
 const ABILITY_KEYS = { strength: "STR", dexterity: "DEX", constitution: "CON", intelligence: "INT", wisdom: "WIS", charisma: "CHA" } as const;
@@ -85,6 +85,24 @@ export function planSagaAction(action: string, character: RecordValue, state: Re
   if (hasWord(lower, /\b(?:heal|treat|stabilize|medpac|med[- ]?pack)\b|\bfirst aid\b/)) return skill("Treat Injury", "wisdom", 15, "Provide medical treatment under the current conditions.", "Success provides the rules-appropriate treatment; failure expends time without the benefit.");
   // Keep combat verbs token-aware. A substring match turns words such as
   // "chits" into an attack because they contain "hit".
+  if (isObjectAttackDeclaration(action)) {
+    const ranged = /shoot|fire|blaster|rifle|pistol|bow|blast/.test(lower);
+    const bab = Number.isFinite(Number(character.baseAttackBonus)) ? Number(character.baseAttackBonus) : 0;
+    return {
+      needed: true,
+      actor: "player",
+      kind: "attack",
+      label: ranged ? "Ranged object attack" : "Melee object attack",
+      modifier: bab + abilityModifier(character, ranged ? "dexterity" : "strength"),
+      target: 5,
+      targetLabel: "Object Reflex Defense",
+      targetVisible: true,
+      reason: "Resolve the declared attack against an unattended, immobile object without creating a creature encounter.",
+      stakes: "A hit deals rolled damage; the object's hardness, damage reduction, and hit points determine whether the obstruction is breached.",
+      provisional: true,
+      damage: ranged ? { count: 3, sides: 6, modifier: 0, type: "energy" } : { count: 1, sides: 4, modifier: abilityModifier(character, "strength"), type: "kinetic" },
+    };
+  }
   if (isExplicitAttackDeclaration(action)) {
     const ranged = /shoot|fire|blaster|rifle|pistol|bow/.test(lower);
     const bab = Number.isFinite(Number(character.baseAttackBonus)) ? Number(character.baseAttackBonus) : 0;

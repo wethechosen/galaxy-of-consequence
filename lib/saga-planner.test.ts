@@ -7,6 +7,7 @@ describe("planSagaAction", () => {
   it("does not roll ordinary dialogue", () => expect(planSagaAction("I ask the guard his name", dmir, {})).toBeNull());
   it("plans a prison lock Mechanics check before narration", () => expect(planSagaAction("I try to pick the infirmary lock", dmir, { location: "Imperial prison" })).toMatchObject({ label: "Mechanics", modifier: 1, target: 20, provisional: true }));
   it("starts initiative before resolving an opening attack", () => expect(planSagaAction("I punch the guard", dmir, {})).toMatchObject({ kind: "initiative", modifier: 2, targetVisible: false, damage: null }));
+  it("resolves an unattended object attack without creating initiative", () => expect(planSagaAction("I shoot at the debris with my blaster pistol", dmir, {})).toMatchObject({ kind: "attack", label: "Ranged object attack", target: 5, targetVisible: true, damage: { count: 3, sides: 6 } }));
   it("uses the production attack parser for conjugated declarations", () => {
     expect(planSagaAction("D'mir punches the guard", dmir, {})).toMatchObject({ kind: "initiative", modifier: 2, targetVisible: false });
     expect(planSagaAction("He shoots the droid", dmir, {})).toMatchObject({ kind: "initiative", modifier: 2, targetVisible: false });

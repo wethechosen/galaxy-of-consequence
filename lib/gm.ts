@@ -10,7 +10,7 @@ import { sceneDirections, genericDirections } from "@/original/lib/sceneDirectio
 import { applyCharacterDelta, applyEngineDelta, applyExperienceAward, parseEngineResponse } from "@/original/lib/engineState";
 import { ensureCampaignScaffold } from "@/original/lib/campaignState";
 import { appendDmirCreatorCanon, isDmirPrimaryCampaign } from "./dmir-authority";
-import { activeCombat, beginCombat, endPlayerTurn, isAttackDeclaration, isCombatMovementDeclaration, isEndTurnDeclaration, resolvePlayerAttack, spendPlayerMove, type CombatResolution } from "./saga-combat";
+import { activeCombat, beginCombat, endPlayerTurn, isAttackDeclaration, isCombatMovementDeclaration, isCombatWithdrawDeclaration, isEndTurnDeclaration, resolvePlayerAttack, spendPlayerMove, withdrawFromCombat, type CombatResolution } from "./saga-combat";
 
 type TurnInput = { accountId?: string; revision: number; action: string; turnId: string; openScene?: boolean; statePolicy?: "committed-trade" | null };
 type Message = { role: "user" | "assistant" | "roll"; content: string; [key: string]: unknown };
@@ -34,6 +34,8 @@ Act as the single director over four private specialist roles before writing the
 Reconcile these specialists privately. They are advisers, not independent narrators or autonomous actors. Only you, the GM, speak in the final response. No specialist may roll dice, commit state, decide D'mir's behavior, or override established campaign facts. When their implications conflict, Saga rules and authoritative saved state take precedence.
 
 Combat is server-owned. Initiative must be established before attacks resolve. An attack spends the player's standard action; declared movement spends the move action; and an explicit end-turn declaration lets the server resolve the opposition and begin the next round. Never invent extra attacks, movement, damage, reactions, action recovery, defeat, or rewards. Reflect the authoritative combat record and clearly state the player's remaining actions without choosing one for them.
+
+The campaign is a sandbox tabletop RPG. A player may declare any intent. Translate it into the nearest legal Saga Edition action, skill, attack, movement, or sequence of steps and adjudicate it; never reject the declaration merely because the final goal is distant, dangerous, hidden, or beyond one turn. Constraints determine the check, cost, opposition, distance, and consequences—not whether the player is allowed to try. Nothing is granted automatically, but an attainable route, intermediate result, or concrete failure-forward beat must remain playable.
 
 Use only the supplied authoritative server roll for uncertain actions. Never reroll, change its modifier, target, stakes, or outcome. Do not invent an exact Saga rule when the retrieved sources do not support it. Keep hidden NPC statistics and secret DCs hidden. D'mir knows and accepts that he is Force-sensitive and recognizes the dark-side pull he has experienced. This awareness does not grant trained Use the Force, a Force power, or conscious command of a technique before it is earned.
 
@@ -234,6 +236,7 @@ export function buildLocalSafeFallback({ mode, action, location, roll, combatSum
   const isDevice = /\b(?:terminal|console|datapad|computer|control panel|storage module|interface)\b/i.test(lowerAction);
   const isInvestigation = /\b(?:search|examine|inspect|look|study|listen|scan|check)\b/i.test(lowerAction);
   const isAttack = isAttackDeclaration(action);
+  const isWithdrawal = isCombatWithdrawDeclaration(action) && /\b(?:withdraw|disengage|combat|turn around|fall back|head back|away|upward|higher|market|shelter|leave 1313)\b/i.test(lowerAction);
   const isForcePursuit = /\b(?:follow\w*|trace\w*|track\w*|pursu\w*|seek\w*|search\w*|locat\w*|find\w*)\b[^.]{0,120}\b(?:pressure|pull|call|vergence|dark[ -]side|force|sith|jedi temple|temple|shrine)\b|\b(?:pressure|pull|call|vergence|dark[ -]side|force|sith|jedi temple|temple|shrine)\b[^.]{0,120}\b(?:follow\w*|trace\w*|track\w*|pursu\w*|seek\w*|search\w*|locat\w*|find\w*)\b/i.test(lowerAction);
   const isMovement = permitsLocationChange(action);
   const appearanceBeat = visibleCharacterBeat(character, state);
@@ -248,6 +251,8 @@ export function buildLocalSafeFallback({ mode, action, location, roll, combatSum
   let actionBeat: string;
   if (!action) {
     actionBeat = "You remain exactly where the campaign record left you. From this angle the visible routes, cover, and working machinery can be judged without inventing a new clue or moving time forward; nothing acts on your behalf while you take in the scene.";
+  } else if (isWithdrawal && combatSummary) {
+    actionBeat = "You break contact and clear the immediate threatened space, keeping the obstruction and its firing angles behind you. The passage opens into the next accessible route; the exchange is over, but the wider district remains free to react if anyone chooses to pursue.";
   } else if (combatSummary || isAttack) {
     actionBeat = combatSummary
       ? "The exchange breaks across the space in a few sharp motions, then stops at the exact position recorded by the referee. Smoke, footwork, and exposed angles remain where the combat result leaves them; no second attack or unchosen movement follows."
@@ -270,7 +275,9 @@ export function buildLocalSafeFallback({ mode, action, location, roll, combatSum
 
   const actionInProgress = !action
     ? "You take in the present scene without acting; your position and the visible routes remain unchanged."
-    : combatSummary || isAttack
+    : isWithdrawal && combatSummary
+      ? "You give ground deliberately, clear the nearest threatened reach, and turn toward the declared route without making another attack or claiming a victory."
+      : combatSummary || isAttack
       ? "Your shoulders square and your attention fixes on the tactical space as the declared combat action begins; cover, distance, and the opponent's position remain visible around you."
       : isForcePursuit
         ? "You move deliberately through the accessible route, testing the pressure against vibration, airflow, old construction seams, and the changing weight beneath your steps rather than assuming where it ends."
@@ -288,7 +295,9 @@ export function buildLocalSafeFallback({ mode, action, location, roll, combatSum
 
   let adjudication = !action
     ? "No action has been declared. This is a read-only view of the present moment."
-    : isForcePursuit
+    : isWithdrawal && combatSummary
+      ? "Your declaration is resolved as the Saga Withdraw move action. It ends this immediate encounter without awarding victory, loot, or XP; any later pursuit must arise as a new world reaction."
+      : isForcePursuit
       ? "Your declaration is accepted as a search for a suspected Force-related destination. Until trained Use the Force is earned, the executable approach is physical navigation and Perception informed by involuntary intuition; the vergence itself is not assumed."
       : `Your declaration is accepted as the attempted action for this turn. ${roll ? String(roll.reason || "Saga Edition resolves the meaningful uncertainty.") : "The immediate step is ordinary and does not require a Saga check."}`;
   let gameplayResult = !action
@@ -314,6 +323,7 @@ export function buildLocalSafeFallback({ mode, action, location, roll, combatSum
     stateUpdate = combatSummary || `${succeeded ? "The successful attempt" : "The failed attempt"} and its elapsed time are recorded. No unrelated reward, possession, or secret is added.`;
   } else if (combatSummary) {
     adjudication = "The declaration is resolved through the server-owned Saga combat sequence and action economy.";
+    if (isWithdrawal) adjudication = "Your withdrawal is resolved through the server-owned Saga action economy. The immediate encounter closes without a victory award.";
     gameplayResult = `${actionBeat} ${combatSummary}`;
     checkText = "The authoritative combat rolls are shown in this turn's Saga record.";
     stateUpdate = "The server-owned combat record is updated.";
@@ -919,6 +929,8 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
     combatResolution = beginCombat(action, currentSnapshot.character as Record<string, unknown>, currentSnapshot.gameState, roll, deterministicTurnRoller(input.turnId, "combat-open"));
   } else if (mode === "play" && encounter && isAttackDeclaration(action) && roll?.kind === "attack") {
     combatResolution = resolvePlayerAttack(encounter, roll);
+  } else if (mode === "play" && encounter && isCombatWithdrawDeclaration(action)) {
+    combatResolution = withdrawFromCombat(encounter, action);
   } else if (mode === "play" && encounter && isEndTurnDeclaration(action)) {
     combatResolution = endPlayerTurn(encounter, currentSnapshot.character as Record<string, unknown>, Number(currentSnapshot.gameState.health || 0), deterministicTurnRoller(input.turnId, "npc-turn"));
   } else if (mode === "play" && encounter && isCombatMovementDeclaration(action)) {
@@ -1086,10 +1098,11 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   if (action) messages.push({ role: "user", content: action });
   if (roll) messages.push({ role: "roll", content: rollMessage(roll), roll });
   for (const combatRoll of combatResolution?.rolls || []) messages.push({ role: "roll", content: rollMessage(combatRoll), roll: combatRoll });
-  messages.push({ role: "assistant", content: parsed.clean, turnId: input.turnId, provider: response.provider, model: response.model, fallbackReason });
+  const fallbackDetail = validationError instanceof Error ? validationError.message.slice(0, 500) : null;
+  messages.push({ role: "assistant", content: parsed.clean, turnId: input.turnId, provider: response.provider, model: response.model, fallbackReason, fallbackDetail });
   const snapshot: DatapadSnapshot = { ...finalized, messages };
   const persisted = saveAuthoritativeDatapad(actor, accountId, input.revision, snapshot);
-  const result = { snapshot, revision: persisted.revision, updatedAt: persisted.updatedAt, roll, narration: parsed.clean, provider: response.provider, model: response.model, fallbackReason };
+  const result = { snapshot, revision: persisted.revision, updatedAt: persisted.updatedAt, roll, narration: parsed.clean, provider: response.provider, model: response.model, fallbackReason, fallbackDetail };
   db.prepare("UPDATE gm_turn_attempts SET status = 'complete', result = ? WHERE account_id = ? AND turn_id = ?").run(JSON.stringify(result), accountId, input.turnId);
   return result;
 }

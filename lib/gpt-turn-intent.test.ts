@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isExplicitAttackDeclaration, isFreeMovementDeclaration } from "./gpt-turn-intent";
+import { isExplicitAttackDeclaration, isFreeMovementDeclaration, isHostileAttackDeclaration, isObjectAttackDeclaration } from "./gpt-turn-intent";
 
 describe("GPT turn intent parsing", () => {
   it("does not turn meditation negations into combat or movement", () => {
@@ -29,6 +29,14 @@ describe("GPT turn intent parsing", () => {
     expect(isFreeMovementDeclaration("I do not leave through the hatch; I move down the corridor instead.")).toBe(true);
     expect(isFreeMovementDeclaration("I do not attack the guard, I move down the corridor instead.")).toBe(true);
     expect(isFreeMovementDeclaration("Without moving the crate, I walk to the hatch.")).toBe(true);
+  });
+
+  it("distinguishes scenery attacks from hostile attacks", () => {
+    expect(isExplicitAttackDeclaration("I shoot at the debris with my blaster pistol")).toBe(true);
+    expect(isObjectAttackDeclaration("I shoot at the debris with my blaster pistol")).toBe(true);
+    expect(isHostileAttackDeclaration("I shoot at the debris with my blaster pistol")).toBe(false);
+    expect(isObjectAttackDeclaration("I shoot the guard standing beside the door")).toBe(false);
+    expect(isHostileAttackDeclaration("I shoot the guard standing beside the door")).toBe(true);
   });
 
   it("does not treat object or NPC movement as player travel", () => {

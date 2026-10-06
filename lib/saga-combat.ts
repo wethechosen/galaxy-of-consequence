@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
 import { rollSagaCheck, type SagaCheckPlan } from "./saga-dice";
-import { isExplicitAttackDeclaration } from "./gpt-turn-intent";
+import { isHostileAttackDeclaration } from "./gpt-turn-intent";
 import { positiveActionText } from "./action-intent";
 
 type RecordValue = Record<string, unknown>;
@@ -51,7 +51,17 @@ export function activeCombat(state: RecordValue): SagaCombatState | null {
 }
 
 export function isAttackDeclaration(action: string) {
-  return isExplicitAttackDeclaration(action);
+  return isHostileAttackDeclaration(action);
+}
+
+export function isCombatWithdrawDeclaration(action: string) {
+  const clean = positiveActionText(action);
+  if (!clean) return false;
+  if (/\b(?:withdraw|disengage|break contact|flee|escape|leave combat|exit combat|end combat)\b/i.test(clean)) return true;
+  if (/\b(?:turn(?:s|ed|ing)? around|fall(?:s|ing)? back|head(?:s|ed|ing)? back)\b/i.test(clean)) return true;
+  const movement = /\b(?:go|head|move|climb|travel|leave|depart|return|continue|push)\w*\b/i.test(clean);
+  const away = /\b(?:away|out|upward|higher|back up|past the prison|leave 1313|market|shelter|populated level|civilian district)\b/i.test(clean);
+  return movement && away;
 }
 
 export function isEndTurnDeclaration(action: string) {
@@ -69,7 +79,7 @@ export function isCombatMovementDeclaration(action: string) {
 }
 
 export function combatTargetName(action: string) {
-  const match = action.match(/\b(?:attack|hit|punch|kick|strike|shoot|fire at|stab|slash|lunge at)\s+(?:the\s+|a\s+|an\s+)?([a-z][a-z '\-]{1,50})/i);
+  const match = action.match(/\b(?:attack|hit|punch|kick|strike|shoot(?:\s+at)?|fire\s+at|stab|slash|lunge\s+at)\s+(?:the\s+|a\s+|an\s+)?([a-z][a-z '\-]{1,50})/i);
   const clean = match?.[1]?.replace(/\b(?:with|using|in|on|before|after)\b.*$/i, "").trim();
   return clean ? clean.replace(/\b\w/g, (letter) => letter.toUpperCase()) : "Hostile opponent";
 }
@@ -195,6 +205,32 @@ export function spendPlayerMove(combatInput: SagaCombatState, action: string): C
   combat.playerActions.move = 0;
   combat.log.push({ kind: "player-move", round: combat.round, declaration: action.slice(0, 240) });
   return { combat, rolls: [], playerHealthDelta: 0, playerConditionDelta: 0, experienceAward: 0, summary: "The player's declared movement spent the move action; position remains governed by the narrated scene." };
+}
+
+/** Resolve the Saga Withdraw move action and close the current encounter. */
+export function withdrawFromCombat(combatInput: SagaCombatState, action: string): CombatResolution {
+  const combat = copyCombat(combatInput);
+  if (combat.status !== "active" || combat.activeSide !== "player") throw new Error("It is not the player's turn.");
+  if (combat.playerActions.move < 1) throw new Error("The move action for this turn has already been spent.");
+  combat.playerActions.move = 0;
+  combat.status = "escaped";
+  combat.activeSide = "none";
+  combat.endedAt = new Date().toISOString();
+  combat.log.push({
+    kind: "player-withdraw",
+    round: combat.round,
+    declaration: action.slice(0, 240),
+    distance: "half-speed",
+    attackOfOpportunityAvoided: "first-square",
+  });
+  return {
+    combat,
+    rolls: [],
+    playerHealthDelta: 0,
+    playerConditionDelta: 0,
+    experienceAward: 0,
+    summary: "You use a move action to withdraw from the immediate threatened area and leave the encounter. No victory or XP is awarded.",
+  };
 }
 
 export function endPlayerTurn(
