@@ -1,7 +1,9 @@
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { BookOpen, Eye, Home as HomeIcon, Shield, Sparkles } from "lucide-react";
 import { useGame } from "@/original/lib/GameContext";
 import { Shell, TopBar, GlassCard, EmptyNote, HudRow } from "@/original/components/GalaxyUI";
+import { HEROIC_CLASSES, TALENT_TREES, SAGA_ABILITY_OPTIONS, advancementRequirements, availableFeats, availableStartingFeats, availableTalents, progressionStatus } from "@/original/lib/sagaAdvancement";
 
 function Portrait({ src, label, character }) {
   return (
@@ -12,8 +14,64 @@ function Portrait({ src, label, character }) {
   );
 }
 
+function AdvancementPanel({ character, gameState, advanceCharacter, sending }) {
+  const status = progressionStatus(character);
+  const [classId, setClassId] = useState("jedi");
+  const [talentId, setTalentId] = useState("");
+  const [classBonusFeatId, setClassBonusFeatId] = useState("");
+  const [generalFeatId, setGeneralFeatId] = useState("");
+  const [humanBonusFeatId, setHumanBonusFeatId] = useState("");
+  const [startingFeatId, setStartingFeatId] = useState("");
+  const [abilityIncreases, setAbilityIncreases] = useState([]);
+  const [committing, setCommitting] = useState(false);
+  const rules = useMemo(() => advancementRequirements(character, classId), [character, classId]);
+  const talents = useMemo(() => availableTalents(character, classId).flatMap(tree => tree.talents.map(item => ({ ...item, label: `${tree.name} — ${item.name}` }))), [character, classId]);
+  const classFeats = useMemo(() => availableFeats(character, classId, true), [character, classId]);
+  const generalFeats = useMemo(() => availableFeats(character, classId, false), [character, classId]);
+  const humanBonusFeats = useMemo(() => availableFeats({ ...character, featSelections: [...(Array.isArray(character.featSelections) ? character.featSelections : []), ...(generalFeatId ? [{ id: generalFeatId }] : [])] }, classId, false), [character, classId, generalFeatId]);
+  const startingFeats = useMemo(() => availableStartingFeats(character, classId), [character, classId]);
+  const xpFloor = status.level <= 1 ? 0 : Number(character.level) >= 20 ? 190000 : [0, 1000, 3000, 6000, 10000, 15000, 21000, 28000, 36000, 45000, 55000, 66000, 78000, 91000, 105000, 120000, 136000, 153000, 171000, 190000][status.level - 1];
+  const progress = status.nextLevelXp == null ? 100 : Math.max(0, Math.min(100, ((status.experience - xpFloor) / Math.max(1, status.nextLevelXp - xpFloor)) * 100));
+  const foundation = status.foundationRequired;
+  const human = /^human$/i.test(String(character.species || "").trim());
+  const chooseClass = value => { setClassId(value); setTalentId(""); setClassBonusFeatId(""); setGeneralFeatId(""); setHumanBonusFeatId(""); setStartingFeatId(""); setAbilityIncreases([]); };
+  const toggleAbility = id => setAbilityIncreases(current => current.includes(id) ? current.filter(item => item !== id) : current.length < 2 ? [...current, id] : current);
+  const ready = foundation
+    ? Boolean(talentId && generalFeatId && (!human || humanBonusFeatId))
+    : status.advancementAvailable && (!rules.talentRequired || talentId) && (!rules.classBonusFeatRequired || classBonusFeatId)
+      && (!rules.generalFeatRequired || generalFeatId) && (!rules.multiclassStartingFeatRequired || startingFeatId)
+      && abilityIncreases.length === rules.abilityIncreasesRequired;
+  const commit = async () => {
+    if (!ready || committing) return;
+    setCommitting(true);
+    const ok = await advanceCharacter({ foundation, classId, talentId, classBonusFeatId, generalFeatId, humanBonusFeatId, startingFeatId, abilityIncreases });
+    if (ok) { setTalentId(""); setClassBonusFeatId(""); setGeneralFeatId(""); setHumanBonusFeatId(""); setStartingFeatId(""); setAbilityIncreases([]); }
+    setCommitting(false);
+  };
+  const selectClass = "w-full rounded-lg border border-white/10 bg-[#0b0c13] px-3 py-2 text-sm text-[#f2f0ea]";
+  return <GlassCard className="p-5 mt-4">
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[10px] tracking-[0.2em] text-[#22e5c5] mb-2">SAGA ADVANCEMENT</p><p className="text-sm text-[#f2f0ea]">Level {status.level} · {status.experience.toLocaleString()} XP</p><p className="text-xs text-[#8b93a3] mt-1">{status.nextLevelXp == null ? "Maximum heroic level reached." : `${status.nextLevelXp.toLocaleString()} XP required for level ${status.level + 1}.`}</p></div><span className={`rounded-full border px-3 py-1 text-[10px] tracking-widest ${status.advancementAvailable || status.foundationRequired ? "border-[#22e5c5]/50 text-[#8fffea]" : "border-white/10 text-[#8b93a3]"}`}>{status.foundationRequired ? "BUILD CHOICES REQUIRED" : status.advancementAvailable ? `${status.levelsAvailable} LEVEL${status.levelsAvailable === 1 ? "" : "S"} EARNED` : "IN PROGRESS"}</span></div>
+      <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/5"><div className="h-full bg-[#22e5c5] transition-all" style={{ width: `${progress}%` }} /></div>
+    {(foundation || status.advancementAvailable) && <div className="mt-5 rounded-xl border border-[#22e5c5]/25 bg-[#22e5c5]/5 p-4">
+      <p className="text-xs text-[#d7d4cc] mb-4">{foundation ? "Dossier migration found no structured level-1 class or talent. Establish the existing build below; this records legal starting choices without adding XP or another level." : `XP has unlocked level ${status.level + 1}. Choose the legal Saga options below. The server rolls hit points and commits the complete level once.`}</p>
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className="text-xs text-[#8b93a3]">Class level<select className={`${selectClass} mt-1`} value={classId} onChange={event => chooseClass(event.target.value)}>{Object.values(HEROIC_CLASSES).map(item => <option key={item.id} value={item.id}>{item.name} · d{item.hitDie} HP</option>)}</select></label>
+        {!foundation && rules.multiclassStartingFeatRequired && <label className="text-xs text-[#8b93a3]">New-class starting feat<select className={`${selectClass} mt-1`} value={startingFeatId} onChange={event => setStartingFeatId(event.target.value)}><option value="">Choose one</option>{startingFeats.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
+        {(foundation || rules.talentRequired) && <label className="text-xs text-[#8b93a3]">Class talent<select className={`${selectClass} mt-1`} value={talentId} onChange={event => setTalentId(event.target.value)}><option value="">Choose one</option>{talents.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>}
+        {rules.classBonusFeatRequired && <label className="text-xs text-[#8b93a3]">Class bonus feat<select className={`${selectClass} mt-1`} value={classBonusFeatId} onChange={event => setClassBonusFeatId(event.target.value)}><option value="">Choose one</option>{classFeats.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
+        {(foundation || rules.generalFeatRequired) && <label className="text-xs text-[#8b93a3]">{foundation ? "1st-level feat" : "Character-level feat"}<select className={`${selectClass} mt-1`} value={generalFeatId} onChange={event => { setGeneralFeatId(event.target.value); setHumanBonusFeatId(""); }}><option value="">Choose one</option>{generalFeats.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
+        {foundation && human && <label className="text-xs text-[#8b93a3]">Human bonus feat<select className={`${selectClass} mt-1`} value={humanBonusFeatId} onChange={event => setHumanBonusFeatId(event.target.value)}><option value="">Choose a different feat</option>{humanBonusFeats.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
+      </div>
+      {rules.abilityIncreasesRequired > 0 && <div className="mt-4"><p className="text-xs text-[#8b93a3] mb-2">Increase two different ability scores</p><div className="flex flex-wrap gap-2">{SAGA_ABILITY_OPTIONS.map(item => <button type="button" key={item.id} onClick={() => toggleAbility(item.id)} className={`rounded-lg border px-3 py-2 text-xs ${abilityIncreases.includes(item.id) ? "border-[#22e5c5] bg-[#22e5c5]/15 text-[#8fffea]" : "border-white/10 text-[#a9adb8]"}`}>{item.name}</button>)}</div></div>}
+      <button type="button" disabled={!ready || committing || sending} onClick={commit} className="gc-btn mt-5 px-4 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-40">{committing ? "RECORDING ADVANCEMENT…" : foundation ? "ESTABLISH LEVEL 1 BUILD" : `ADVANCE TO LEVEL ${status.level + 1}`}</button>
+    </div>}
+    <details className="mt-5 border-t border-white/5 pt-4"><summary className="cursor-pointer text-[10px] tracking-[0.18em] text-[#a855f7]">CORE HEROIC TALENT TREES</summary><div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-3">{Object.values(HEROIC_CLASSES).map(heroic => <div key={heroic.id} className="rounded-xl border border-white/10 bg-white/[.02] p-3"><p className="text-sm text-[#f2f0ea]">{heroic.name}</p><p className="text-xs text-[#8b93a3] mt-1">{(TALENT_TREES[heroic.id] || []).map(tree => tree.name).join(" · ")}</p></div>)}</div><p className="mt-3 text-[11px] text-[#5c6370]">Prerequisites are enforced by the server. Unavailable talents remain hidden until their prerequisite talent or feat is recorded.</p></details>
+    {Array.isArray(gameState.advancementHistory) && gameState.advancementHistory.length > 0 && <div className="mt-5 border-t border-white/5 pt-4"><p className="text-[9px] tracking-[0.18em] text-[#8b93a3] mb-2">ADVANCEMENT HISTORY</p>{gameState.advancementHistory.slice(-5).reverse().map(entry => <p key={entry.advancementId} className="text-xs text-[#d7d4cc] mb-2">Level {entry.toLevel} · {HEROIC_CLASSES[entry.classId]?.name || entry.classId} {entry.classLevel} · +{entry.hitPointGain} HP{entry.talent ? ` · ${entry.talent.name}` : ""}</p>)}</div>}
+  </GlassCard>;
+}
+
 export default function CharacterPage() {
-  const { character, gameState } = useGame();
+  const { character, gameState, advanceCharacter, sending } = useGame();
   if (!character) return <Shell><TopBar character={null} gameState={gameState} /><div className="m-3 gc-glass rounded-2xl flex-1"><EmptyNote text="NO CHARACTER DOSSIER ON FILE. CREATE YOUR CHARACTER FROM PLAY." /></div></Shell>;
   const decisions = Array.isArray(gameState.flags) ? gameState.flags.slice(-12).reverse() : [];
   const inventory = Array.isArray(gameState.inventory) ? gameState.inventory.filter((item) => item?.name && Number(item.qty) > 0) : [];
@@ -36,6 +94,7 @@ export default function CharacterPage() {
           <GlassCard className="p-5"><p className="text-[10px] tracking-[0.2em] text-[#ff7a1a] mb-3">BIOGRAPHY & IDENTITY</p><HudRow label="Background" value={character.background} /><HudRow label="Allegiance" value={character.allegiance} /><HudRow label="Force Sensitive" value={character.forceSensitive} /><HudRow label="Appearance" value={character.appearance} /><HudRow label="Personal Goal" value={character.goal} /><HudRow label="Contacts / Enemies" value={character.contacts} /></GlassCard>
           <GlassCard className="p-5"><p className="text-[10px] tracking-[0.2em] text-[#ff7a1a] mb-3">SAGA EDITION STAT BLOCK</p><HudRow label="Character Level" value={character.level} /><HudRow label="Experience Points" value={character.experience} /><HudRow label="Saga Statistics" value={character.sagaStats} /><HudRow label="Talents" value={character.talents} /><HudRow label="Feats" value={character.feats} /><HudRow label="Force Powers" value={character.forcePowers} /><HudRow label="Force Points" value={gameState.forcePoints ?? "Unestablished"} /><HudRow label="Destiny Points" value={gameState.destinyPoints ?? "Unestablished"} /><HudRow label="Dark Side Score" value={gameState.darkSideScore ?? 0} /><HudRow label="Condition Track" value={`${gameState.conditionTrack || 0}/5`} /><HudRow label="Upgrades" value={character.upgrades} />{gameState.levelUpAvailable && <p className="mt-3 rounded-lg border border-[#22e5c5]/40 bg-[#22e5c5]/10 p-3 text-xs text-[#8fffea]">LEVEL-UP AVAILABLE — choose class, feats, talents, ability increases, and Force options through player advancement.</p>}</GlassCard>
         </div>
+        <AdvancementPanel character={character} gameState={gameState} advanceCharacter={advanceCharacter} sending={sending} />
         <GlassCard className="p-5 mt-4"><p className="text-[10px] tracking-[0.2em] text-[#ff7a1a] mb-3">EQUIPMENT & CURRENT STATUS</p><div className="grid gap-3 md:grid-cols-2"><HudRow label="Primary Weapon" value={character.equipPrimary} /><HudRow label="Secondary Weapon" value={character.equipSecondary} /><HudRow label="Armor / Clothing" value={character.equipArmor} /><HudRow label="Special Items" value={character.equipSpecial} /><HudRow label="Current Location" value={gameState.location} /><HudRow label="Hit Points" value={`${gameState.health}/100`} /></div>{conditions.length > 0 && <div className="mt-4"><p className="text-[9px] tracking-[0.18em] text-[#8b93a3] mb-2">ACTIVE INJURIES & CONDITIONS</p><ul className="space-y-1 text-sm text-[#d7d4cc]">{conditions.map((condition) => <li key={condition.id || condition.name}>{condition.name}{condition.severity ? ` · ${condition.severity}` : ""}{condition.note ? ` — ${condition.note}` : ""}</li>)}</ul></div>}</GlassCard>
         <div className="grid gap-4 lg:grid-cols-2 mt-4">
           <GlassCard className="p-5">

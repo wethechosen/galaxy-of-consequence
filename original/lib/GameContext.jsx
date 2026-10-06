@@ -913,6 +913,34 @@ If this is the very first message of the session, open the scene in-character ba
     } finally { setSending(false); }
   }
 
+  async function advanceCharacter(choices) {
+    if (!character || activeTurn.current || !saveReady || saveSession.current?.error) return false;
+    const session = saveSession.current;
+    setSending(true); setTurnError(""); setSaveStatus("saving");
+    try {
+      await session.queue;
+      const response = await fetch("/api/advancement", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId: session.accountId, revision: session.revision, advancementId: crypto.randomUUID(), ...choices }),
+      });
+      if (response.status === 401) {
+        window.location.assign(`/login?returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+        return false;
+      }
+      const result = await response.json();
+      if (!response.ok || !result.snapshot) throw new Error(result.error || "The advancement could not be completed.");
+      const completed = normalizeSnapshot(result.snapshot);
+      applySnapshot(completed); session.snapshot = completed; session.revision = result.revision; session.lastSaved = JSON.stringify(completed); session.error = "";
+      setSaveError(""); setSaveStatus("saved");
+      localStorage.removeItem(`gc_datapad_draft:${session.accountId}`);
+      return true;
+    } catch (error) {
+      setTurnError(error.message || "The advancement could not be completed.");
+      setSaveStatus("saved");
+      return false;
+    } finally { setSending(false); }
+  }
+
   async function finishCreation() {
     if (activeTurn.current || !saveReady) return false;
     const created = { ...CHARACTER_BASE, ...draftChar };
@@ -1025,7 +1053,7 @@ If this is the very first message of the session, open the scene in-character ba
     creationStep, setCreationStep, draftChar, setDraftChar,
     input, setInput, sending, scrollRef, turnError, retryTurn, sendTurn, initializeDmir,
     saveReady, saveStatus, saveError, retrySave, loadSavedVersion, selectedAccountId: accountId, selectedAccount, selectAccount, legacyDmirAvailable, importLegacyCharacter,
-    handleSend, sendCommsMessage, travelToLocation, interactWithSyndicate, buyMarketGood, sellMarketGood, finishCreation, resetAll, resetForNewGame,
+    handleSend, sendCommsMessage, travelToLocation, interactWithSyndicate, buyMarketGood, sellMarketGood, advanceCharacter, finishCreation, resetAll, resetForNewGame,
     saveDirective, saveSettings,
     updateGameStateField, updateCharacterField,
     addListItem, removeListItem, updateListItem,

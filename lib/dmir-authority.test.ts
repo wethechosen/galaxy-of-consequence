@@ -41,7 +41,7 @@ describe("D'mir creator authority and earned progression", () => {
     const delta = { experienceAward: 100, credits: 50, timeAdvanceMinutes: 12, inventoryAdd: [{ name: "Access cylinder", qty: 1 }], milestoneAdd: [{ title: "Service route secured" }] };
     const roll = { id: "roll-1", kind: "skill", label: "Mechanics", outcome: "success", total: 22 };
     const once = applyFinalizedTurn(snapshot, "turn-earned-1", "I secure the service route", roll, delta);
-    expect(once.character).toMatchObject({ experience: 1000, level: 2 });
+    expect(once.character).toMatchObject({ experience: 1000, level: 1 });
     expect(once.gameState).toMatchObject({ credits: 1_200_000_050, campaignTimeMinutes: 12, levelUpAvailable: true });
     expect(once.gameState.inventory).toEqual([expect.objectContaining({ name: "Access cylinder", qty: 1 })]);
     expect(once.gameState.turnEvents).toEqual([expect.objectContaining({ turnId: "turn-earned-1", experienceAward: 100 })]);

@@ -53,8 +53,8 @@ describe("generated campaign ledger boundary", () => {
 
   it("adds bounded XP and derives Saga level from cumulative experience", () => {
     const character = { name: "D'mir", level: 1, experience: 900, feats: "Force Sensitive", talents: "None selected" };
-    expect(applyExperienceAward(character, 100)).toEqual({ ...character, experience: 1000, level: 2 });
-    expect(applyExperienceAward({ ...character, experience: 2900 }, 100)).toMatchObject({ experience: 3000, level: 3 });
+    expect(applyExperienceAward(character, 100)).toEqual({ ...character, experience: 1000, level: 1 });
+    expect(applyExperienceAward({ ...character, experience: 2900 }, 100)).toMatchObject({ experience: 3000, level: 1 });
     expect(sagaLevelForExperience(6000)).toBe(4);
     expect(() => applyExperienceAward(character, 5001)).toThrow();
   });

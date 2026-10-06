@@ -1,3 +1,5 @@
+import { ensureAdvancementScaffold } from "@/original/lib/sagaAdvancement";
+
 const array = (value) => Array.isArray(value) ? value : [];
 const hasTitle = (items, title) => items.some((item) => String(item?.title || item?.name || "").toLowerCase() === title.toLowerCase());
 
@@ -20,6 +22,7 @@ export const CAMPAIGN_STATE_DEFAULTS = {
   storyDirectives: [],
   creatorCanon: [],
   campaignExceptions: [],
+  advancementHistory: [],
 };
 
 /** Backfills additive campaign-ledger fields without replacing established save data. */
@@ -27,7 +30,7 @@ export function ensureCampaignScaffold(snapshot = {}) {
   const character = snapshot.character && typeof snapshot.character === "object" ? snapshot.character : null;
   const previous = snapshot.gameState && typeof snapshot.gameState === "object" ? snapshot.gameState : {};
   const state = { ...CAMPAIGN_STATE_DEFAULTS, ...previous };
-  for (const field of ["conditions", "decisions", "objectives", "discoveries", "milestones", "relationships", "legacyAssets", "turnEvents", "storyDirectives", "creatorCanon", "campaignExceptions"]) state[field] = array(previous[field]).map((item) => ({ ...item }));
+  for (const field of ["conditions", "decisions", "objectives", "discoveries", "milestones", "relationships", "legacyAssets", "turnEvents", "storyDirectives", "creatorCanon", "campaignExceptions", "advancementHistory"]) state[field] = array(previous[field]).map((item) => ({ ...item }));
 
   if (/^d['’]mir holloran$/i.test(String(character?.name || "").trim())) {
     const objectives = [
@@ -69,5 +72,5 @@ export function ensureCampaignScaffold(snapshot = {}) {
     });
   }
 
-  return { ...snapshot, character, gameState: state };
+  return ensureAdvancementScaffold({ ...snapshot, character, gameState: state });
 }

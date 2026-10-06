@@ -1,3 +1,5 @@
+import { sagaLevelForExperience } from "@/original/lib/sagaAdvancement";
+
 // Only this whitelist may cross from generated prose into the campaign ledger.
 // Validate the whole response before committing any of its effects.
 const MAX_MONEY = 1_000_000_000_000;
@@ -245,16 +247,14 @@ export function applyCharacterDelta(character, update) {
   return { ...character, ...patch };
 }
 
-export function sagaLevelForExperience(experience) {
-  const xp = Math.max(0, Math.floor(safeExistingNumber(experience)));
-  let level = 1;
-  while (level < 20 && xp >= (1000 * level * (level + 1)) / 2) level += 1;
-  return level;
-}
+export { sagaLevelForExperience };
 
 export function applyExperienceAward(character, award) {
   if (!record(character)) return character;
   const earned = number(award ?? 0, "experienceAward", 0, 5000, true);
   const experience = Math.min(MAX_MONEY, Math.max(0, Math.floor(safeExistingNumber(character.experience))) + earned);
-  return { ...character, experience, level: sagaLevelForExperience(experience) };
+  // XP unlocks advancement; it never chooses the player's class, talent,
+  // feat, ability increases, or hit-point roll. The level is committed only
+  // by the validated advancement transaction.
+  return { ...character, experience };
 }

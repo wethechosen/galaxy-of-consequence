@@ -8,6 +8,7 @@ import { planSagaAction } from "./saga-planner";
 import { permitsLocationChange, positiveActionText } from "./action-intent";
 import { sceneDirections, genericDirections } from "@/original/lib/sceneDirections";
 import { applyCharacterDelta, applyEngineDelta, applyExperienceAward, parseEngineResponse } from "@/original/lib/engineState";
+import { progressionStatus } from "@/original/lib/sagaAdvancement";
 import { ensureCampaignScaffold } from "@/original/lib/campaignState";
 import { appendDmirCreatorCanon, isDmirPrimaryCampaign } from "./dmir-authority";
 import { activeCombat, beginCombat, endPlayerTurn, isAttackDeclaration, isCombatMovementDeclaration, isCombatWithdrawDeclaration, isEndTurnDeclaration, resolvePlayerAttack, spendPlayerMove, withdrawFromCombat, type CombatResolution } from "./saga-combat";
@@ -534,9 +535,11 @@ export function applyFinalizedTurn(
   }
   const updatedCharacter = applyCharacterDelta(current.character, rawCharacterUpdate);
   const character = applyExperienceAward(updatedCharacter, delta.experienceAward ?? 0);
-  if (Number(character?.level || 1) > Number(current.character?.level || 1)) {
+  const priorProgression = progressionStatus(current.character || {});
+  const nextProgression = progressionStatus(character || {});
+  if (!priorProgression.advancementAvailable && nextProgression.advancementAvailable) {
     state.levelUpAvailable = true;
-    state.flags = [...(Array.isArray(state.flags) ? state.flags : []), { note: `Level ${character?.level} reached. Player advancement choices are pending.`, ts: Date.now() }];
+    state.flags = [...(Array.isArray(state.flags) ? state.flags : []), { note: `Level ${Number(character?.level || 1) + 1} advancement earned. Player class, talent, feat, and ability choices are pending.`, ts: Date.now() }];
   }
   return { ...current, character, gameState: state } as DatapadSnapshot;
 }
