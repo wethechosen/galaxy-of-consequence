@@ -14,6 +14,7 @@ export type NvidiaRequest = {
   max_tokens?: number;
   temperature?: number;
   top_p?: number;
+  timeout_ms?: number;
 };
 
 export class NvidiaProviderError extends Error {
@@ -32,6 +33,9 @@ export async function invokeNvidia(body: NvidiaRequest) {
   const grounding = query ? await runtimeSourceGrounding(query) : "";
   const system = [typeof body.system === "string" ? body.system : "", grounding].filter(Boolean).join("\n\n");
   let upstream: Response;
+  const timeoutMs = Math.max(1000, Math.min(Number(body.timeout_ms) || 45_000, 60_000));
+  const signal = AbortSignal.timeout(timeoutMs);
+  let result: { choices?: Array<{ finish_reason?: string; message?: { content?: string } }> };
   try {
     upstream = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
       method: "POST",
@@ -45,10 +49,11 @@ export async function invokeNvidia(body: NvidiaRequest) {
         top_p: Math.max(0.01, Math.min(Number(body.top_p ?? 0.95), 1)),
         chat_template_kwargs: { enable_thinking: false },
       }),
-      signal: AbortSignal.timeout(60000),
+      signal,
     });
+    if (upstream.ok) result = await upstream.json();
   } catch (error) {
-    const timeout = error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name);
+    const timeout = signal.aborted || error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name);
     throw new NvidiaProviderError(timeout ? "NVIDIA took too long to respond. No outcome was applied; retry the turn." : "NVIDIA is unavailable. No outcome was applied; retry the turn.", timeout ? 504 : 502);
   }
   if (!upstream.ok) {
@@ -58,12 +63,11 @@ export async function invokeNvidia(body: NvidiaRequest) {
       : `NVIDIA returned HTTP ${upstream.status}. Retry when the service is available.`;
     throw new NvidiaProviderError(error, 502);
   }
-  const result = await upstream.json();
-  const choice = result.choices?.[0];
+  const choice = result!.choices?.[0];
   if (choice?.finish_reason === "length") throw new NvidiaProviderError("The GM response was cut off. No outcome was applied; retry the turn.");
   const content = choice?.message?.content?.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
   if (!content) throw new NvidiaProviderError("NVIDIA returned no response. No outcome was applied; retry the turn.");
-  return { content, provider: "nvidia", model: testAiStatus().model, finishReason: choice.finish_reason };
+  return { content, provider: "nvidia", model: testAiStatus().model, finishReason: choice!.finish_reason };
 }
 
 // The user's temporary test configuration routes all active AI through NVIDIA.

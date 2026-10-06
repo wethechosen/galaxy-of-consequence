@@ -13,6 +13,7 @@ afterEach(() => {
   process.env.SUPABASE_GOC_BRIDGE_URL = previous.URL;
   process.env.SUPABASE_GOC_BRIDGE_KEY = previous.KEY;
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 function enableHosted() {
@@ -22,6 +23,17 @@ function enableHosted() {
 }
 
 describe("hosted web authentication", () => {
+  it("bounds account lookup and body stalls without exposing credentials", async () => {
+    enableHosted();
+    const abort = new AbortController();
+    const timer = vi.spyOn(AbortSignal, "timeout").mockReturnValue(abort.signal);
+    vi.stubGlobal("fetch", vi.fn(async (_url, init) => {
+      expect(init.signal).toBe(abort.signal);
+      return { ok: true, json: async () => { abort.abort(); throw new DOMException('Deadline elapsed', 'TimeoutError'); } };
+    }));
+    await expect(authenticateHosted('dmir@galaxy.local', 'not-displayed')).rejects.toMatchObject({ status: 504, message: 'Account lookup timed out. Please try signing in again.' });
+    expect(timer).toHaveBeenCalledWith(15_000);
+  });
   it("issues and verifies stateless signed sessions", () => {
     enableHosted();
     expect(hostedAuthEnabled()).toBe(true);

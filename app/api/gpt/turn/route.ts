@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { GptActionError, authenticateGptAction, readGptActionBody } from "@/lib/gpt-action";
-import { runGmTurn, GmTurnError, normalizeTurnAction } from "@/lib/gm";
+import { runGmTurn, GmTurnError } from "@/lib/gm";
 import { hostedGet, hostedPersistenceEnabled, hydrateHostedSave, saveHostedResult } from "@/lib/hosted-bridge";
-import { anchorNarrationLocation, replayedPlayerAction } from "@/lib/gpt-narration";
+import { anchorNarrationLocation } from "@/lib/gpt-narration";
+import { replayHostedTurn } from "@/lib/hosted-turn-replay";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,33 +17,6 @@ function controlIntent(action: string) {
   if (/\bhud\b|show\s+(my\s+)?status/i.test(value)) return "getCampaignHUD";
   if (/(out[- ]of[- ]character|\booc\b|reconcil(e|iation)|sync\s+(state|save)|authoritative\s+save|set\s+and\s+persist)/i.test(value)) return "reconcileCampaignState";
   return null;
-}
-
-function replayResponse(hosted: Awaited<ReturnType<typeof hostedGet>>, turnId: string, action: string) {
-  if (!hosted?.snapshot) return null;
-  const messages = Array.isArray(hosted.snapshot.messages) ? hosted.snapshot.messages as Array<Record<string, unknown>> : [];
-  const match = [...messages].reverse().find((message) => message.role === "assistant" && message.turnId === turnId);
-  if (!match || typeof match.content !== "string") return null;
-  const originalAction = replayedPlayerAction(hosted.snapshot, turnId);
-  if (originalAction === null) return null;
-  if (normalizeTurnAction(originalAction) !== normalizeTurnAction(action)) {
-    throw new GptActionError("This turn identifier was already used for a different action.", 409);
-  }
-  const state = hosted.snapshot.gameState;
-  return {
-    revision: hosted.revision, turnId, narration: match.content, roll: null,
-    provider: "hosted-replay", fallbackReason: null,
-    hud: {
-      level: hosted.snapshot.character?.level || 1,
-      experience: hosted.snapshot.character?.experience || 0,
-      forcePoints: state.forcePoints || 0,
-      destinyPoints: state.destinyPoints || 0,
-      darkSideScore: state.darkSideScore || 0,
-      notoriety: state.notoriety || 0,
-      carried: (Array.isArray(state.inventory) ? state.inventory : []).reduce((sum: number, item: unknown) => sum + Number((item as Record<string, unknown>)?.qty || 0), 0),
-    },
-    state: { location: state.location, health: state.health, conditionTrack: state.conditionTrack, credits: state.credits, inventory: state.inventory, objectives: state.objectives, combat: state.combat },
-  };
 }
 
 function rewriteAssistantMessage(snapshot: RecordValue, turnId: string, narration: string) {
@@ -81,9 +55,12 @@ export async function POST(request: Request) {
     if (hostedPersistenceEnabled()) {
       hostedBefore = await hostedGet(actor.username);
       if (!hostedBefore?.snapshot) throw new GptActionError("No campaign is initialized for the configured action account.", 409);
+      const replay = replayHostedTurn(hostedBefore, turnId, action);
+      if (replay) {
+        const { snapshot: _snapshot, ...publicReplay } = replay;
+        return NextResponse.json(publicReplay, { headers: { "Cache-Control": "no-store" } });
+      }
       if (hostedBefore.revision !== revision) {
-        const replay = replayResponse(hostedBefore, turnId, action);
-        if (replay) return NextResponse.json(replay, { headers: { "Cache-Control": "no-store" } });
         throw new GptActionError("The campaign changed. Reload state and submit the action again.", 409);
       }
       hydrateHostedSave(actor, hostedBefore);

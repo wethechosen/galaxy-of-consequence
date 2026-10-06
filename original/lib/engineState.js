@@ -4,6 +4,7 @@ import { sagaLevelForExperience } from "@/original/lib/sagaAdvancement";
 // Validate the whole response before committing any of its effects.
 const MAX_MONEY = 1_000_000_000_000;
 const MAX_QUANTITY = 1_000_000;
+const MAX_HEALTH = 10_000;
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 const record = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const bound = (value, low, high) => Math.max(low, Math.min(high, value));
@@ -39,7 +40,8 @@ function characterPatch(value) {
 function validateDelta(value) {
   if (!record(value)) invalid("STATE");
   const result = {};
-  for (const field of ["health", "notoriety", "forceAlignment", "credits", "creditsCriminal"]) {
+  if (own(value, "health")) result.health = number(value.health, "health", -MAX_HEALTH, MAX_HEALTH, true);
+  for (const field of ["notoriety", "forceAlignment", "credits", "creditsCriminal"]) {
     if (own(value, field)) result[field] = number(value[field], field, -MAX_MONEY, MAX_MONEY);
   }
   for (const field of ["conditionTrack", "forcePoints", "destinyPoints", "darkSideScore"]) {
@@ -84,6 +86,28 @@ function validateDelta(value) {
     }).filter(Boolean);
   }
   if (own(value, "characterUpdate")) result.characterUpdate = characterPatch(value.characterUpdate);
+  if (own(value, "tradeOfferAdd")) {
+    if (!Array.isArray(value.tradeOfferAdd) || value.tradeOfferAdd.length > 8) invalid("tradeOfferAdd");
+    result.tradeOfferAdd = value.tradeOfferAdd.map((offer) => {
+      if (!record(offer) || !Array.isArray(offer.items) || !offer.items.length || offer.items.length > 12) invalid("tradeOfferAdd");
+      const sellerName = string(offer.sellerName, "tradeOfferAdd.sellerName", 160);
+      if (!sellerName) invalid("tradeOfferAdd.sellerName");
+      const entry = { sellerName, totalCredits: number(offer.totalCredits, "tradeOfferAdd.totalCredits", 1, MAX_MONEY, true) };
+      if (own(offer, "sellerSpecies")) {
+        const species = string(offer.sellerSpecies, "tradeOfferAdd.sellerSpecies", 160);
+        if (species) entry.sellerSpecies = species;
+      }
+      const seen = new Set();
+      entry.items = offer.items.map((item) => {
+        if (!record(item)) invalid("tradeOfferAdd.items");
+        const name = string(item.name, "tradeOfferAdd.items.name", 160);
+        if (!name || seen.has(keyOf(name))) invalid("tradeOfferAdd.items.name");
+        seen.add(keyOf(name));
+        return { name, qty: number(item.qty, "tradeOfferAdd.items.qty", 1, 100, true), tag: own(item, "tag") ? string(item.tag, "tradeOfferAdd.items.tag", 160) || "gear" : "gear" };
+      });
+      return entry;
+    });
+  }
   if (own(value, "travelAccessAdd")) {
     if (!Array.isArray(value.travelAccessAdd) || value.travelAccessAdd.length > 25) invalid("travelAccessAdd");
     result.travelAccessAdd = value.travelAccessAdd.map((item) => string(item, "travelAccessAdd", 80)).filter(Boolean);
@@ -156,7 +180,8 @@ export function applyEngineDelta(previous, delta, genId = defaultId) {
   const patch = validateDelta(delta);
   if (!record(previous)) invalid("previous ledger");
   const next = { ...previous };
-  for (const field of ["health", "notoriety", "forceAlignment", "credits", "creditsCriminal"]) {
+  next.health = bound(safeExistingNumber(previous.health) + (patch.health || 0), 0, MAX_HEALTH);
+  for (const field of ["notoriety", "forceAlignment", "credits", "creditsCriminal"]) {
     next[field] = bound(safeExistingNumber(previous[field]) + (patch[field] || 0), 0, field.startsWith("credits") ? MAX_MONEY : 100);
   }
   next.conditionTrack = bound(safeExistingNumber(previous.conditionTrack) + (patch.conditionTrack || 0), 0, 5);

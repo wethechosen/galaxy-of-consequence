@@ -7,26 +7,41 @@ function bridgeConfig() {
   return { url, key };
 }
 
-async function bridgeRequest(target: URL | string, init: RequestInit = {}) {
+const BRIDGE_REQUEST_TIMEOUT_MS = 15_000;
+const RAG_REQUEST_TIMEOUT_MS = 5_000;
+
+async function bridgeRequest(target: URL | string, init: RequestInit = {}, timeoutMs = BRIDGE_REQUEST_TIMEOUT_MS) {
   const { key } = bridgeConfig();
-  const response = await fetch(target, {
-    ...init,
-    cache: "no-store",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      ...(init.body ? { "Content-Type": "application/json" } : {}),
-      ...(init.headers || {}),
-    },
-  });
-  const data = (await response.json().catch(() => ({}))) as BridgeResponse;
-  if (!response.ok) {
-    throw Object.assign(new Error(data?.error || `Datapad bridge failed (${response.status}).`), {
-      status: response.status,
-      currentRevision: data?.revision,
-      data,
+  const signal = init.signal || AbortSignal.timeout(timeoutMs);
+  try {
+    const response = await fetch(target, {
+      ...init,
+      signal,
+      cache: "no-store",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        ...(init.body ? { "Content-Type": "application/json" } : {}),
+        ...(init.headers || {}),
+      },
     });
+    const data = (await response.json().catch((error: unknown) => {
+      if (signal.aborted) throw error;
+      return {};
+    })) as BridgeResponse;
+    if (!response.ok) {
+      throw Object.assign(new Error(data?.error || `Datapad bridge failed (${response.status}).`), {
+        status: response.status,
+        currentRevision: data?.revision,
+        data,
+      });
+    }
+    return data;
+  } catch (error) {
+    // A timeout is an uncertain response, not proof that a write was rolled
+    // back. Clients must reload the authoritative revision before retrying.
+    if (signal.aborted) throw Object.assign(new Error("Datapad bridge request timed out. Reload state before retrying."), { status: 504 });
+    throw error;
   }
-  return data;
 }
 
 export async function bridgeGet(accountId: string, includeConfig = false) {
@@ -51,7 +66,7 @@ export async function bridgeSearchRag(query: string, limit = 6) {
   target.searchParams.set("mode", "rag");
   target.searchParams.set("q", query);
   target.searchParams.set("limit", String(Math.max(1, Math.min(Number(limit) || 6, 12))));
-  return bridgeRequest(target);
+  return bridgeRequest(target, {}, RAG_REQUEST_TIMEOUT_MS);
 }
 
 export async function bridgeRagStats() {

@@ -11,7 +11,7 @@ describe("generated campaign ledger boundary", () => {
     const after = applyEngineDelta(before, delta);
     expect(clean).toBe("The cell door opens.");
     expect(after.credits).toBe(475);
-    expect(after.health).toBe(100);
+    expect(after.health).toBe(218);
     expect(after.inventory[0].qty).toBe(1);
     expect(before.inventory[0].qty).toBe(2);
     expect(before.credits).toBe(500);
@@ -34,6 +34,13 @@ describe("generated campaign ledger boundary", () => {
     expect(after.credits).toBe(0);
     expect(after.health).toBe(0);
     expect(after.inventory).toEqual([]);
+  });
+
+  it("preserves Saga hit points above 100 through unrelated turns and damage", () => {
+    const before = { ...ledger(), health: 150 };
+    expect(applyEngineDelta(before, { credits: -25 }).health).toBe(150);
+    expect(applyEngineDelta(before, { health: -12 }).health).toBe(138);
+    expect(() => applyEngineDelta(before, { health: 1.5 })).toThrow();
   });
 
   it("deduplicates assets, contacts, headlines and repeated additions by normalized names", () => {

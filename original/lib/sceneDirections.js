@@ -14,6 +14,17 @@ export function sceneDirections({ state = {}, character = {}, scene = "", action
   // Do not turn negated scenery into an available interactable.
   const evidence = `${state.location || ""} ${scene.split(/(?<=[.!?])\s+/).filter((line) => !/\b(?:no|not|without|absent)\b/i.test(line)).join(" ")}`;
   const context = `${evidence} ${action} ${result}`;
+  // The immediate social scene wins over an old Force-route summary.
+  if (/market|shop|bazaar|vendor|store/i.test(String(state.location || "")) && /vendor|merchant|clothing|robe|tunic|suit|buy|purchase|price|pay|rest|shelter|lodging|room/i.test(`${action} ${result}`)) {
+    const quoted = (state.tradeOffers || []).filter(offer => offer.status === "open" && offer.location === state.location);
+    return [...new Set([
+      ...(/guesthouse|lodging|rest|shelter|room/i.test(`${action} ${result}`) ? ["Ask the guesthouse desk about paid lodging and its terms."] : []),
+      ...(quoted.length ? [`Consider ${quoted[0].items.map(item => item.name).join(" and ")} at the quoted price.`] : ["Ask the merchant to show suitable clothing and quote its price."]),
+      "Inspect the offered clothing before deciding whether to buy.",
+      "Ask another stall about a thick black robe.",
+      "Ask about local food and shelter.",
+    ])].slice(0, 4);
+  }
   const choices = [];
   if (/terminal|console|control panel/i.test(evidence)) choices.push("Read the visible terminal display without changing its settings.");
   if (/junction|intersection|branch|fork/i.test(scene)) choices.push("Compare the visible branches before choosing one.", "Inspect the junction for signs of recent passage.");

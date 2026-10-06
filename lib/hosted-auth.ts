@@ -35,11 +35,19 @@ export function hostedListAccounts(): HostedAccount[] {
 
 export async function authenticateHosted(username: string, password: string): Promise<HostedAccount> {
   const name = username.trim().toLowerCase();
-  const response = await fetch(`${bridgeUrl()}?username=${encodeURIComponent(name)}`, {
-    headers: { Authorization: `Bearer ${bridgeKey()}`, "Content-Type": "application/json" },
-    cache: "no-store",
-  });
-  const body = await response.json() as { auth?: HostedCredential | null; error?: string };
+  const signal = AbortSignal.timeout(15_000);
+  let response: Response;
+  let body: { auth?: HostedCredential | null; error?: string };
+  try {
+    response = await fetch(`${bridgeUrl()}?username=${encodeURIComponent(name)}`, {
+      headers: { Authorization: `Bearer ${bridgeKey()}`, "Content-Type": "application/json" },
+      cache: "no-store", signal,
+    });
+    body = await response.json();
+  } catch (error) {
+    if (signal.aborted) throw Object.assign(new Error("Account lookup timed out. Please try signing in again."), { status: 504 });
+    throw error;
+  }
   if (!response.ok) throw new Error(body.error || "Hosted account lookup failed.");
   const row = body.auth;
   const salt = row?.salt || "unknown-hosted-account";

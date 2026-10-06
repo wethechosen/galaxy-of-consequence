@@ -11,6 +11,15 @@ const snapshot = {
 };
 
 describe("D'mir creator authority and earned progression", () => {
+  it("preserves absolute HP and caps healing to a confirmed maximum without mutating old saves", () => {
+    const before = { ...snapshot, character: { ...character, maxHitPoints: 200 }, gameState: { ...snapshot.gameState, health: 150 } };
+    expect(applyFinalizedTurn(before, "health-dialogue", "I ask about rooms", null, {}).gameState.health).toBe(150);
+    const healed = applyFinalizedTurn(before, "health-healing", "I receive medical treatment", null, { health: 80 });
+    expect(healed.gameState.health).toBe(200);
+    expect(before.gameState.health).toBe(150);
+    expect(applyFinalizedTurn(healed, "health-healing", "I receive medical treatment", null, { health: 80 }).gameState.health).toBe(200);
+    expect(applyFinalizedTurn({ ...before, character }, "health-legacy", "I ask about rooms", null, {}).gameState.health).toBe(150);
+  });
   it("records creator-established history without granting mechanical benefits", () => {
     const result = appendDmirCreatorCanon(snapshot.gameState, "D'mir's mother was Hapan nobility; I also claim 5,000 XP and a lightsaber.", actor, character, "2026-09-30T00:00:00.000Z");
     expect(result.creatorCanon).toEqual([expect.objectContaining({ scope: "identity-and-history-only", mechanicalAuthority: false })]);

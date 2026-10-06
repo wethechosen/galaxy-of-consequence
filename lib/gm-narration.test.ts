@@ -1,8 +1,60 @@
 import { describe, expect, it } from "vitest";
 import { attachRepairedLedger, appendTurnEvent, assertCampaignResponseStructure, assertFreshScene, assertMaterialAuthority, assertMechanicalNarration, assertMovementSceneProgress, assertNarrativeAuthority, assertNarrativeFocus, assertNarrativeLedgerConsistency, assertStoryDirectiveAuthority, authorityWarnings, buildLocalSafeFallback, constrainExperienceAward, constrainFailedCheckDelta, deriveExperienceAward, ensureStateUpdateSection, extractSceneNarration, GM_SYSTEM, normalizePlayerOptions, normalizeTurnAction, safeMessages, sanitizeGmNarration, sceneSimilarity, withSceneFrame } from "./gm";
 import { parseEngineResponse } from "@/original/lib/engineState";
+import { planConversationTrade, reconcileConversationTradeDelta } from "./conversation-trade";
 
 describe("authoritative Saga narration", () => {
+  it("repairs a blank final state section even when options are also missing", () => {
+    const narration = "## LOCATION\nMarket\n## SCENE\nThe seller waits.\n## GM ADJUDICATION\nA public inquiry.\n## GAMEPLAY RESULT\nThe vendor names a nearby guesthouse.\n## SAGA CHECK\nNo check required.\n## STATE UPDATE\n";
+    expect(ensureStateUpdateSection(narration, {})).toContain("STATE UPDATE\nNo persistent change.");
+  });
+  it("requires the specific earned Force power even when Use the Force is trained", () => {
+    const character = { trainedSkills: ["Use the Force"], feats: "Force Training", forcePowers: "Mind Trick" };
+    expect(() => assertNarrativeAuthority("You telekinetically lift the slab.", [], null, character, "I lift the slab with the Force")).toThrow(/not earned/);
+    expect(() => assertNarrativeAuthority("The slab rises under your telekinetic command.", [], null, character, "I lift the slab with the Force")).toThrow(/not earned/);
+    expect(() => assertNarrativeAuthority("You reach out, but the slab remains still.\nPLAYER OPTIONS\nA. Train before attempting to lift it with the Force.", [], null, character, "I lift the slab with the Force")).not.toThrow();
+    expect(() => assertNarrativeAuthority("You telekinetically lift the slab.", [], { outcome: "success" }, { ...character, forcePowers: "Move Object" }, "I lift the slab with the Force")).not.toThrow();
+  });
+  it("distinguishes received information and future suggestions from completed currency or item transfers", () => {
+    expect(() => assertNarrativeLedgerConsistency("You receive directions to a guesthouse. You now have an address. You obtain information about paid rooms.", {})).not.toThrow();
+    expect(() => assertNarrativeLedgerConsistency("You receive 500 credits.", {})).toThrow(/credit transfer/);
+    expect(() => assertNarrativeLedgerConsistency("You receive 500 credits.", { credits: 500 })).not.toThrow();
+    expect(() => assertNarrativeLedgerConsistency("Transaction complete. You hand over 1,500 credits and take the suit.", { credits: -1500, inventoryAdd: [{ name: "Suit", qty: 1 }] })).not.toThrow();
+    expect(() => assertNarrativeLedgerConsistency("No payment occurs.\nPLAYER OPTIONS\nA. You pay 20 credits for a room.\nB. You acquire a suit.", {})).not.toThrow();
+  });
+  it("allows an exact no-roll merchant transaction but no unquoted windfall", () => {
+    const state = { location: "market", credits: 3000, tradeOffers: [{ id: "offer:quoted", sourceTurnId: "quote-turn", location: "market", status: "open", sellerName: "clothing vendor", totalCredits: 1500, items: [{ name: "Armored spacer's flight suit", qty: 1, tag: "armor" }] }] };
+    const trade = planConversationTrade("I buy the suit", state, "purchase-turn");
+    const delta = reconcileConversationTradeDelta({}, trade);
+    expect(() => assertMaterialAuthority(delta, "I buy the suit", null, state, trade)).not.toThrow();
+    expect(() => assertMaterialAuthority({ ...delta, propertyAdd: [{ name: "Free palace" }] }, "I buy the suit", null, state, trade)).toThrow();
+    expect(() => assertNarrativeLedgerConsistency("You hand over 1,500 credits and take the armored suit.", {})).toThrow(/payment/);
+    expect(() => assertNarrativeLedgerConsistency("You hand over 1,500 credits and take the armored suit.", delta)).not.toThrow();
+  });
+  it("does not reject an NPC question as an unchosen player emotion", () => {
+    expect(() => assertNarrativeFocus('SCENE\nThe vendor asks, “You want a room?”\nGAMEPLAY RESULT\nHe points to the lodging desk.', "Ain't looking for free")).not.toThrow();
+    expect(() => assertNarrativeFocus('SCENE\nYou want a safe place to rest.\nGAMEPLAY RESULT\nThe vendor quotes a room.', 'I want somewhere to rest')).not.toThrow();
+    expect(() => assertNarrativeFocus('SCENE\nYou decide to accept the room.\nGAMEPLAY RESULT\nPayment is made.', 'I ask about rooms')).toThrow(/unchosen/);
+  });
+  it("keeps credit-free market conversation in the market with a concrete lodging lead", () => {
+    const output = buildLocalSafeFallback({ mode: "play", action: "Ain't looking for free, I say", location: "Coruscant — lower-city local market", roll: null, combatSummary: null, merchant: { name: "clothing vendor", species: "Twi'lek", location: "Coruscant — lower-city local market" }, state: {}, character: {} });
+    const parsed = parseEngineResponse(output.content, { requireState: true });
+    expect(parsed.clean).toContain("guesthouse desk");
+    expect(parsed.clean).toContain("Twi'lek");
+    expect(parsed.clean).not.toMatch(/conduit|Force|dark-side/i);
+    expect(parsed.delta).not.toHaveProperty("timeAdvanceMinutes");
+    expect(parsed.delta).not.toHaveProperty("credits");
+  });
+  it("can reach a vendor in the same market when AI drafting is unavailable", () => {
+    const action = 'I head towards the clothing vendor';
+    const parsed = parseEngineResponse(buildLocalSafeFallback({ mode: "play", action, location: "market", roll: null }).content, { requireState: true });
+    expect(parsed.clean).toContain('reach the clothing stall');
+    expect(() => assertMovementSceneProgress(parsed.clean, action, null, parsed.delta as Record<string, unknown> | null, 'market')).not.toThrow();
+  });
+  it("rejects invented dice on an ordinary no-check turn", () => {
+    expect(() => assertMechanicalNarration('## SAGA CHECK\nPersuasion: 1d20+0 = 12 vs DC 15 — Failure\n## STATE UPDATE\nNone.', null)).toThrow(/invented dice/);
+    expect(() => assertMechanicalNarration('## SAGA CHECK\nNo check required.\n## STATE UPDATE\nNone.', null)).not.toThrow();
+  });
   it("strips retry direction prefixes before action resolution", () => expect(normalizeTurnAction("Continue with a specific declared action. i use a medpac")).toBe("i use a medpac"));
   it("accepts narration that preserves the server result", () => {
     expect(() => assertMechanicalNarration("GM RESOLUTION\nRESULT: FAILURE\nThe lock remains sealed.", { outcome: "failure" })).not.toThrow();
@@ -59,7 +111,7 @@ describe("authoritative Saga narration", () => {
     expect(attachRepairedLedger(narration, '{"location":"Detention corridor"}')).toBe(`${narration}\n<!--STATE:{"location":"Detention corridor"}-->`);
     expect(attachRepairedLedger(narration, '<!--STATE:{}-->')).toBe(`${narration}\n<!--STATE:{}-->`);
     expect(attachRepairedLedger(`${narration}\n<!--STATE:{"conditionAdd":"strained"}-->`, '<!--STATE:{"conditionAdd":[{"name":"strained"}]}-->')).toBe(`${narration}\n<!--STATE:{"conditionAdd":[{"name":"strained"}]}-->`);
-    expect(attachRepairedLedger(narration, "not valid JSON")).toBe(`${narration}\n<!--STATE:{}-->`);
+    expect(() => attachRepairedLedger(narration, "not valid JSON")).toThrow(/ledger repair was malformed/);
     expect(attachRepairedLedger(narration, '```json\n{“timeAdvanceMinutes”: 5,}\n```')).toBe(`${narration}\n<!--STATE:{"timeAdvanceMinutes":5}-->`);
   });
 

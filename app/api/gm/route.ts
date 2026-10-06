@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { requireAccount } from "@/lib/accounts";
+import { requireAccount, listAccounts } from "@/lib/accounts";
 import { GmTurnError, runGmTurn } from "@/lib/gm";
 import { assertLocalRequest, readLocalObject } from "@/lib/local-http";
 import { NvidiaProviderError } from "@/lib/original-provider";
 import { hostedGet, hostedPersistenceEnabled, hydrateHostedSave, saveHostedResult } from "@/lib/hosted-bridge";
+import { replayHostedTurn } from "@/lib/hosted-turn-replay";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,22 +14,28 @@ export async function POST(request: Request) {
     assertLocalRequest(request);
     const actor = requireAccount(request);
     const body = await readLocalObject(request);
-    const hosted = hostedPersistenceEnabled() ? await hostedGet(actor.username) : null;
+    const accountId = typeof body.accountId === "string" ? body.accountId : actor.id;
+    if (accountId !== actor.id && actor.role !== "admin") throw new GmTurnError("You can only open your own campaign save.", 403);
+    const target = accountId === actor.id ? actor : listAccounts().find(account => account.id === accountId);
+    if (!target) throw new GmTurnError("Account no longer exists.", 404);
+    const hosted = hostedPersistenceEnabled() ? await hostedGet(target.username) : null;
     if (hosted) {
+      const replay = replayHostedTurn(hosted, typeof body.turnId === "string" ? body.turnId : "", typeof body.action === "string" ? body.action : "");
+      if (replay) return NextResponse.json(replay, { headers: { "Cache-Control": "no-store" } });
       if (typeof body.revision !== "number" || body.revision !== hosted.revision) {
         return NextResponse.json({ error: "The campaign changed elsewhere. Reload the saved game before continuing.", revision: hosted.revision }, { status: 409 });
       }
-      hydrateHostedSave(actor, hosted);
+      hydrateHostedSave(target, hosted);
     }
     const result = await runGmTurn(actor, {
-      accountId: typeof body.accountId === "string" ? body.accountId : undefined,
+      accountId,
       revision: Number(body.revision),
       action: typeof body.action === "string" ? body.action : "",
       turnId: typeof body.turnId === "string" ? body.turnId : "",
       openScene: body.openScene === true,
       statePolicy: body.statePolicy === "committed-trade" ? "committed-trade" : null,
     });
-    if (hosted) await saveHostedResult(actor, hosted.revision, result.snapshot);
+    if (hosted) await saveHostedResult(target, hosted.revision, result.snapshot);
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const status = error instanceof GmTurnError || error instanceof NvidiaProviderError ? error.status

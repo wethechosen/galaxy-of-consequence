@@ -14,21 +14,30 @@ export function hostedPersistenceEnabled() {
 function bridgeUrl() { return process.env.SUPABASE_GOC_BRIDGE_URL!.replace(/\/$/, ""); }
 function bridgeHeaders() { return { Authorization: `Bearer ${process.env.SUPABASE_GOC_BRIDGE_KEY}`, "Content-Type": "application/json" }; }
 
-export async function hostedGet(username: string): Promise<HostedSave | null> {
-  const response = await fetch(`${bridgeUrl()}?username=${encodeURIComponent(username)}`, { headers: bridgeHeaders(), cache: "no-store" });
-  const body = await response.json() as HostedSave | Record<string, unknown>;
-  if (!response.ok) {
-    const error = typeof body === "object" && body && "error" in body && typeof body.error === "string" ? body.error : "Hosted campaign state could not be loaded.";
-    throw new Error(error);
+const HOSTED_REQUEST_TIMEOUT_MS = 15_000;
+
+async function hostedRequest(target: string, init: RequestInit = {}) {
+  const signal = AbortSignal.timeout(HOSTED_REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(target, { ...init, headers: bridgeHeaders(), cache: "no-store", signal });
+    const body = await response.json() as HostedSave & { error?: string };
+    if (!response.ok) throw Object.assign(new Error(body.error || "Hosted campaign request failed."), { status: response.status });
+    return body;
+  } catch (error) {
+    // A write may have committed before its response timed out. Reload and
+    // replay the same turn ID rather than claiming it was never applied.
+    if (signal.aborted) throw Object.assign(new Error("Hosted campaign request timed out. Reload state before retrying."), { status: 504 });
+    throw error;
   }
+}
+
+export async function hostedGet(username: string): Promise<HostedSave | null> {
+  const body = await hostedRequest(`${bridgeUrl()}?username=${encodeURIComponent(username)}`);
   return typeof body.revision === "number" && body.snapshot ? body as HostedSave : null;
 }
 
 export async function hostedPut(username: string, accountId: string, expectedRevision: number, snapshot: DatapadSnapshot) {
-  const response = await fetch(bridgeUrl(), { method: "POST", headers: bridgeHeaders(), body: JSON.stringify({ username, accountId, expectedRevision, snapshot }), cache: "no-store" });
-  const body = await response.json() as HostedSave & { error?: string };
-  if (!response.ok) throw Object.assign(new Error(body.error || "Hosted campaign state could not be saved."), { status: response.status });
-  return body;
+  return hostedRequest(bridgeUrl(), { method: "POST", body: JSON.stringify({ username, accountId, expectedRevision, snapshot }) });
 }
 
 export function ensureHostedActor(actor: Account) {

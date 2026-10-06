@@ -49,7 +49,8 @@ export async function POST(request: Request) {
     response.cookies.set(SESSION_COOKIE, startSession(user), { ...options, secure: new URL(request.url).protocol === "https:" });
     return response;
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Sign-in failed." }, { status: 400 });
+    const status = error && typeof error === "object" && "status" in error && Number(error.status) === 504 ? 504 : 400;
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Sign-in failed." }, { status });
   }
 }
 

@@ -8,6 +8,7 @@ import { invokeNvidiaAssistant, NVIDIA_MODEL } from "@/original/lib/nvidia";
 import { getTravelAccess, getTravelCost } from "@/original/lib/galaxyLocations";
 import { getSellQuote, getTradeAccess } from "@/original/lib/marketCatalog";
 import { CAMPAIGN_STATE_DEFAULTS, ensureCampaignScaffold } from "@/original/lib/campaignState";
+import { pendingOperation, clearPendingOperation } from "@/original/lib/pendingOperation";
 
 /* ---------- constants ---------- */
 
@@ -867,78 +868,92 @@ If this is the very first message of the session, open the scene in-character ba
   }
 
   async function buyMarketGood(good) {
-    if (!character || !good || !Number.isFinite(good.price) || good.price < 0 || gameState.credits < good.price || activeTurn.current) return false;
+    if (!character || !good || !Number.isFinite(good.price) || good.price < 0 || gameState.credits < good.price || activeTurn.current || !saveReady || saveSession.current?.error) return false;
     const access = getTradeAccess(gameState.location, character, gameState, good);
     if (access.direct) {
       const session = saveSession.current;
+      activeTurn.current = true;
       setSending(true); setTurnError(""); setSaveStatus("saving");
       try {
         await session.queue;
-        const response = await fetch("/api/market", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: session.accountId, revision: session.revision, action: "buy", goodId: good.id }) });
+        const choices = { action: "buy", goodId: good.id };
+        const transactionId = pendingOperation(localStorage, session.accountId, session.revision, "market", choices);
+        const response = await fetch("/api/market", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: session.accountId, revision: session.revision, transactionId, ...choices }) });
         const result = await response.json();
+        if ([400, 403, 404, 422].includes(response.status)) clearPendingOperation(localStorage, session.accountId, "market");
         if (!response.ok || !result.snapshot) throw new Error(result.error || "The transaction could not be completed.");
         const completed = normalizeSnapshot(result.snapshot);
         applySnapshot(completed); session.snapshot = completed; session.revision = result.revision; session.lastSaved = JSON.stringify(completed); session.error = "";
         setSaveError(""); setSaveStatus("saved");
+        clearPendingOperation(localStorage, session.accountId, "market");
         return true;
       } catch (error) {
         setTurnError(error.message || "The market terminal could not confirm the transaction.");
         setSaveStatus("saved");
         return false;
-      } finally { setSending(false); }
+      } finally { activeTurn.current = false; setSending(false); }
     }
     return sendTurn(`I try to acquire one ${good.name} from the local market for the listed ${good.price} credits. Resolve availability, access, legality, my location, and any confinement. If the purchase succeeds, deduct the price exactly once and add one item to inventory. Otherwise do not charge me or grant the item.`, messages);
   }
 
   async function sellMarketGood(item) {
-    if (!character || !item || activeTurn.current) return false;
+    if (!character || !item || activeTurn.current || !saveReady || saveSession.current?.error) return false;
     const quote = getSellQuote(item, gameState.location);
     const access = getTradeAccess(gameState.location, character, gameState);
     if (!quote || !access.publicMarket) { setTurnError(access.reason || "This item has no verified public-market quote."); return false; }
     const session = saveSession.current;
+    activeTurn.current = true;
     setSending(true); setTurnError(""); setSaveStatus("saving");
     try {
       await session.queue;
-      const response = await fetch("/api/market", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: session.accountId, revision: session.revision, action: "sell", itemId: item.id }) });
+      const choices = { action: "sell", itemId: item.id };
+      const transactionId = pendingOperation(localStorage, session.accountId, session.revision, "market", choices);
+      const response = await fetch("/api/market", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: session.accountId, revision: session.revision, transactionId, ...choices }) });
       const result = await response.json();
+      if ([400, 403, 404, 422].includes(response.status)) clearPendingOperation(localStorage, session.accountId, "market");
       if (!response.ok || !result.snapshot) throw new Error(result.error || "The sale could not be completed.");
       const completed = normalizeSnapshot(result.snapshot);
       applySnapshot(completed); session.snapshot = completed; session.revision = result.revision; session.lastSaved = JSON.stringify(completed); session.error = "";
       setSaveError(""); setSaveStatus("saved");
+      clearPendingOperation(localStorage, session.accountId, "market");
       return true;
     } catch (error) {
       setTurnError(error.message || "The market terminal could not confirm the sale.");
       setSaveStatus("saved");
       return false;
-    } finally { setSending(false); }
+    } finally { activeTurn.current = false; setSending(false); }
   }
 
   async function advanceCharacter(choices) {
     if (!character || activeTurn.current || !saveReady || saveSession.current?.error) return false;
     const session = saveSession.current;
+    activeTurn.current = true;
     setSending(true); setTurnError(""); setSaveStatus("saving");
     try {
       await session.queue;
+      const advancementId = pendingOperation(localStorage, session.accountId, session.revision, "advancement", choices);
       const response = await fetch("/api/advancement", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountId: session.accountId, revision: session.revision, advancementId: crypto.randomUUID(), ...choices }),
+        body: JSON.stringify({ accountId: session.accountId, revision: session.revision, ...choices, advancementId }),
       });
       if (response.status === 401) {
         window.location.assign(`/login?returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`);
         return false;
       }
       const result = await response.json();
+      if ([400, 403, 404, 422].includes(response.status)) clearPendingOperation(localStorage, session.accountId, "advancement");
       if (!response.ok || !result.snapshot) throw new Error(result.error || "The advancement could not be completed.");
       const completed = normalizeSnapshot(result.snapshot);
       applySnapshot(completed); session.snapshot = completed; session.revision = result.revision; session.lastSaved = JSON.stringify(completed); session.error = "";
       setSaveError(""); setSaveStatus("saved");
       localStorage.removeItem(`gc_datapad_draft:${session.accountId}`);
+      clearPendingOperation(localStorage, session.accountId, "advancement");
       return true;
     } catch (error) {
       setTurnError(error.message || "The advancement could not be completed.");
       setSaveStatus("saved");
       return false;
-    } finally { setSending(false); }
+    } finally { activeTurn.current = false; setSending(false); }
   }
 
   async function finishCreation() {

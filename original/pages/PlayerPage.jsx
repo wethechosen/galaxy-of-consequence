@@ -14,6 +14,7 @@ import { getSellQuote, getTradeAccess } from "@/original/lib/marketCatalog";
 import { useAuth } from "@/original/lib/AuthContext";
 import { cleanPlayerMessage, immersiveTurnError, parseImmersiveMessage } from "@/original/lib/immersiveChat";
 import { sceneDirections, genericDirections } from "@/original/lib/sceneDirections";
+import { hitPointDisplay } from "@/original/lib/hitPoints";
 
 const NAV_GROUPS = [
   { label: "Play", items: [{ key: "play", label: "Play", icon: Radio }] },
@@ -139,15 +140,16 @@ function LiveHudStrip({ gameState, character }) {
   const xpFlash = useFlash(character?.experience || 0);
   const carried = (gameState.inventory || []).reduce((sum, item) => sum + Number(item.qty || 0), 0);
   const inventoryFlash = useFlash(carried);
-  const healthColor = gameState.health > 60 ? "#4fd8e8" : gameState.health > 30 ? "#ff7a1a" : "#e23b3b";
+  const hitPoints = hitPointDisplay(character, gameState);
+  const healthColor = hitPoints.percent === null || hitPoints.percent > 60 ? "#4fd8e8" : hitPoints.percent > 30 ? "#ff7a1a" : "#e23b3b";
   return (
     <div className="px-5 py-3 flex flex-wrap items-center gap-4 text-xs" style={{ borderBottom: "1px solid rgba(255,255,255,.08)" }}>
       <div className={`flex items-center gap-2 rounded-lg px-2 py-1 ${healthFlash ? "gc-flash" : ""}`}>
         <Heart size={13} style={{ color: healthColor }} />
-        <div className="w-20 h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,.08)" }}>
-          <div className="h-full" style={{ width: `${gameState.health}%`, background: healthColor }} />
-        </div>
-        <span className="text-[#e7e5df]">{gameState.health}</span>
+        {hitPoints.percent !== null && <div className="w-20 h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,.08)" }}>
+          <div className="h-full" style={{ width: `${hitPoints.percent}%`, background: healthColor }} />
+        </div>}
+        <span className="text-[#e7e5df]">{hitPoints.label}</span>
       </div>
       <div className={`flex items-center gap-1.5 rounded-lg px-2 py-1 ${creditsFlash ? "gc-flash" : ""}`}>
         <Wallet size={13} style={{ color: "var(--econ)" }} />                <span className="text-[#e7e5df]">{gameState.credits.toLocaleString()} galactic credits</span>
@@ -264,7 +266,7 @@ function HudView() {
       </GlassCard>
 
       <p className="text-[10px] tracking-[0.2em] mt-6 mb-3" style={{ color: "var(--sig)" }}>VITALS & FINANCE</p>
-      <div className="space-y-2 mb-2"><MeterRow label="Hit Points" value={gameState.health} color="var(--force-light)" /></div>
+      <div className="space-y-2 mb-2"><HudRow label="Hit Points" value={hitPointDisplay(character, gameState).label} /></div>
       <div className="grid grid-cols-2 gap-3 mb-2">
         <StatCard icon={Wallet} label="Standard Credits" value={`${gameState.credits.toLocaleString()} cr`} color="var(--econ)" />
         <StatCard icon={Skull} label="Underworld Credits" value={`${gameState.creditsCriminal.toLocaleString()} cr`} color="var(--force-dark)" />

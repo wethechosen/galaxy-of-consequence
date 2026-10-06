@@ -1,5 +1,6 @@
 import { Wallet, Skull, MapPin, X } from "lucide-react";
 import { alignmentBand } from "@/original/lib/galaxy";
+import { hitPointDisplay } from "@/original/lib/hitPoints";
 
 function MiniMeter({ label, value, color }) {
   const safeValue = Math.max(0, Math.min(100, Number(value) || 0));
@@ -17,6 +18,7 @@ function MiniMeter({ label, value, color }) {
 }
 
 export function HudOverlay({ character, gameState, onClose }) {
+  const hitPoints = hitPointDisplay(character, gameState);
   const band = alignmentBand(gameState.forceAlignment);
   const accent = band === "Dark" ? "#e23b3b" : band === "Light" ? "#4fd8e8" : "#ff7a1a";
   return (
@@ -30,7 +32,7 @@ export function HudOverlay({ character, gameState, onClose }) {
         <span className="text-[9px] tracking-widest px-1.5 py-0.5 rounded-full" style={{ border: `1px solid ${accent}`, color: accent }}>{band.toUpperCase()}</span>
       </div>
       <div className="space-y-2 mb-3">
-        <MiniMeter label="Hit Points" value={gameState.health} color="#4fd8e8" />
+        <div><div className="flex justify-between text-[9px] tracking-widest mb-1"><span className="text-[#8b93a3]">HIT POINTS</span><span className="text-[#f2f0ea]">{hitPoints.label}</span></div>{hitPoints.percent !== null && <div className="h-1.5 rounded-full overflow-hidden bg-white/[.07]"><div className="h-full rounded-full bg-[#4fd8e8]" style={{ width: `${hitPoints.percent}%` }} /></div>}</div>
         <MiniMeter label="Notoriety" value={gameState.notoriety} color="#e23b3b" />
         <MiniMeter label="Force" value={gameState.forceAlignment} color={accent} />
       </div>

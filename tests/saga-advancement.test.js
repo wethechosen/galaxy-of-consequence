@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  SAGA_XP_THRESHOLDS, advancementRequirements, applySagaAdvancement, applySagaFoundation, availableTalents,
+  SAGA_XP_THRESHOLDS, advancementRequirements, applySagaAdvancement, applySagaFoundation, availableTalents, availableFeats,
+  advancementChoiceContext, availableClassSkills, foundationRequirements, parseAbilityScores,
   ensureAdvancementScaffold, experienceForLevel, nextLevelExperience, progressionStatus, sagaLevelForExperience,
 } from "../original/lib/sagaAdvancement";
 import { applyExperienceAward } from "../original/lib/engineState";
@@ -37,11 +38,11 @@ describe("Saga Edition advancement", () => {
 
   it("establishes a legacy level-1 build without granting XP or another level", () => {
     const current = snapshot({ name: "D'mir Holloran", species: "Human", level: 1, experience: 500, forceSensitive: "Yes", sagaStats: "STR 12 | DEX 14 | CON 10 | INT 12 | WIS 10 | CHA 11", feats: "None recorded", talents: "None recorded" }, { health: 26, forcePoints: null, destinyPoints: null });
-    const built = applySagaFoundation(current, { advancementId: "foundation-1", classId: "jedi", talentId: "battle-meditation", generalFeatId: "force-training", humanBonusFeatId: "toughness" }, "2026-10-06T00:00:00.000Z");
-    expect(built.character).toMatchObject({ level: 1, experience: 500, heroicClass: "Jedi 1", classLevels: { jedi: 1 }, baseAttackBonus: 1, maxHitPoints: 30 });
+    const built = applySagaFoundation(current, { advancementId: "foundation-1", classId: "jedi", talentId: "battle-meditation", generalFeatId: "weapon-focus-lightsabers", humanBonusFeatId: "toughness", trainedSkillIds: ["acrobatics", "endurance", "perception", "use-the-force"], languageIds: ["huttese"] }, "2026-10-06T00:00:00.000Z");
+    expect(built.character).toMatchObject({ level: 1, experience: 500, heroicClass: "Jedi 1", classLevels: { jedi: 1 }, baseAttackBonus: 1, maxHitPoints: 31, trainedSkills: ["Acrobatics", "Endurance", "Perception", "Use the Force"], languages: ["Basic", "Huttese"] });
     expect(built.character.talentSelections).toContainEqual(expect.objectContaining({ id: "battle-meditation", tree: "Jedi Guardian" }));
-    expect(built.character.featSelections).toEqual(expect.arrayContaining([expect.objectContaining({ id: "force-sensitivity", source: "starting-class" }), expect.objectContaining({ id: "force-training", source: "level-1-feat" }), expect.objectContaining({ id: "toughness", source: "human-bonus-feat" })]));
-    expect(built.gameState).toMatchObject({ health: 26, forcePoints: 5, destinyPoints: 1, levelUpAvailable: false });
+    expect(built.character.featSelections).toEqual(expect.arrayContaining([expect.objectContaining({ id: "force-sensitivity", source: "starting-class" }), expect.objectContaining({ id: "weapon-focus-lightsabers", source: "level-1-feat" }), expect.objectContaining({ id: "toughness", source: "human-bonus-feat" })]));
+    expect(built.gameState).toMatchObject({ health: 26, forcePoints: 5, destinyPoints: null, levelUpAvailable: false });
     expect(built.gameState.advancementHistory).toEqual([expect.objectContaining({ kind: "level-1-foundation", toLevel: 1 })]);
   });
 
@@ -62,7 +63,7 @@ describe("Saga Edition advancement", () => {
   });
 
   it("enforces talent prerequisites and prevents an ineligible selection", () => {
-    const character = { level: 1, experience: 1000, forceSensitive: "Yes", classLevels: { scoundrel: 1 }, featSelections: [], talentSelections: [] };
+    const character = { level: 1, experience: 1000, forceSensitive: "Yes", classLevels: { scoundrel: 1 }, sagaStats: "STR 10 | DEX 10 | CON 10 | INT 10 | WIS 10 | CHA 10", maxHitPoints: 18, featSelections: [], talentSelections: [] };
     const jediTalents = availableTalents(character, "jedi").flatMap(tree => tree.talents.map(item => item.id));
     expect(jediTalents).toContain("deflect");
     expect(jediTalents).not.toContain("redirect-shot");
@@ -72,7 +73,7 @@ describe("Saga Edition advancement", () => {
   it("requires two different ability increases at every fourth character level", () => {
     const character = {
       level: 3, experience: 6000, forceSensitive: "No", classLevels: { soldier: 3 },
-      sagaStats: "STR 12 | DEX 12 | CON 12 | INT 10 | WIS 10 | CHA 10", featSelections: [], talentSelections: [],
+      sagaStats: "STR 12 | DEX 12 | CON 12 | INT 10 | WIS 10 | CHA 10", maxHitPoints: 42, featSelections: [], talentSelections: [],
     };
     expect(() => applySagaAdvancement(snapshot(character), { advancementId: "level-4-bad", classId: "soldier", classBonusFeatId: "toughness", abilityIncreases: ["strength"] }, () => 6)).toThrow(/two different ability/i);
     const advanced = applySagaAdvancement(snapshot(character), { advancementId: "level-4", classId: "soldier", classBonusFeatId: "toughness", abilityIncreases: ["strength", "constitution"] }, () => 6);
@@ -81,10 +82,121 @@ describe("Saga Edition advancement", () => {
   });
 
   it("is idempotent and advances multiple earned levels one at a time", () => {
-    const current = snapshot({ level: 1, experience: 3000, classLevels: { scout: 1 }, sagaStats: "STR 10 | DEX 12 | CON 10 | INT 10 | WIS 12 | CHA 10", featSelections: [], talentSelections: [] });
+    const current = snapshot({ level: 1, experience: 3000, classLevels: { scout: 1 }, sagaStats: "STR 10 | DEX 13 | CON 10 | INT 10 | WIS 12 | CHA 10", maxHitPoints: 24, featSelections: [], talentSelections: [] });
     const once = applySagaAdvancement(current, { advancementId: "advance-once", classId: "scout", classBonusFeatId: "dodge", abilityIncreases: [] }, () => 3);
     expect(once.character.level).toBe(2);
     expect(once.gameState.levelUpAvailable).toBe(true);
     expect(applySagaAdvancement(once, { advancementId: "advance-once", classId: "scout", classBonusFeatId: "dodge", abilityIncreases: [] }, () => 8)).toEqual(once);
+  });
+
+  it("does not invent ability scores or award a second foundation to a legacy build", () => {
+    expect(parseAbilityScores({ sagaStats: "unestablished" })).toEqual({ strength: null, dexterity: null, constitution: null, intelligence: null, wisdom: null, charisma: null });
+    const choices = { advancementId: "foundation", classId: "jedi", talentId: "battle-meditation", generalFeatId: "toughness", humanBonusFeatId: "improved-defenses", trainedSkillIds: ["acrobatics", "perception", "use-the-force"], languageIds: [] };
+    expect(() => applySagaFoundation(snapshot({ species: "Human", level: 1, sagaStats: "unestablished" }), choices)).toThrow(/six ability scores/);
+    expect(() => applySagaFoundation(snapshot({ species: "Human", level: 1, sagaStats: "STR 10 | DEX 10 | CON 10 | INT 10 | WIS 10 | CHA 10", talents: "Battle Meditation" }), choices)).toThrow(/original build slots/);
+    expect(() => applySagaAdvancement(snapshot({ level: 2, experience: 3000, classLevels: { jedi: 1 }, sagaStats: "STR 10 | DEX 10 | CON 10 | INT 10 | WIS 10 | CHA 10", maxHitPoints: 30 }), { advancementId: "invalid-level", classId: "jedi" })).toThrow(/class levels must match/);
+  });
+
+  it("uses each core class bonus-feat list and every listed prerequisite", () => {
+    const character = { species: "Human", level: 4, classLevels: { jedi: 4 }, baseAttackBonus: 4, sagaStats: "STR 12 | DEX 12 | CON 12 | INT 12 | WIS 12 | CHA 12", feats: "Force Sensitivity, Deflect", featSelections: [], talentSelections: [{ id: "deflect" }], trainedSkills: [] };
+    const ids = (classId, bonus = true) => availableFeats(character, classId, bonus).map(item => item.id);
+    expect(ids("jedi")).not.toContain("force-training");
+    expect(ids("jedi")).not.toContain("force-boon");
+    expect(ids("jedi")).not.toContain("toughness");
+    expect(ids("noble")).not.toContain("point-blank-shot");
+    expect(ids("scoundrel")).not.toContain("sniper");
+    expect(ids("soldier")).toContain("toughness");
+    expect(ids("jedi", false)).not.toContain("dodge");
+    expect(ids("jedi", false)).not.toContain("rapid-shot");
+    expect(ids("jedi", false)).not.toContain("weapon-focus-lightsabers");
+    expect(availableTalents(character, "jedi").flatMap(tree => tree.talents).map(item => item.id)).not.toContain("redirect-shot");
+    const legal = { ...character, baseAttackBonus: 5, featSelections: [{ id: "weapon-proficiency-lightsabers" }], sagaStats: "STR 13 | DEX 13 | CON 13 | INT 13 | WIS 12 | CHA 12", trainedSkills: ["Endurance"] };
+    expect(availableFeats(legal, "jedi", false).map(item => item.id)).toEqual(expect.arrayContaining(["dodge", "rapid-shot", "weapon-focus-lightsabers", "shake-it-off"]));
+    expect(availableTalents(legal, "jedi").flatMap(tree => tree.talents).map(item => item.id)).toContain("redirect-shot");
+  });
+
+  it("hides incomplete metadata-dependent grants and enforces deeper talent prerequisites", () => {
+    const character = { species: "Human", baseAttackBonus: 10, sagaStats: "STR 15 | DEX 15 | CON 15 | INT 15 | WIS 15 | CHA 15", feats: "Force Sensitivity", trainedSkills: ["Use the Force"] };
+    for (const id of ["force-training", "skill-focus", "skill-training"]) expect(availableFeats(character, "jedi").map(item => item.id)).not.toContain(id);
+    const scoutIds = availableTalents(character, "scout").flatMap(tree => tree.talents).map(item => item.id);
+    expect(scoutIds).not.toContain("improved-initiative");
+    expect(scoutIds).not.toContain("uncanny-dodge-1");
+    expect(scoutIds).not.toContain("hidden-movement");
+    for (const id of ["trust", "ignite-fervor", "spontaneous-skill"]) expect(availableTalents(character, "noble").flatMap(tree => tree.talents).map(item => item.id)).not.toContain(id);
+    expect(availableTalents(character, "soldier").flatMap(tree => tree.talents).map(item => item.id)).not.toContain("cover-fire");
+  });
+
+  it("exposes Force trees only after earned Force Sensitivity and dark talents after a recorded Dark Side Score", () => {
+    const character = { forceSensitive: "Yes", sagaStats: "STR 10 | DEX 10 | CON 10 | INT 10 | WIS 10 | CHA 13" };
+    expect(availableTalents(character, "scoundrel").map(tree => tree.id)).not.toContain("control");
+    const trained = { ...character, feats: "Force Sensitivity" };
+    expect(availableTalents(trained, "scoundrel").map(tree => tree.id)).toContain("control");
+    expect(availableTalents(trained, "scoundrel", { darkSideScore: 0 }).map(tree => tree.id)).not.toContain("dark-side");
+    expect(availableTalents(trained, "scoundrel", { darkSideScore: 1 }).map(tree => tree.id)).toContain("dark-side");
+  });
+
+  it("requires legal foundation skills and conditional Noble and Scout starting feats", () => {
+    const base = { species: "Human", level: 1, sagaStats: "STR 10 | DEX 10 | CON 12 | INT 12 | WIS 10 | CHA 10", feats: "None", talents: "None" };
+    expect(foundationRequirements(base, "jedi")).toMatchObject({ trainedSkillCount: 4, bonusLanguageCount: 1 });
+    expect(availableClassSkills(base, "soldier").map(item => item.id)).not.toContain("persuasion");
+    const choices = { advancementId: "scout-foundation", classId: "scout", talentId: "acute-senses", generalFeatId: "toughness", humanBonusFeatId: "improved-defenses", trainedSkillIds: ["climb", "endurance", "initiative", "jump", "mechanics", "perception", "survival"], languageIds: ["huttese"] };
+    const built = applySagaFoundation(snapshot(base), choices);
+    expect(built.character.featSelections.map(item => item.id)).not.toContain("shake-it-off");
+    expect(() => applySagaFoundation(snapshot(base), { ...choices, trainedSkillIds: ["persuasion"] })).toThrow(/exactly 7/);
+    const nobleChoices = { advancementId: "noble-foundation", classId: "noble", talentId: "educated", generalFeatId: "toughness", humanBonusFeatId: "improved-defenses", trainedSkillIds: ["deception", "gather-information", "initiative", "perception", "persuasion", "pilot", "ride", "treat-injury"], languageIds: ["huttese"] };
+    expect(applySagaFoundation(snapshot(base), nobleChoices).character.featSelections.map(item => item.id)).not.toContain("linguist");
+    const intelligent = { ...base, sagaStats: "STR 10 | DEX 10 | CON 12 | INT 13 | WIS 10 | CHA 10" };
+    expect(foundationRequirements(intelligent, "noble")).toMatchObject({ trainedSkillCount: 8, bonusLanguageCount: 3 });
+    expect(() => applySagaFoundation(snapshot(intelligent), nobleChoices)).toThrow(/3 different new languages/);
+    expect(applySagaFoundation(snapshot(intelligent), { ...nobleChoices, languageIds: ["huttese", "binary", "bocce"] }).character.featSelections.map(item => item.id)).toContain("linguist");
+  });
+
+  it("uses prospective class BAB and starting feats without granting them before commit", () => {
+    const character = { species: "Human", level: 1, sagaStats: "STR 10 | DEX 10 | CON 10 | INT 10 | WIS 10 | CHA 10" };
+    const context = advancementChoiceContext(character, "jedi");
+    expect(availableFeats(context, "jedi").map(item => item.id)).toContain("weapon-focus-lightsabers");
+    expect(character.featSelections).toBeUndefined();
+    expect(character.classLevels).toBeUndefined();
+    const trainedCharacter = { ...character, classLevels: { jedi: 1 }, trainedSkills: ["Acrobatics", "Perception"] };
+    expect(advancementChoiceContext(trainedCharacter, "jedi", { trainedSkillIds: [] }).trainedSkills).toEqual(["Acrobatics", "Perception"]);
+  });
+
+  it("updates multiclass class defenses, retroactive Constitution HP, Toughness and damage threshold", () => {
+    const current = snapshot({ level: 3, experience: 6000, classLevels: { scoundrel: 3 }, maxHitPoints: 34, baseAttackBonus: 2, sagaStats: "STR 12 | DEX 13 | CON 13 | INT 10 | WIS 10 | CHA 10", defenses: { reflex: 16, fortitude: 14, will: 14 }, damageThreshold: 14, feats: "Weapon Proficiency (pistols)", talentSelections: [], featSelections: [{ id: "weapon-proficiency-pistols" }] }, { health: 29 });
+    const advanced = applySagaAdvancement(current, { advancementId: "multiclass-four", classId: "soldier", startingFeatId: "armor-proficiency-light", talentId: "melee-smash", abilityIncreases: ["constitution", "strength"] }, () => 5);
+    expect(advanced.character).toMatchObject({ level: 4, classLevels: { scoundrel: 3, soldier: 1 }, maxHitPoints: 44, baseAttackBonus: 3, defenses: { reflex: 17, fortitude: 18, will: 15 }, damageThreshold: 18 });
+    expect(advanced.gameState.health).toBe(39);
+    expect(advanced.gameState.advancementHistory[0]).toMatchObject({ newLevelHitPoints: 7, constitutionHitPoints: 3, hitPointGain: 10 });
+    const soldier = snapshot({ ...current.character, classLevels: { soldier: 3 }, featSelections: [], feats: "None", defenses: { reflex: 15, fortitude: 16, will: 13 }, damageThreshold: 21 });
+    const tough = applySagaAdvancement(soldier, { advancementId: "tough-four", classId: "soldier", classBonusFeatId: "toughness", abilityIncreases: ["constitution", "strength"] }, () => 5);
+    expect(tough.character.maxHitPoints).toBe(48);
+    expect(tough.gameState.advancementHistory[0].toughnessHitPoints).toBe(4);
+    expect(tough.character.damageThreshold - tough.character.defenses.fortitude).toBe(5);
+  });
+
+  it("requires retroactive Intelligence skill and language choices and never rerolls on retry", () => {
+    const current = snapshot({ level: 3, experience: 6000, classLevels: { soldier: 3 }, maxHitPoints: 42, sagaStats: "STR 12 | DEX 12 | CON 12 | INT 13 | WIS 10 | CHA 10", trainedSkills: ["Perception"], featSelections: [], talentSelections: [], languages: ["Basic", "Huttese"] });
+    const choices = { advancementId: "int-four", classId: "soldier", classBonusFeatId: "toughness", abilityIncreases: ["intelligence", "strength"] };
+    expect(() => applySagaAdvancement(current, choices, () => 5)).toThrow(/1 new untrained class skill/);
+    const once = applySagaAdvancement(current, { ...choices, trainedSkillIds: ["mechanics"], languageIds: ["binary"] }, () => 5);
+    expect(once.character.trainedSkills).toContain("Mechanics");
+    expect(once.character.languages).toEqual(["Basic", "Huttese", "Binary"]);
+    expect(applySagaAdvancement(once, { ...choices, trainedSkillIds: ["mechanics"], languageIds: ["binary"] }, () => { throw new Error("must not reroll"); })).toEqual(once);
+  });
+
+  it("keeps malformed legacy selection data from crashing selectors or being silently dropped on commit", () => {
+    const character = { level: 1, experience: 1000, classLevels: { soldier: 1 }, maxHitPoints: 30, sagaStats: "STR 13 | DEX 13 | CON 10 | INT 10 | WIS 10 | CHA 10", featSelections: { id: "toughness" }, talentSelections: null };
+    expect(() => availableTalents(character, "soldier")).not.toThrow();
+    expect(() => advancementChoiceContext(character, "soldier")).not.toThrow();
+    expect(() => applySagaAdvancement(snapshot(character), { advancementId: "malformed-level", classId: "soldier", classBonusFeatId: "toughness" }, () => 5)).toThrow(/reviewed reconstruction/);
+  });
+
+  it("commits Wealth's sourced reward with advancement only once", () => {
+    const current = snapshot({ level: 1, experience: 1000, classLevels: { noble: 1 }, maxHitPoints: 18, sagaStats: "STR 10 | DEX 10 | CON 10 | INT 10 | WIS 10 | CHA 10", talents: "Wealth", talentSelections: [{ id: "wealth" }], feats: "Weapon Proficiency (pistols), Weapon Proficiency (simple weapons)", featSelections: [{ id: "weapon-proficiency-pistols" }, { id: "weapon-proficiency-simple" }] }, { credits: 100 });
+    const choices = { advancementId: "wealth-two", classId: "noble", classBonusFeatId: "armor-proficiency-light", abilityIncreases: [] };
+    const once = applySagaAdvancement(current, choices, () => 3);
+    expect(once.gameState.credits).toBe(10100);
+    expect(once.gameState.advancementHistory[0].wealthCreditGain).toBe(10000);
+    expect(applySagaAdvancement(once, choices).gameState.credits).toBe(10100);
   });
 });
