@@ -69,7 +69,9 @@ function changeSummary(event) {
   return fragments.filter((item) => item && !diagnostic.test(item)).join(" ");
 }
 
-/** Return recaps are a read of the save, not a new GM turn or off-screen simulation. */
+/** Return recaps are a read of the save, not a new GM turn or off-screen simulation.
+ * @param {{messages?: any[], gameState?: Record<string, any>, character?: Record<string, any> | null}} [snapshot]
+ */
 export function buildCampaignRecap({ messages = [], gameState = {}, character = {} } = {}) {
   const transcript = campaignTranscript(messages);
   const invalidTurns = new Set(transcript.archived.filter((message) => message.role === "assistant").map((message) => message.turnId).filter(Boolean));

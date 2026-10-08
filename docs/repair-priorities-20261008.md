@@ -23,6 +23,7 @@ Player prose → semantic action plan → Saga adjudication when needed → conc
 - Bank deposit/withdrawal uses existing galactic credits only, saves both balances, and retains transaction receipts.
 - Contextual marketplace separates retail from securities exchanges and varies by saved world/district, merchant, luxury/illicit context and access. Goods, homes and vehicles persist without automatically equipping, relocating or driving.
 - Return recap reads confirmed events, known milestones, current location and established public news. It neither advances offline time nor invents galaxy events.
+- The GPT state reader uses the same confirmed-history projection, not the latest failed reply, and includes saved merchant offers, assets and bank balances.
 - Advancement supports a bounded core catalog and player-selected choices. Unsupported prestige/supplement options and metadata-dependent choices are explicitly unavailable, not silently implemented.
 
 ## Still to build, after repair gate
@@ -31,7 +32,7 @@ Expanded Saga powers, prestige classes and supplement talents; comprehensive spe
 
 ## Verification baseline
 
-2026-10-08: 387 automated tests passed, 6 opt-in tests skipped. All four isolated actual-NVIDIA sandbox tests passed: lodging dialogue/bundle purchase, established-route travel, full-month quote persistence, and legacy lease recovery with exact one-time payment. TypeScript passed. Tests never spend D'mir's live credits or mutate his campaign.
+2026-10-08: 387 automated tests passed before the additional two GPT-read regressions; final totals are recorded in the release verification section. All four isolated actual-NVIDIA sandbox tests passed: lodging dialogue/bundle purchase, established-route travel, full-month quote persistence, and legacy lease recovery with exact one-time payment. TypeScript passed. Tests never spend D'mir's live credits or mutate his campaign.
 
 Live read-only baseline: revision 314, Level 512 transit spine, 26 HP, 1,050 XP, 1,199,996,506 credits; no saved trade offer or property. The historical failed lease remains unpaid. A repair release must preserve this save; do not use a live purchase as a smoke test.
 
