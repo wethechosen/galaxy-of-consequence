@@ -37,3 +37,18 @@ Expanded Saga powers, prestige classes and supplement talents; comprehensive spe
 Live read-only baseline: revision 314, Level 512 transit spine, 26 HP, 1,050 XP, 1,199,996,506 credits; no saved trade offer or property. The historical failed lease remains unpaid. A repair release must preserve this save; do not use a live purchase as a smoke test.
 
 Release gate: successful final build → stage production without assigning the stable domain → check controller/schema and access controls → promote that exact build → verify authenticated stable website and Supabase revision agreement → restart local app and verify loading. Report unverified boundaries explicitly; a ping is not proof of complete gameplay.
+
+## Release verification — 2026-10-08
+
+- Application commit: `4320e8f`, pushed to the working branch and fast-forwarded to GitHub `main`. Final production deployment: `dpl_GM4AQmxCKRVAvHhEBVjSGCp6WdRM`; staged, checked, then promoted to `https://galaxy-local.vercel.app`. Controller/schema version: `2.0.9`, eight operations. Older deployment-specific URLs remain immutable and should not be used to check current repairs.
+- Final suite: **391 passed, 6 skipped**, 62 passing test files and two skipped files. The four actual-NVIDIA isolated sandbox tests passed separately. Final TypeScript and production build passed. No live purchase, checkpoint load, reconciliation or gameplay turn was used as a test.
+- Authenticated stable and restarted local app both returned revision **314**, 26 HP, 1,050 XP, 1,199,996,506 credits, four inventory entries and the saved Level 512 transit-spine location. The lease is still unpaid. Existing authentication credentials and campaign data were preserved.
+- Authenticated player UI rendered the last confirmed exchange, archive and return recap; old docking-bay prose is labeled recorded history rather than current positioning. Transcript PageDown changed scrollTop from 0 to 236.8 pixels on a 271-pixel-high pane. Browser error log was empty. Bank controls and contextual marketplace categories rendered without making a transfer or purchase.
+- Actual private GOC GPT editor imported the stable version 2.0.9 schema. Its campaign-state and HUD action tests both succeeded at revision 314. Updated free-form play, exact-location, presentation and same-turn retry instructions were published; the editor confirmed **GPT Updated / Invite-only**, last edited October 8. No credentials or sharing scope changed. Browser control detached during a further post-publication state check, so that additional check was not completed; the published configuration and prior successful authenticated reads were visibly verified.
+- Final-deployment HTTP 5xx log query returned no entries during the verification window. Node 22's experimental SQLite notice still appears on stderr and is labeled an error log by Vercel, even on HTTP 200 reads; it is a runtime warning, not a failed request. The earlier Node engine-range and tesseract install-script warnings were eliminated.
+
+## Player configuration still required
+
+D'mir's legacy dossier has no structured level-1 class/talent build. The player must establish those legal starting choices before selecting earned level-2 advancement. The interface exposes the required choices and available core talent trees; the engine must not pick them on the player's behalf. Existing XP, level and inventory are not reset by this repair.
+
+No claim is made that every Saga supplement or arbitrary future AI response has been implemented or exhaustively verified. The repair gate covers the reproduced common-play failures above. Expanded rule catalogs, specialized vehicle/starship combat, deeper memory and autonomous-world systems remain deferred.
