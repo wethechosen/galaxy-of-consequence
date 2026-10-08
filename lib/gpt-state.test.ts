@@ -21,7 +21,10 @@ describe("shared GPT campaign reads", () => {
     expect(response.status).toBe(200);
     expect(body.revision).toBe(314);
     expect(body.lastNarration).toBe(content);
-    expect(body.currentScene.description).toContain("Jax turns");
+    expect(body.currentScene.description).toBe("");
+    expect(body.currentScene.lastOutcome).toBe("");
+    expect(body.lastConfirmedInteraction.scene).toContain("Jax turns");
+    expect(body.lastConfirmedInteraction.current).toBe(false);
     expect(body.storyThusFar.lastSavedTurn).toBe("confirmed");
     expect(body.world.bankCredits).toBe(200);
     expect(body.world.tradeOffers).toEqual([{ id: "quote" }]);

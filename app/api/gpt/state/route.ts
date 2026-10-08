@@ -41,7 +41,9 @@ export async function GET(request: Request) {
       // The GPT must not rebuild its scene from a saved diagnostic/canned reply.
       // This is the same confirmed-history projection used by the web client.
       lastNarration: lastConfirmed?.content || "",
-      currentScene: { location: state.location, description: recap.scene, lastOutcome: recap.lastOutcome },
+      currentScene: { location: state.location, description: recap.scene, lastOutcome: recap.sceneIsCurrent ? recap.lastOutcome : "" },
+      lastConfirmedInteraction: { scene: recap.lastRecordedScene || recap.scene, outcome: recap.lastOutcome,
+        current: recap.sceneIsCurrent, note: "Historical narration is not authority to change world.location. Use the exact saved location; do not merge older places into it." },
       storyThusFar: recap,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

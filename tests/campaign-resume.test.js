@@ -44,6 +44,22 @@ describe("saved campaign return experience", () => {
     expect(recap.lastOutcome).toBe("");
     expect(recap.location).toContain("local market");
   });
+  it("labels an exchange before an interrupted turn as history rather than current positioning", () => {
+    const location = "Coruscant — upper-city transit spine, Level 512";
+    const recap = buildCampaignRecap({ messages: [reply("lease", "You stand at a counter in Docking Bay 94.", location), { ...reply("broken", "You advance through a passage.", location), provider: "local-safe-fallback" }], gameState: { location } });
+    expect(recap.location).toBe(location);
+    expect(recap.scene).toBe("");
+    expect(recap.sceneIsCurrent).toBe(false);
+    expect(recap.lastRecordedScene).toContain("Docking Bay 94");
+    expect(recap.lastOutcome).toContain("clerk quotes");
+  });
+  it("keeps a latest uninterrupted saved scene available as current narration", () => {
+    const location = "Coruscant — local market";
+    const recap = buildCampaignRecap({ messages: [reply("good")], gameState: { location } });
+    expect(recap.sceneIsCurrent).toBe(true);
+    expect(recap.scene).toContain("lodging desk");
+    expect(recap.lastRecordedScene).toBe("");
+  });
   it("does not fabricate galaxy news or expose hidden dispatches", () => {
     expect(buildCampaignRecap().news).toEqual([]);
     expect(buildCampaignRecap({ gameState: { publicNews: [{ headline: "Secret Sith operation", visibility: "hidden" }, { headline: "Transit reopened", source: "CNN", body: "The port announced new service." }] } }).news).toEqual([{ title: "Transit reopened", source: "CNN", detail: "The port announced new service." }]);

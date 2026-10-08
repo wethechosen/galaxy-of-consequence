@@ -97,13 +97,17 @@ export function buildCampaignRecap({ messages = [], gameState = {}, character = 
   // Only use the stored frame if both its location and the latest reply are sound.
   const reliableFrame = sameCampaignLocation(gameState.scene?.location, location)
     && (!lastRawAssistant || !isInterruptedMessage(lastRawAssistant));
-  const scene = latest?.scene || (reliableFrame && savedScene && !genericScene.test(savedScene) && !diagnostic.test(savedScene) ? savedScene : "");
+  // Once an interrupted turn follows an exchange, its older present-tense
+  // prose is historical context, not proof of the character's current position.
+  const sceneIsCurrent = Boolean(sceneMessage && sceneMessage.sourceIndex === messages.indexOf(lastRawAssistant) || reliableFrame);
+  const scene = sceneIsCurrent ? latest?.scene || (savedScene && !genericScene.test(savedScene) && !diagnostic.test(savedScene) ? savedScene : "") : "";
   const news = entries(gameState.publicNews).filter(playerKnown)
     .slice(-3).map((entry) => ({ title: text(entry.headline || entry.title), detail: text(entry.summary || entry.body || entry.detail || entry.facts), source: text(entry.source || entry.network) })).filter((entry) => entry.title || entry.detail);
   return {
     name: text(character?.name) || "Your character", location, scene,
     lastAction: transcript.confirmed.findLast((message) => message.role === "user")?.content || "",
-    lastOutcome: latest?.gameplay || "",
+    lastOutcome: latest?.gameplay || "", sceneIsCurrent,
+    lastRecordedScene: sceneIsCurrent ? "" : latest?.scene || "",
     timeline, milestones: [...new Set(milestones)].slice(-5), news,
     objectives: entries(gameState.objectives).filter((entry) => entry.status === "active").map((entry) => text(entry.title)).filter(Boolean).slice(-4),
     lastSavedTurn: transcript.latest?.turnId || "", interruptedCount: transcript.archived.filter((entry) => entry.role === "assistant").length,
