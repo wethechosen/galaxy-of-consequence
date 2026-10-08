@@ -34,6 +34,7 @@ export async function POST(request: Request) {
       abilityIncreases: body.abilityIncreases,
       trainedSkillIds: body.trainedSkillIds,
       languageIds: body.languageIds,
+      forcePowerIds: body.forcePowerIds,
     };
     const identity = operationIdentity(body.advancementId, body.foundation === true ? "foundation" : "advancement", { ...choices, advancementId: undefined });
     if (committedOperation(current.snapshot, "advancementHistory", identity)) return NextResponse.json({ snapshot: current.snapshot, revision: current.revision, updatedAt: current.updatedAt, replayed: true }, { headers: { "Cache-Control": "no-store" } });

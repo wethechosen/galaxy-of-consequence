@@ -1,3 +1,5 @@
+import { forcePowerById, forcePowerSelectionsForCharacter } from "./sagaForcePowers";
+
 const ABILITIES = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"];
 const ABILITY_LABELS = { strength: "STR", dexterity: "DEX", constitution: "CON", intelligence: "INT", wisdom: "WIS", charisma: "CHA" };
 
@@ -47,7 +49,7 @@ export const FEAT_CATALOG = Object.freeze([
   feat("acrobatic-strike", "Acrobatic Strike", { trainedSkill: "acrobatics" }), feat("bantha-rush", "Bantha Rush", { minimumAbilities: { strength: 13 }, minimumBab: 1 }), feat("careful-shot", "Careful Shot", { requires: ["point-blank-shot"], minimumBab: 2 }),
   feat("cleave", "Cleave", { requires: ["power-attack"], minimumAbilities: { strength: 13 } }), feat("power-attack", "Power Attack", { minimumAbilities: { strength: 13 } }), feat("combat-reflexes", "Combat Reflexes"), feat("coordinated-attack", "Coordinated Attack", { minimumBab: 2 }),
   feat("dodge", "Dodge", { minimumAbilities: { dexterity: 13 } }), feat("force-boon", "Force Boon", { requires: ["force-sensitivity"] }), feat("force-sensitivity", "Force Sensitivity", { nonDroid: true }),
-  feat("force-training", "Force Training", { requires: ["force-sensitivity"], trainedSkill: "use-the-force", supported: false, unavailableReason: "Force Training requires a complete player-selected power suite; its power-selection workflow is not yet implemented." }), feat("improved-damage-threshold", "Improved Damage Threshold", { repeatable: true }),
+  feat("force-training", "Force Training", { requires: ["force-sensitivity"], trainedSkill: "use-the-force", repeatable: true, powerChoices: true }), feat("improved-damage-threshold", "Improved Damage Threshold", { repeatable: true }),
   feat("improved-defenses", "Improved Defenses"), feat("linguist", "Linguist", { minimumAbilities: { intelligence: 13 }, repeatable: true, languageChoices: true }), feat("martial-arts-1", "Martial Arts I"),
   feat("martial-arts-2", "Martial Arts II", { requires: ["martial-arts-1"], minimumBab: 3 }), feat("martial-arts-3", "Martial Arts III", { requires: ["martial-arts-1", "martial-arts-2"], minimumBab: 6 }),
   feat("mobility", "Mobility", { requires: ["dodge"], minimumAbilities: { dexterity: 13 } }), feat("point-blank-shot", "Point Blank Shot"),
@@ -93,7 +95,8 @@ export const FORCE_TALENT_TREES = Object.freeze([
 // remain outside this supported catalog; they must not grant implied benefits.
 export const SAGA_ADVANCEMENT_LIMITATIONS = Object.freeze([
   "The catalog covers a supported subset of core heroic-class options; prestige classes and supplement options are not implemented.",
-  "Skill Focus, Skill Training, Force Training, and weapon-group talents remain unavailable until their player-selected skill, power, or weapon metadata can be committed correctly.",
+  "Skill Focus, Skill Training, and weapon-group talents remain unavailable until their player-selected skill or weapon metadata can be committed correctly.",
+  "Force Training offers the executable core power suite; additional core and supplement powers need their corresponding mechanics before selection.",
   "Conditional combat talent effects require adjudication when used; learning a talent does not activate it automatically.",
 ]);
 
@@ -211,6 +214,7 @@ export function foundationRequirements(character = {}, classId, choices = {}) {
     trainedSkillCount: heroic && established ? Math.max(1, heroic.trainedSkillBase + intelligenceModifier + (human ? 1 : 0)) : null,
     bonusLanguageCount: Math.max(0, languageTotal - existingLanguageIds.length), languageTotal,
     startingLinguist: Boolean(startingLinguist),
+    ...forcePowerChoiceRequirements(character, choices, true),
   };
 }
 
@@ -234,6 +238,7 @@ export function advancementRequirements(character = {}, classId, choices = {}) {
     multiclassStartingFeatRequired: nextClassLevel === 1 && status.level > 0 && availableStartingFeats({ ...character, abilityScores: improvedScores }, classId).length > 0,
     trainedSkillCount: intelligenceGain,
     bonusLanguageCount: intelligenceGain + linguistChoices * Math.max(1, 1 + abilityModifier(improvedScores.intelligence)),
+    ...forcePowerChoiceRequirements(character, choices),
   };
 }
 
@@ -247,7 +252,7 @@ function hasPrerequisites(entry, character, talentIds = ownedTalentIds(character
   if (entry.trainedSkill && !trainedSkillIds(character).has(entry.trainedSkill)) return false;
   if (entry.requiresAnyProficiency && ![...featIds].some(id => id.startsWith("weapon-proficiency-"))) return false;
   if (entry.nonDroid && /\bdroid\b/i.test(String(character.species || ""))) return false;
-  if (entry.requiresPower && !cleanList(character.forcePowers).some(name => name.toLowerCase() === entry.requiresPower)) return false;
+  if (entry.requiresPower && !forcePowerSelectionsForCharacter(character).some(power => power.id === entry.requiresPower)) return false;
   return true;
 }
 
@@ -292,9 +297,9 @@ function requireAbilityScores(character) {
 }
 
 function requireSelectionRecords(character) {
-  for (const key of ["featSelections", "talentSelections"]) {
+  for (const key of ["featSelections", "talentSelections", "forcePowerSelections"]) {
     const value = character[key];
-    if (value != null && (!Array.isArray(value) || value.some(item => !item || typeof item !== "object" || Array.isArray(item) || !item.id))) throw advancementError("The recorded feat and talent selections need reviewed reconstruction before another build choice can be committed.");
+    if (value != null && (!Array.isArray(value) || value.some(item => !item || typeof item !== "object" || Array.isArray(item) || !item.id))) throw advancementError("The recorded feat, talent, or Force power selections need reviewed reconstruction before another build choice can be committed.");
   }
 }
 
@@ -343,7 +348,49 @@ function highestClassDefenses(classLevels) {
 }
 
 function featCount(character, id) {
-  return Math.max(selectionRecords(character.featSelections).filter(item => item.id === id).length, ownedFeatIds(character).has(id) ? 1 : 0);
+  const entry = FEAT_CATALOG.find(item => item.id === id);
+  const legacyCount = entry ? cleanList(character.feats).reduce((sum, name) => {
+    if (name.toLowerCase() === entry.name.toLowerCase()) return sum + 1;
+    const numbered = name.match(/^(.*?)\s*\((\d+)\)$/);
+    return numbered && numbered[1].trim().toLowerCase() === entry.name.toLowerCase() ? sum + Number(numbered[2]) : sum;
+  }, 0) : 0;
+  return Math.max(selectionRecords(character.featSelections).filter(item => item.id === id).length, legacyCount, ownedFeatIds(character).has(id) ? 1 : 0);
+}
+
+// A power pick is a suite use. Choosing the same power more than once is legal
+// and creates distinct uses; merely reaching a level never picks powers.
+export function forcePowerChoiceRequirements(character = {}, choices = {}, foundation = false) {
+  const scores = parseAbilityScores(character);
+  const improvedWisdom = scores.wisdom == null ? null : scores.wisdom + (!foundation && (choices.abilityIncreases || []).includes("wisdom") ? 1 : 0);
+  const powersPerFeat = improvedWisdom == null ? null : Math.max(1, 1 + abilityModifier(improvedWisdom));
+  const selectedSlots = foundation ? ["generalFeatId", "humanBonusFeatId"] : ["startingFeatId", "classBonusFeatId", "generalFeatId"];
+  const newForceTrainingCount = selectedSlots.filter(slot => choices[slot] === "force-training").length;
+  const existingForceTrainingCount = foundation ? 0 : featCount(character, "force-training");
+  const wisdomPowersPerFeat = powersPerFeat == null ? 0 : Math.max(0, abilityModifier(improvedWisdom) - abilityModifier(scores.wisdom));
+  const wisdomPowerCount = existingForceTrainingCount * wisdomPowersPerFeat;
+  return { powersPerFeat, newForceTrainingCount, existingForceTrainingCount, wisdomPowerCount, wisdomPowersPerFeat, forcePowerCount: powersPerFeat == null ? null : newForceTrainingCount * powersPerFeat + wisdomPowerCount };
+}
+
+function commitForcePowerChoices(previous, character, choices, requirements, advancementId, level) {
+  if (choices.forcePowerIds != null && !Array.isArray(choices.forcePowerIds)) throw advancementError("Force power choices must be a list of supported power identifiers.");
+  const selected = choices.forcePowerIds || [];
+  const count = requirements.forcePowerCount || 0;
+  if (selected.length !== count || selected.some(id => typeof id !== "string" || !forcePowerById(id) || forcePowerById(id).id !== id)) throw advancementError(`Choose exactly ${count} supported Force power${count === 1 ? "" : "s"}; duplicate powers are separate suite uses.`);
+  if (count && (!ownedFeatIds(character).has("force-sensitivity") || !trainedSkillIds(character).has("use-the-force"))) throw advancementError("Learning Force powers requires Force Sensitivity and trained Use the Force.");
+  const prior = forcePowerSelectionsForCharacter(previous);
+  const slots = [];
+  for (let trainingIndex = 1; trainingIndex <= requirements.existingForceTrainingCount; trainingIndex += 1) {
+    for (let pick = 0; pick < requirements.wisdomPowersPerFeat; pick += 1) slots.push({ source: "wisdom-increase", forceTrainingIndex: trainingIndex });
+  }
+  for (let training = 1; training <= requirements.newForceTrainingCount; training += 1) {
+    for (let pick = 0; pick < requirements.powersPerFeat; pick += 1) slots.push({ source: "force-training", forceTrainingIndex: requirements.existingForceTrainingCount + training });
+  }
+  const earned = selected.map((id, index) => ({ id, name: forcePowerById(id).name, selectionId: `${advancementId}:force:${index + 1}`, ...slots[index], advancementId, level }));
+  if (prior.length || earned.length || Array.isArray(previous.forcePowerSelections)) {
+    character.forcePowerSelections = [...prior, ...earned];
+    character.forcePowers = character.forcePowerSelections.map(entry => entry.name).join(", ") || "None known";
+  }
+  return earned;
 }
 
 function derivedDefenseChange(previous, next) {
@@ -438,8 +485,8 @@ export function applySagaAdvancement(snapshot, choices = {}, roller = sides => 1
   const linguistSelections = [startingFeat, classFeat, generalFeat].filter(item => item?.id === "linguist").length;
   const languageChoices = intelligenceGain + linguistSelections * Math.max(1, 1 + abilityModifier(scores.intelligence));
   character.languages = validateLanguageChoices(character, choices, languageChoices);
-  const existingTraining = featCount(current.character, "force-training");
-  if (existingTraining && abilityModifier(scores.wisdom) > abilityModifier(previousScores.wisdom)) throw advancementError("A Wisdom increase adds Force powers for existing Force Training feats; complete the power-suite choices before recording this level.");
+  const powerRequirements = forcePowerChoiceRequirements(current.character, choices);
+  const forcePowerSelections = commitForcePowerChoices(current.character, character, choices, powerRequirements, advancementId, rules.targetLevel);
 
   const hitDieRoll = Number(roller(HEROIC_CLASSES[classId].hitDie));
   if (!Number.isSafeInteger(hitDieRoll) || hitDieRoll < 1 || hitDieRoll > HEROIC_CLASSES[classId].hitDie) throw advancementError("The advancement hit-point roll was invalid.", 500);
@@ -476,7 +523,7 @@ export function applySagaAdvancement(snapshot, choices = {}, roller = sides => 1
   Object.assign(character, derivedDefenseChange(current.character, character));
   const wealthCreditGain = ownedTalentIds(character).has("wealth") ? 5_000 * Number(classLevels.noble || 0) : 0;
   if (wealthCreditGain) gameState.credits = Math.max(0, Number(gameState.credits) || 0) + wealthCreditGain;
-  const record = { advancementId, fromLevel: status.level, toLevel: rules.targetLevel, classId, classLevel: rules.nextClassLevel, talent: talentChoice || null, classBonusFeat: classFeat || null, generalFeat: generalFeat || null, startingFeat: startingFeat || null, abilityIncreases, trainedSkillIds: newSkillIds, languageIds: choices.languageIds || [], wealthCreditGain, hitDie: `1d${HEROIC_CLASSES[classId].hitDie}`, hitDieRoll, constitutionModifier: abilityModifier(scores.constitution), newLevelHitPoints, constitutionHitPoints, toughnessHitPoints, hitPointGain, committedAt: now };
+  const record = { advancementId, fromLevel: status.level, toLevel: rules.targetLevel, classId, classLevel: rules.nextClassLevel, talent: talentChoice || null, classBonusFeat: classFeat || null, generalFeat: generalFeat || null, startingFeat: startingFeat || null, abilityIncreases, trainedSkillIds: newSkillIds, languageIds: choices.languageIds || [], forcePowerSelections, wealthCreditGain, hitDie: `1d${HEROIC_CLASSES[classId].hitDie}`, hitDieRoll, constitutionModifier: abilityModifier(scores.constitution), newLevelHitPoints, constitutionHitPoints, toughnessHitPoints, hitPointGain, committedAt: now };
   gameState.advancementHistory = [...gameState.advancementHistory, record].slice(-100);
   gameState.levelUpAvailable = progressionStatus(character).advancementAvailable;
   gameState.flags = [...(Array.isArray(gameState.flags) ? gameState.flags : []), { note: `Advanced to level ${rules.targetLevel}: ${HEROIC_CLASSES[classId].name} ${rules.nextClassLevel}; gained ${hitPointGain} hit points.`, ts: Date.parse(now) || Date.now() }];
@@ -536,6 +583,7 @@ export function applySagaFoundation(snapshot, choices = {}, now = new Date().toI
   if (!talentChoice) throw advancementError("Choose an eligible talent from the starting class or available Force talent trees.");
   const talentSelections = [{ id: talentChoice.id, name: talentChoice.name, tree: talentChoice.tree, classId, level: 1 }];
   character.languages = validateLanguageChoices({ ...character, languages: [...new Set(["Basic", ...cleanList(character.languages)])] }, choices, requirements.bonusLanguageCount);
+  const forcePowerSelections = commitForcePowerChoices(current.character, character, choices, forcePowerChoiceRequirements(current.character, choices, true), foundationId, 1);
   const maxHitPoints = Math.max(1, heroic.hitDie * 3 + abilityModifier(scores.constitution)) + (ownedFeatIds(character).has("toughness") ? 1 : 0);
   if (knownNumber(current.character.maxHitPoints) && Number(current.character.maxHitPoints) !== maxHitPoints) throw advancementError("The selected build conflicts with established maximum hit points; reconstruct the original build before recording it.");
   const improvedDefense = ownedFeatIds(character).has("improved-defenses") ? 1 : 0;
@@ -561,7 +609,7 @@ export function applySagaFoundation(snapshot, choices = {}, now = new Date().toI
   if (gameState.destinyEnabled === true && gameState.destinyPoints == null) gameState.destinyPoints = 1;
   const wealthCreditGain = talentChoice.id === "wealth" ? 5_000 : 0;
   if (wealthCreditGain) gameState.credits = Math.max(0, Number(gameState.credits) || 0) + wealthCreditGain;
-  const record = { advancementId: foundationId, kind: "level-1-foundation", fromLevel: 1, toLevel: 1, classId, classLevel: 1, talent: talentChoice, generalFeat, humanBonusFeat, trainedSkillIds: selectedSkillIds, languageIds: choices.languageIds || [], wealthCreditGain, startingFeats: featSelections.filter(item => item.source === "starting-class"), maxHitPoints, committedAt: now };
+  const record = { advancementId: foundationId, kind: "level-1-foundation", fromLevel: 1, toLevel: 1, classId, classLevel: 1, talent: talentChoice, generalFeat, humanBonusFeat, trainedSkillIds: selectedSkillIds, languageIds: choices.languageIds || [], forcePowerSelections, wealthCreditGain, startingFeats: featSelections.filter(item => item.source === "starting-class"), maxHitPoints, committedAt: now };
   gameState.advancementHistory = [...gameState.advancementHistory, record].slice(-100);
   gameState.levelUpAvailable = progressionStatus(character).advancementAvailable;
   gameState.flags = [...(Array.isArray(gameState.flags) ? gameState.flags : []), { note: `Level 1 Saga build established: ${heroic.name}; ${talentChoice.name}.`, ts: Date.parse(now) || Date.now() }];

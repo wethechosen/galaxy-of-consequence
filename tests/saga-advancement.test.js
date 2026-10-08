@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   SAGA_XP_THRESHOLDS, advancementRequirements, applySagaAdvancement, applySagaFoundation, availableTalents, availableFeats,
   advancementChoiceContext, availableClassSkills, foundationRequirements, parseAbilityScores,
+  forcePowerChoiceRequirements,
   ensureAdvancementScaffold, experienceForLevel, nextLevelExperience, progressionStatus, sagaLevelForExperience,
 } from "../original/lib/sagaAdvancement";
 import { applyExperienceAward } from "../original/lib/engineState";
@@ -117,7 +118,8 @@ describe("Saga Edition advancement", () => {
 
   it("hides incomplete metadata-dependent grants and enforces deeper talent prerequisites", () => {
     const character = { species: "Human", baseAttackBonus: 10, sagaStats: "STR 15 | DEX 15 | CON 15 | INT 15 | WIS 15 | CHA 15", feats: "Force Sensitivity", trainedSkills: ["Use the Force"] };
-    for (const id of ["force-training", "skill-focus", "skill-training"]) expect(availableFeats(character, "jedi").map(item => item.id)).not.toContain(id);
+    expect(availableFeats(character, "jedi").map(item => item.id)).toContain("force-training");
+    for (const id of ["skill-focus", "skill-training"]) expect(availableFeats(character, "jedi").map(item => item.id)).not.toContain(id);
     const scoutIds = availableTalents(character, "scout").flatMap(tree => tree.talents).map(item => item.id);
     expect(scoutIds).not.toContain("improved-initiative");
     expect(scoutIds).not.toContain("uncanny-dodge-1");
@@ -198,5 +200,57 @@ describe("Saga Edition advancement", () => {
     expect(once.gameState.credits).toBe(10100);
     expect(once.gameState.advancementHistory[0].wealthCreditGain).toBe(10000);
     expect(applySagaAdvancement(once, choices).gameState.credits).toBe(10100);
+  });
+
+  it("requires a complete player-picked Force suite and keeps duplicate picks as separate uses", () => {
+    const current = snapshot({ species: "Human", level: 1, experience: 500, sagaStats: "STR 10 | DEX 10 | CON 10 | INT 10 | WIS 14 | CHA 10", feats: "None", talents: "None", forcePowers: "None known" });
+    const choices = { advancementId: "force-foundation", classId: "jedi", talentId: "battle-meditation", generalFeatId: "force-training", humanBonusFeatId: "force-training", trainedSkillIds: ["acrobatics", "perception", "use-the-force"], languageIds: [] };
+    expect(foundationRequirements(current.character, "jedi", choices)).toMatchObject({ powersPerFeat: 3, newForceTrainingCount: 2, forcePowerCount: 6 });
+    expect(() => applySagaFoundation(current, choices)).toThrow(/exactly 6 supported Force powers/);
+    expect(() => applySagaFoundation(current, { ...choices, forcePowerIds: ["battle-strike", "surge", "force-grip", "force-lightning", "force-stun", "invented-power"] })).toThrow(/supported Force powers/);
+    const forcePowerIds = ["battle-strike", "battle-strike", "surge", "negate-energy", "force-stun", "force-lightning"];
+    const once = applySagaFoundation(current, { ...choices, forcePowerIds });
+    expect(once.character.featSelections.filter(item => item.id === "force-training")).toHaveLength(2);
+    expect(once.character.forcePowerSelections.map(item => item.id)).toEqual(forcePowerIds);
+    expect(new Set(once.character.forcePowerSelections.map(item => item.selectionId)).size).toBe(6);
+    expect(once.character.forcePowerSelections.filter(item => item.forceTrainingIndex === 1)).toHaveLength(3);
+    expect(once.character.forcePowerSelections.filter(item => item.forceTrainingIndex === 2)).toHaveLength(3);
+    expect(once.character.forcePowers).toBe("Battle Strike, Battle Strike, Surge, Negate Energy, Force Stun, Force Lightning");
+    expect(once.character.experience).toBe(500);
+    expect(once.gameState.advancementHistory[0].forcePowerSelections).toHaveLength(6);
+    expect(applySagaFoundation(once, { ...choices, forcePowerIds })).toEqual(once);
+  });
+
+  it("rejects unearned power lists and requires actual Force Sensitivity and training", () => {
+    const character = { species: "Human", level: 1, sagaStats: "STR 10 | DEX 10 | CON 10 | INT 10 | WIS 10 | CHA 10", feats: "None", talents: "None" };
+    const ordinary = { advancementId: "ordinary-foundation", classId: "jedi", talentId: "battle-meditation", generalFeatId: "toughness", humanBonusFeatId: "improved-defenses", trainedSkillIds: ["acrobatics", "perception", "use-the-force"], languageIds: [] };
+    expect(() => applySagaFoundation(snapshot(character), { ...ordinary, forcePowerIds: ["surge"] })).toThrow(/exactly 0/);
+    expect(() => applySagaFoundation(snapshot(character), { ...ordinary, forcePowerIds: "surge" })).toThrow(/list of supported power/);
+    expect(availableFeats({ ...character, forceSensitive: "Yes", trainedSkills: ["Use the Force"] }, "scoundrel").map(item => item.id)).not.toContain("force-training");
+    expect(availableFeats({ ...character, feats: "Force Sensitivity", trainedSkills: [] }, "jedi").map(item => item.id)).not.toContain("force-training");
+    expect(availableFeats({ ...character, feats: "Force Sensitivity", trainedSkills: ["Use the Force"] }, "jedi").map(item => item.id)).toContain("force-training");
+  });
+
+  it("adds new earned Force Training powers while preserving legacy named and unsupported powers", () => {
+    const character = { level: 2, experience: 3000, classLevels: { jedi: 2 }, maxHitPoints: 35, sagaStats: "STR 10 | DEX 10 | CON 10 | INT 10 | WIS 14 | CHA 10", feats: "Force Sensitivity, Force Training", featSelections: [{ id: "force-sensitivity" }, { id: "force-training" }], talentSelections: [], trainedSkills: ["Use the Force"], forcePowers: "Battle Strike, Battle Strike, Farseeing" };
+    const choices = { advancementId: "force-third", classId: "jedi", talentId: "resilience", generalFeatId: "force-training", forcePowerIds: ["force-grip", "surge", "negate-energy"] };
+    const once = applySagaAdvancement(snapshot(character), choices, () => 5);
+    expect(once.character.forcePowerSelections.map(item => item.id)).toEqual(["battle-strike", "battle-strike", "farseeing", "force-grip", "surge", "negate-energy"]);
+    expect(once.character.forcePowerSelections.slice(-3).every(item => item.source === "force-training" && item.forceTrainingIndex === 2 && item.level === 3)).toBe(true);
+    expect(once.character.forcePowers).toContain("Farseeing");
+    expect(once.gameState.advancementHistory[0].forcePowerSelections).toHaveLength(3);
+  });
+
+  it("commits extra player-picked powers from permanent Wisdom increases for every existing training feat", () => {
+    const character = { level: 3, experience: 6000, classLevels: { jedi: 3 }, maxHitPoints: 40, sagaStats: "STR 10 | DEX 10 | CON 10 | INT 10 | WIS 13 | CHA 10", feats: "Force Sensitivity, Force Training (2)", featSelections: [{ id: "force-sensitivity" }, { id: "force-training" }, { id: "force-training" }], talentSelections: [], trainedSkills: ["Use the Force"], forcePowers: "Battle Strike, Battle Strike, Surge, Farseeing" };
+    const choices = { advancementId: "wisdom-fourth", classId: "jedi", classBonusFeatId: "quick-draw", abilityIncreases: ["wisdom", "strength"] };
+    expect(forcePowerChoiceRequirements(character, choices)).toMatchObject({ existingForceTrainingCount: 2, wisdomPowerCount: 2, forcePowerCount: 2 });
+    expect(() => applySagaAdvancement(snapshot(character), choices, () => { throw new Error("must validate before rolling"); })).toThrow(/exactly 2/);
+    const complete = { ...choices, forcePowerIds: ["surge", "force-slam"] };
+    const once = applySagaAdvancement(snapshot(character), complete, () => 5);
+    expect(once.character.forcePowerSelections).toHaveLength(6);
+    expect(once.character.forcePowerSelections.slice(-2)).toEqual([expect.objectContaining({ id: "surge", source: "wisdom-increase", forceTrainingIndex: 1 }), expect.objectContaining({ id: "force-slam", source: "wisdom-increase", forceTrainingIndex: 2 })]);
+    expect(applySagaAdvancement(once, complete, () => { throw new Error("retry must not reroll"); })).toEqual(once);
+    expect(forcePowerChoiceRequirements({ ...character, featSelections: [], sagaStats: "STR 10 | DEX 10 | CON 10 | INT 10 | WIS 9 | CHA 10" }, choices).forcePowerCount).toBe(2);
   });
 });

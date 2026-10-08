@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { attachRepairedLedger, appendTurnEvent, assertCampaignResponseStructure, assertFreshScene, assertMaterialAuthority, assertMechanicalNarration, assertMovementSceneProgress, assertNarrativeAuthority, assertNarrativeFocus, assertNarrativeLedgerConsistency, assertStoryDirectiveAuthority, authorityWarnings, buildLocalSafeFallback, constrainExperienceAward, constrainFailedCheckDelta, deriveExperienceAward, ensureStateUpdateSection, extractSceneNarration, GM_SYSTEM, normalizePlayerOptions, normalizeTurnAction, safeMessages, sanitizeGmNarration, sceneSimilarity, withSceneFrame } from "./gm";
-import { parseEngineResponse } from "@/original/lib/engineState";
+import { attachRepairedLedger, appendTurnEvent, assertCampaignResponseStructure, assertFreshScene, assertMaterialAuthority, assertMechanicalNarration, assertMovementSceneProgress, assertNarrativeAuthority, assertNarrativeFocus, assertNarrativeLedgerConsistency, assertStoryDirectiveAuthority, authorityWarnings, constrainExperienceAward, constrainFailedCheckDelta, deriveExperienceAward, ensureStateUpdateSection, GM_SYSTEM, normalizePlayerOptions, normalizeTurnAction, safeMessages, sanitizeGmNarration, sceneSimilarity, withSceneFrame } from "./gm";
 import { planConversationTrade, reconcileConversationTradeDelta } from "./conversation-trade";
 
 describe("authoritative Saga narration", () => {
+  it("permits the same physical desk when the NPC gives a genuinely new answer", () => {
+    const scene = "You stand at the guesthouse desk opposite the human proprietor. A ceiling fan clicks above her terminal while crockery rattles behind the breakfast partition. Your coat rests against the scuffed counter.";
+    const oldResult = "The proprietor quotes 500 credits for seven nights in a private room with a lock. No booking is made.";
+    const result = "The proprietor opens the monthly tariff: 1,800 credits for thirty nights including breakfast. She turns the new terms toward you and waits for a decision.";
+    expect(() => assertFreshScene(`## SCENE\n${scene}\n## GAMEPLAY RESULT\n${result}`, scene, "How much for a full month?", oldResult)).not.toThrow();
+    expect(() => assertFreshScene(`## SCENE\n${scene}\n## GAMEPLAY RESULT\n${oldResult}`, scene, "How much for a full month?", oldResult)).toThrow(/repeated/);
+  });
   it("repairs a blank final state section even when options are also missing", () => {
     const narration = "## LOCATION\nMarket\n## SCENE\nThe seller waits.\n## GM ADJUDICATION\nA public inquiry.\n## GAMEPLAY RESULT\nThe vendor names a nearby guesthouse.\n## SAGA CHECK\nNo check required.\n## STATE UPDATE\n";
     expect(ensureStateUpdateSection(narration, {})).toContain("STATE UPDATE\nNo persistent change.");
@@ -35,21 +41,6 @@ describe("authoritative Saga narration", () => {
     expect(() => assertNarrativeFocus('SCENE\nThe vendor asks, “You want a room?”\nGAMEPLAY RESULT\nHe points to the lodging desk.', "Ain't looking for free")).not.toThrow();
     expect(() => assertNarrativeFocus('SCENE\nYou want a safe place to rest.\nGAMEPLAY RESULT\nThe vendor quotes a room.', 'I want somewhere to rest')).not.toThrow();
     expect(() => assertNarrativeFocus('SCENE\nYou decide to accept the room.\nGAMEPLAY RESULT\nPayment is made.', 'I ask about rooms')).toThrow(/unchosen/);
-  });
-  it("keeps credit-free market conversation in the market with a concrete lodging lead", () => {
-    const output = buildLocalSafeFallback({ mode: "play", action: "Ain't looking for free, I say", location: "Coruscant — lower-city local market", roll: null, combatSummary: null, merchant: { name: "clothing vendor", species: "Twi'lek", location: "Coruscant — lower-city local market" }, state: {}, character: {} });
-    const parsed = parseEngineResponse(output.content, { requireState: true });
-    expect(parsed.clean).toContain("guesthouse desk");
-    expect(parsed.clean).toContain("Twi'lek");
-    expect(parsed.clean).not.toMatch(/conduit|Force|dark-side/i);
-    expect(parsed.delta).not.toHaveProperty("timeAdvanceMinutes");
-    expect(parsed.delta).not.toHaveProperty("credits");
-  });
-  it("can reach a vendor in the same market when AI drafting is unavailable", () => {
-    const action = 'I head towards the clothing vendor';
-    const parsed = parseEngineResponse(buildLocalSafeFallback({ mode: "play", action, location: "market", roll: null }).content, { requireState: true });
-    expect(parsed.clean).toContain('reach the clothing stall');
-    expect(() => assertMovementSceneProgress(parsed.clean, action, null, parsed.delta as Record<string, unknown> | null, 'market')).not.toThrow();
   });
   it("rejects invented dice on an ordinary no-check turn", () => {
     expect(() => assertMechanicalNarration('## SAGA CHECK\nPersuasion: 1d20+0 = 12 vs DC 15 — Failure\n## STATE UPDATE\nNone.', null)).toThrow(/invented dice/);
@@ -113,52 +104,6 @@ describe("authoritative Saga narration", () => {
     expect(attachRepairedLedger(`${narration}\n<!--STATE:{"conditionAdd":"strained"}-->`, '<!--STATE:{"conditionAdd":[{"name":"strained"}]}-->')).toBe(`${narration}\n<!--STATE:{"conditionAdd":[{"name":"strained"}]}-->`);
     expect(() => attachRepairedLedger(narration, "not valid JSON")).toThrow(/ledger repair was malformed/);
     expect(attachRepairedLedger(narration, '```json\n{“timeAdvanceMinutes”: 5,}\n```')).toBe(`${narration}\n<!--STATE:{"timeAdvanceMinutes":5}-->`);
-  });
-
-  it("keeps gameplay available with a credit-free deterministic fallback", () => {
-    const response = buildLocalSafeFallback({
-      mode: "play",
-      action: "I search the maintenance hatch",
-      location: "Coruscant — Level 1313",
-      roll: { label: "Perception", formula: "1d20+2", raw: 14, modifier: 2, total: 16, target: 15, targetLabel: "DC", targetVisible: true, outcome: "success" },
-    });
-    expect(response.provider).toBe("local-safe-fallback");
-    expect(response.content).toContain("RESULT: SUCCESS");
-    expect(response.content).not.toMatch(/NVIDIA|provider|quota|API/i);
-    const parsed = parseEngineResponse(response.content, { requireState: true });
-    expect(parsed.delta).toEqual({ timeAdvanceMinutes: 5 });
-    expect(() => assertCampaignResponseStructure(parsed.clean)).not.toThrow();
-    expect(() => assertMechanicalNarration(parsed.clean, { outcome: "success" })).not.toThrow();
-  });
-
-  it("never grants an unverified result when fallback play has no check", () => {
-    const response = buildLocalSafeFallback({ mode: "play", action: "I wait and listen", location: "A concealed bunker", roll: null });
-    const parsed = parseEngineResponse(response.content, { requireState: true });
-    expect(parsed.delta).toEqual({ timeAdvanceMinutes: 5 });
-    expect(parsed.clean).toContain("Time advances 5 minutes");
-  });
-
-  it("makes deterministic narration react differently to different actions", () => {
-    const meditation = buildLocalSafeFallback({ mode: "play", action: "I meditate without moving", location: "Coruscant — lower-city transit route", roll: null }).content;
-    const movement = buildLocalSafeFallback({ mode: "play", action: "I follow the pressure", location: "Coruscant — lower-city transit route", roll: null }).content;
-    const waiting = buildLocalSafeFallback({ mode: "play", action: "I end my turn", location: "Coruscant — lower-city transit route", roll: null }).content;
-    expect(meditation).toMatch(/hold your position and narrow your attention/i);
-    expect(movement).toMatch(/maintenance junction/i);
-    expect(waiting).toMatch(/ventilation cycle/i);
-    expect(new Set([extractSceneNarration(meditation), extractSceneNarration(movement), extractSceneNarration(waiting)]).size).toBe(3);
-    expect(`${meditation}${movement}${waiting}`).not.toMatch(/\bthe player\b/i);
-  });
-
-  it("does not narrate a negated attack as combat in the deterministic fallback", () => {
-    const response = buildLocalSafeFallback({
-      mode: "play",
-      action: "I do not attack anyone; I meditate in place",
-      location: "Coruscant — lower-city transit route",
-      roll: null,
-    }).content;
-    expect(response).toMatch(/hold your position and narrow your attention/i);
-    expect(response).toMatch(/slow your breathing/i);
-    expect(response).not.toMatch(/your attack begins|declared combat action|target, cover, and distance/i);
   });
 
   it("rejects copied scene prose and accepts a genuinely new beat", () => {

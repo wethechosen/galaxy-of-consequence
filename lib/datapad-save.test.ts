@@ -43,7 +43,7 @@ describe("original campaign persistence", () => {
   });
   it("validates an exact catalog trade server-side while rejecting invented inventory", () => {
     const { db, one } = setup();
-    const established = { ...snapshot, character: { ...snapshot.character, level: 1 }, gameState: { credits: 500, location: "Coruscant", inventory: [] } };
+    const established = { ...snapshot, character: { ...snapshot.character, level: 1 }, gameState: { credits: 500, location: "Coruscant — lower-city market", inventory: [] } };
     saveDatapad(one, null, 0, established, db);
     const purchase = { ...established, gameState: { ...established.gameState, credits: 270, inventory: [{ id: "m", name: "Medpac", qty: 1, tag: "medical" }] } };
     saveDatapad(one, null, 1, purchase, db);
@@ -68,7 +68,7 @@ function hostedSetup() {
   const established = {
     ...snapshot,
     character: { name: "D'mir", level: 1, experience: 500, talents: "None" },
-    gameState: { credits: 500, location: "Coruscant", health: 26, inventory: [] },
+    gameState: { credits: 500, location: "Coruscant — lower-city market", health: 26, inventory: [] },
   };
   let cloud: hostedBridge.HostedSave = { account_username: one.username, account_id: one.id, revision: 9, snapshot: established, updated_at: "2026-10-06T00:00:00Z" };
   vi.spyOn(accounts, "accountStore").mockReturnValue(db);

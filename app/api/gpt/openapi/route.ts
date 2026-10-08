@@ -150,7 +150,7 @@ export async function GET(request: Request) {
     openapi: "3.1.0",
     info: {
       title: "Galaxy of Consequence Custom GPT Controller",
-      version: "2.0.8",
+      version: "2.0.9",
       description: "Authoritative GOC controller: state/HUD/checkpoints/reconciliation are separate from gameplay turns.",
     },
     servers: [{ url: controllerUrl }],

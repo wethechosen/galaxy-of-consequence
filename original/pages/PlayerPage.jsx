@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Link } from "react-router-dom";
 import {
   Radio, Terminal, Package, Home as HomeIcon, Rocket, Wallet, UserCog,
@@ -9,12 +9,14 @@ import { Shell, TopBar, GlassCard, EmptyNote, HudRow, MeterRow, StatCard } from 
 import { InventoryView, PropertiesView, HangarView } from "@/original/components/CatalogViews";
 import { HudOverlay } from "@/original/components/HudOverlay";
 import { GALAXY_LOCATIONS, getTravelAccess, getTravelCost, getTravelTime } from "@/original/lib/galaxyLocations";
-import { getEconomicSnapshot, getMarket } from "@/original/lib/marketCatalog";
-import { getSellQuote, getTradeAccess } from "@/original/lib/marketCatalog";
+import { getEconomicSnapshot } from "@/original/lib/marketCatalog";
+import { BankView } from "@/original/components/BankView";
+import { MarketplaceView } from "@/original/components/MarketplaceView";
 import { useAuth } from "@/original/lib/AuthContext";
 import { cleanPlayerMessage, immersiveTurnError, parseImmersiveMessage } from "@/original/lib/immersiveChat";
-import { sceneDirections, genericDirections } from "@/original/lib/sceneDirections";
+import { currentPlayerOptions } from "@/original/lib/sceneDirections";
 import { hitPointDisplay } from "@/original/lib/hitPoints";
+import { buildCampaignRecap, campaignTranscript, sameCampaignLocation, shouldShowReturnRecap } from "@/original/lib/campaignResume";
 
 const NAV_GROUPS = [
   { label: "Play", items: [{ key: "play", label: "Play", icon: Radio }] },
@@ -116,8 +118,8 @@ function AssistantTurn({ content, onChoose, current = false, gameState = {}, cha
   if (!turn.structured) return <NarrativeText text={turn.text} />;
   const location = current ? gameState.location : turn.location;
   const diceText = rolls.length ? rolls.join("\n\n") : turn.dice;
-  const options = current && genericDirections(turn.options)
-    ? sceneDirections({ state: gameState, character, scene: turn.scene }).map((text, index) => ({ label: String.fromCharCode(65 + index), text }))
+  const options = current
+    ? currentPlayerOptions({ options: turn.options, state: gameState, character, scene: turn.scene, result: turn.gameplay })
     : turn.options;
   return (
     <div className="space-y-4 whitespace-normal">
@@ -185,11 +187,46 @@ function CombatStatus({ combat }) {
   );
 }
 
+function ReturnRecap({ recap, onContinue }) {
+  return <section aria-label="The story thus far" className="max-w-4xl rounded-2xl border border-[#22d3ee]/25 bg-[#11131e]/80 p-5 sm:p-7 space-y-5">
+    <header><p className="text-[10px] tracking-[0.24em] text-[#22d3ee]">THE STORY THUS FAR</p><h2 className="gc-display mt-2 text-lg text-[#f2f0ea]">{recap.name}</h2><p className="mt-2 text-xs text-[#8b93a3]">Your saved journey. Returning does not advance time or change the galaxy.</p></header>
+    {recap.milestones.length > 0 && <section><h3 className="text-[10px] tracking-[0.18em] text-[#a78bfa] mb-2">CHAPTERS OF YOUR JOURNEY</h3><ul className="list-disc pl-5 space-y-2 text-sm text-[#c7c4bc]">{recap.milestones.map((entry, index) => <li key={index}>{entry}</li>)}</ul></section>}
+    {recap.timeline.length > 0 && <section><h3 className="text-[10px] tracking-[0.18em] text-[#a78bfa] mb-2">RECENT EVENTS · IN ORDER</h3><ol className="list-decimal pl-5 space-y-2 text-sm text-[#c7c4bc]">{recap.timeline.map((event) => <li key={event.id}>{event.summary}</li>)}</ol></section>}
+    <section><h3 className="text-[10px] tracking-[0.18em] text-[#22d3ee] mb-2">WHERE YOU LEFT OFF</h3><p className="font-semibold text-sm text-[#f2f0ea] mb-3">{recap.location}</p>{recap.scene ? <div className="text-sm leading-relaxed text-[#d8d6d0]"><NarrativeText text={recap.scene} /></div> : <p className="text-sm text-[#a9adb8]">Your location is recorded, but there is no reliable scene description to replay. Take in your surroundings when you resume.</p>}{recap.lastOutcome && <div className="mt-3 border-l-2 border-[#ff9b50]/40 pl-3 text-sm text-[#c7c4bc]"><NarrativeText text={recap.lastOutcome} /></div>}</section>
+    {recap.objectives.length > 0 && <section><h3 className="text-[10px] tracking-[0.18em] text-[#ff9b50] mb-2">OPEN THREADS</h3><ul className="list-disc pl-5 text-sm text-[#c7c4bc] space-y-1">{recap.objectives.map((entry) => <li key={entry}>{entry}</li>)}</ul><p className="mt-2 text-xs text-[#8b93a3]">These remain possibilities—not instructions. Choose your own course.</p></section>}
+    <section><h3 className="text-[10px] tracking-[0.18em] text-[#22e5c5] mb-2">FROM THE HOLONET</h3>{recap.news.length ? recap.news.map((entry, index) => <article className="mb-3 text-sm" key={index}><p className="text-[#f2f0ea]">{entry.title}</p>{entry.source && <p className="text-[10px] text-[#8b93a3]">{entry.source}</p>}<p className="mt-1 text-[#c7c4bc]">{entry.detail}</p></article>) : <p className="text-xs text-[#8b93a3]">No new public dispatches are recorded in this save.</p>}</section>
+    <button type="button" onClick={onContinue} className="gc-btn px-4 py-2.5 text-xs">RESUME LAST SAVED SCENE</button>
+  </section>;
+}
+
 function PlayView() {
-  const { messages, sending, input, setInput, handleSend, scrollRef, gameState, character, saveReady, saveError, turnError, retryTurn, sendTurn, resetForNewGame } = useGame();
-  // The newest GM reply is the present moment even if a provider returned plain
-  // prose. Never leave an older structured scene labelled as current.
-  const latestScene = messages.findLastIndex((message) => message.role === "assistant");
+  const { messages, sending, input, setInput, handleSend, scrollRef, gameState, character, saveReady, saveError, turnError, retryTurn, sendTurn, resetForNewGame, selectedAccountId } = useGame();
+  const transcript = useMemo(() => campaignTranscript(messages), [messages]);
+  const recap = useMemo(() => buildCampaignRecap({ messages, gameState, character }), [messages, gameState, character]);
+  const [showRecap, setShowRecap] = useState(true);
+  const [historyCount, setHistoryCount] = useState(0);
+  const [showArchive, setShowArchive] = useState(false);
+  const followLatest = useRef(true);
+  const wasSending = useRef(false);
+  const previousScene = useRef(null);
+  const restoreHistoryPosition = useRef(null);
+  const latestScene = transcript.latest?.sourceIndex;
+  const mainMessages = transcript.latestExchange;
+  const earlierMessages = transcript.confirmed.filter((message) => !mainMessages.includes(message));
+  const visibleMessages = [...earlierMessages.slice(Math.max(0, earlierMessages.length - historyCount)), ...mainMessages, ...transcript.pending];
+  useEffect(() => {
+    const visitKey = `gc_play_last_visit:${selectedAccountId || "player"}`;
+    let previous;
+    try { previous = localStorage.getItem(visitKey); } catch { previous = null; }
+    setShowRecap(shouldShowReturnRecap(previous));
+    setHistoryCount(0); setShowArchive(false); followLatest.current = true;
+    const markVisit = () => { try { localStorage.setItem(visitKey, String(Date.now())); } catch { /* Private browsing can disable storage. */ } };
+    const onVisibility = () => { if (document.visibilityState === "hidden") markVisit(); else { try { if (shouldShowReturnRecap(localStorage.getItem(visitKey))) setShowRecap(true); } catch { /* Recap stays available manually. */ } } };
+    const timer = window.setInterval(() => { if (document.visibilityState === "visible") markVisit(); }, 60_000);
+    document.addEventListener("visibilitychange", onVisibility);
+    markVisit();
+    return () => { markVisit(); window.clearInterval(timer); document.removeEventListener("visibilitychange", onVisibility); };
+  }, [selectedAccountId]);
   const rollsForAssistant = (assistantIndex) => {
     const rolls = [];
     for (let index = assistantIndex - 1; index >= 0 && messages[index]?.role === "roll"; index -= 1) rolls.unshift(cleanPlayerMessage(messages[index].content));
@@ -202,25 +239,59 @@ function PlayView() {
       await resetForNewGame("level-one");
       return;
     }
+    setShowRecap(false); followLatest.current = true;
     handleSend();
   }
-  useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [messages, sending, scrollRef]);
+  useEffect(() => {
+    const pane = scrollRef.current;
+    // Sync polling must not drag a player away from the passage they are reading.
+    if (pane && !showRecap && followLatest.current) {
+      const newlyResolved = !sending && latestScene !== previousScene.current;
+      const latestNode = newlyResolved ? pane.querySelector(`[data-message-index="${latestScene}"]`) : null;
+      // Begin at the narration, not below it at the options. Long replies must
+      // remain readable without a scroll back through the entire transcript.
+      if (latestNode) pane.scrollTop += latestNode.getBoundingClientRect().top - pane.getBoundingClientRect().top - 12;
+      else if (sending && !wasSending.current) pane.scrollTop = pane.scrollHeight;
+    }
+    previousScene.current = latestScene;
+    wasSending.current = sending;
+  }, [messages.length, latestScene, sending, showRecap, scrollRef]);
+  useEffect(() => {
+    const pane = scrollRef.current, previous = restoreHistoryPosition.current;
+    if (pane && previous) pane.scrollTop = previous.top + pane.scrollHeight - previous.height;
+    restoreHistoryPosition.current = null;
+  }, [historyCount, scrollRef]);
+  function loadEarlier() {
+    const pane = scrollRef.current;
+    if (pane) restoreHistoryPosition.current = { top: pane.scrollTop, height: pane.scrollHeight };
+    followLatest.current = false;
+    setHistoryCount((count) => count + 20);
+  }
+  function resume() {
+    setShowRecap(false); setShowArchive(false); setHistoryCount(0); followLatest.current = false;
+    window.requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = 0; });
+  }
   return (
-    <div className="flex flex-col min-h-[70dvh] md:h-full min-w-0">
+    <div className="gc-play-view flex flex-col h-full min-h-0 min-w-0">
       <LiveHudStrip gameState={gameState} character={character} />
       <CombatStatus combat={gameState.combat} />
-      <div ref={scrollRef} data-gc-play-transcript className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-6 py-5 space-y-4">
-        {messages.length === 0 && !sending && <div className="text-sm text-[#a9adb8]"><p>Your dossier is ready. Open the current scene to begin play.</p><button onClick={() => sendTurn(null)} disabled={!saveReady || Boolean(saveError)} className="gc-btn mt-3 px-4 py-2 text-xs disabled:opacity-40">OPEN STARTING SCENE</button></div>}
-        {messages.map((m, i) => m.role === "roll" ? null : (
-          <div key={i} className={`gc-msg-in ${m.role === "user" ? "flex justify-end" : ""}`}>
+      <div className="shrink-0 flex flex-wrap items-center gap-3 border-b border-white/10 px-4 py-2 text-[11px] text-[#8b93a3]"><button type="button" onClick={() => { setShowRecap(!showRecap); if (scrollRef.current) scrollRef.current.scrollTop = 0; }} className="hover:text-[#22d3ee]">{showRecap ? "Return to scene" : "The story thus far"}</button>{!showRecap && earlierMessages.length > 0 && <button type="button" onClick={() => { followLatest.current = false; setHistoryCount(historyCount ? 0 : 20); }} className="hover:text-[#22d3ee]">{historyCount ? "Close earlier chapters" : "Earlier chapters"}</button>}{transcript.archived.length > 0 && <button type="button" onClick={() => { setShowArchive(!showArchive); setShowRecap(false); followLatest.current = false; }} className="ml-auto hover:text-[#a9adb8]">{showArchive ? "Close archived transmissions" : "Archived transmissions"}</button>}</div>
+      <div ref={scrollRef} data-gc-play-transcript role="region" aria-label="Campaign story" tabIndex={0} onScroll={(event) => { const pane = event.currentTarget; followLatest.current = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 100; }} className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-5 space-y-4">
+        {showRecap && messages.length > 0 ? <ReturnRecap recap={recap} onContinue={resume} /> : <>
+        {showArchive && <section className="max-w-4xl rounded-xl border border-white/10 p-4 text-xs text-[#8b93a3]"><h2 className="tracking-wider mb-2">ARCHIVED TRANSMISSIONS</h2><p>Interrupted or unreliable replies are kept here for reference, outside the playable story. Nothing has been deleted from your save.</p>{transcript.archived.filter((message) => message.role !== "roll").slice(-30).map((message) => <details className="mt-3 border-t border-white/5 pt-2" key={message.sourceIndex}><summary>{message.role === "user" ? "Unresolved declaration" : "Interrupted transmission"}</summary><p className="mt-2 whitespace-pre-wrap break-words">{cleanPlayerMessage(message.content) || "No readable transmission."}</p></details>)}{transcript.archived.length > 30 && <p className="mt-3">Showing the latest 30 archived entries. The complete record is preserved in your save export.</p>}</section>}
+        {transcript.confirmed.length === 0 && !sending && <div className="text-sm text-[#a9adb8]"><p>{messages.length ? "Your campaign is preserved. Open your surroundings to pick up the thread." : "Your dossier is ready. Open the current scene to begin play."}</p><button onClick={() => sendTurn(null)} disabled={!saveReady || Boolean(saveError)} className="gc-btn mt-3 px-4 py-2 text-xs disabled:opacity-40">OPEN CURRENT SCENE</button></div>}
+        {historyCount > 0 && earlierMessages.length > historyCount && <button type="button" onClick={loadEarlier} className="text-xs text-[#22d3ee]">Load earlier chapters</button>}
+        {visibleMessages.map((m) => m.role === "roll" ? null : (
+          <div key={m.sourceIndex} data-message-index={m.sourceIndex} className={`gc-msg-in ${m.role === "user" ? "flex justify-end" : ""}`}>
             <div className={`${m.role === "assistant" ? "max-w-4xl" : "max-w-2xl"} px-4 py-3 text-sm leading-relaxed rounded-2xl whitespace-pre-wrap break-words [overflow-wrap:anywhere]`}
               style={m.role === "user" ? { background: "linear-gradient(135deg, rgba(255,122,26,.18), rgba(255,61,110,.12))", border: "1px solid rgba(255,122,26,.25)", color: "#f2f0ea" } : m.role === "roll" ? { color: "#d9fbff", background: "linear-gradient(135deg, rgba(34,211,238,.12), rgba(168,85,247,.08))", border: "1px solid rgba(34,211,238,.3)", borderLeft: "3px solid #22d3ee", fontFamily: "monospace", fontSize: "12px" } : { color: "#e7e5df", background: "rgba(255,255,255,.03)", borderLeft: "3px solid var(--force-light)" }}>
-              {m.role === "assistant" ? <AssistantTurn content={m.content} onChoose={setInput} current={i === latestScene} gameState={gameState} character={character} rolls={rollsForAssistant(i)} /> : cleanPlayerMessage(m.content)}
+              {m.role === "assistant" ? <AssistantTurn content={m.content} onChoose={setInput} current={m.sourceIndex === latestScene && sameCampaignLocation(parseImmersiveMessage(m.content).location, gameState.location)} gameState={gameState} character={character} rolls={rollsForAssistant(m.sourceIndex)} /> : <>{cleanPlayerMessage(m.content)}{transcript.pending.includes(m) && !sending && <span className="mt-2 block text-[10px] text-[#a9adb8]">Awaiting a resolved scene.</span>}</>}
             </div>
           </div>
         ))}
         {!sending && messages.length > 0 && <button type="button" onClick={() => sendTurn(null)} disabled={!saveReady || Boolean(saveError) || Boolean(turnError)} className="text-xs text-[#8b93a3] hover:text-[#22d3ee] disabled:opacity-40">Take in the current scene · no time passes</button>}
         {sending && <div className="flex items-center gap-2 text-[#8b93a3] text-[11px] tracking-widest pl-4 gc-dot-bounce">THE GALAXY RESPONDS <span>.</span><span>.</span><span>.</span></div>}
+        </>}
       </div>
       {turnError && <div role="alert" className="flex-shrink-0 mx-4 mb-3 rounded-xl border border-[#e23b3b]/40 bg-[#e23b3b]/5 p-3 text-xs text-[#ff9b9b]"><p className="mb-1 text-[10px] font-bold tracking-[0.18em]">COMLINK STATIC</p><p className="text-[#d8d6d0]">{immersiveTurnError(turnError)}</p><button onClick={retryTurn} disabled={sending || !saveReady || Boolean(saveError)} className="gc-btn mt-2 px-3 py-2 disabled:opacity-40">RETRY SCENE</button></div>}
       <div className="flex-shrink-0 p-4 flex gap-2" style={{ borderTop: "1px solid rgba(255,255,255,.08)" }}>
@@ -295,46 +366,7 @@ function HudView() {
   );
 }
 
-/* ---------- Economy / Bank ---------- */
-
-function EconomyView() {
-  const { gameState } = useGame();
-  const economy = getEconomicSnapshot(gameState);
-  const holdings = [...economy.investments, ...economy.properties, ...economy.ships];
-  return (
-    <div className="p-6">
-      <p className="text-[10px] tracking-[0.2em] mb-4" style={{ color: "var(--econ)" }}>CREDITS & HOLDINGS</p>
-      <div className="grid grid-cols-2 gap-3 max-w-xl mb-6">
-        <StatCard icon={Wallet} label="Standard Credits" value={`${gameState.credits.toLocaleString()} cr`} color="var(--econ)" />
-        <StatCard icon={Skull} label="Underworld Credits" value={`${gameState.creditsCriminal.toLocaleString()} cr`} color="var(--force-dark)" />
-      </div>
-      <Link to="/exchanges" className="inline-flex gc-btn px-4 py-2 text-xs mb-5">VIEW GALACTIC EXCHANGES</Link>
-      <p className="text-sm text-[#8b93a3] max-w-xl">Your credit balance, holdings, and financial obligations are recorded by the Game Master. Values move with regional conditions, public events, faction pressure, route access, and market cycles.</p>
-      <div className="mt-6 max-w-3xl"><p className="text-[10px] tracking-[0.2em] text-[#22e5c5] mb-3">ECONOMIC HOLDINGS</p>{holdings.length === 0 ? <p className="text-sm text-[#5c6370]">No stocks, bonds, properties, or vessels are recorded to this dossier.</p> : <div className="grid gap-2">{holdings.map((holding) => <div key={holding.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white/5 px-4 py-3 text-xs"><div><strong className="text-[#f2f0ea]">{holding.name}</strong><span className="text-[#8b93a3] ml-2">{holding.instrument || holding.type || holding.class}</span></div><div className="flex items-center gap-4"><span className="text-[#f2f0ea]">{holding.value.toLocaleString()} cr</span><span className={holding.change >= 0 ? "text-[#22e5c5]" : "text-[#e23b3b]"}>{holding.change >= 0 ? "▲" : "▼"} {holding.change >= 0 ? "+" : ""}{holding.change.toFixed(2)}%</span><span className="text-[#8b93a3]">INCOME {holding.income.toLocaleString()} / CYCLE</span><span className="text-[#8b93a3]">UPKEEP {holding.upkeep.toLocaleString()}</span></div></div>)}</div>}</div>
-    </div>
-  );
-}
-
-function MarketplaceView({ setTab }) {
-  const { character, gameState, buyMarketGood, sellMarketGood, sending, saveReady, saveError } = useGame();
-  const [pending, setPending] = useState("");
-  async function acquire(good) { setPending(good.id); try { await buyMarketGood(good); setTab("play"); } finally { setPending(""); } }
-  async function sell(item) { setPending(`sell:${item.id}`); try { await sellMarketGood(item); setTab("play"); } finally { setPending(""); } }
-  const market = getMarket(gameState.location, character?.level || 1);
-  return (
-    <div className="p-6">
-      <div className="flex items-start justify-between gap-4 mb-5">
-        <div><p className="text-[10px] tracking-[0.2em] mb-2" style={{ color: "var(--econ)" }}>GALACTIC COMMERCE & EXCHANGES</p><h2 className="gc-display text-2xl font-bold text-[#f2f0ea]">{market.exchange.name}</h2><p className="text-sm text-[#8b93a3] mt-2">{market.exchange.note}</p></div>
-        <div className="text-right text-xs text-[#a9adb8]">AVAILABLE<br /><strong className="text-[#22e5c5]">{gameState.credits.toLocaleString()} cr</strong></div>
-      </div>
-      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 mb-6">
-        {market.goods.map((good) => { const access = getTradeAccess(gameState.location, character, gameState, good); return <GlassCard key={good.id} className="p-4"><p className="text-[9px] tracking-widest text-[#8b93a3]">{good.category.toUpperCase()}</p><h3 className="font-semibold text-[#f2f0ea] mt-2">{good.name}</h3><div className="flex justify-between items-center mt-4"><span className="text-[#22e5c5] font-bold">{good.price.toLocaleString()} cr</span><button title={access.reason} disabled={!access.affordable || !access.levelReady || sending || Boolean(pending) || !saveReady || Boolean(saveError)} onClick={() => acquire(good)} className="gc-btn px-3 py-1.5 text-[10px] disabled:opacity-30">{pending === good.id ? "GM RESOLVING…" : access.direct ? "BUY" : "REQUEST PURCHASE"}</button></div>{!access.direct && <p className="text-[10px] leading-relaxed text-[#e5a26f] mt-3">{access.reason}</p>}</GlassCard>; })}
-      </div>
-      <GlassCard className="p-5 mb-6"><p className="text-[10px] tracking-[0.2em] text-[#22e5c5]">SELL FROM INVENTORY</p><div className="grid gap-2 mt-3">{gameState.inventory.map((item) => { const quote = getSellQuote(item, gameState.location); const access = getTradeAccess(gameState.location, character, gameState); return quote ? <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white/5 px-3 py-3"><span className="text-sm text-[#f2f0ea]">{item.name} ×{item.qty}</span><button title={access.reason} disabled={!access.publicMarket || sending || Boolean(pending) || !saveReady || Boolean(saveError)} onClick={() => sell(item)} className="gc-btn px-3 py-1.5 text-[10px] disabled:opacity-30">{pending === `sell:${item.id}` ? "GM RESOLVING…" : `SELL · ${quote.price.toLocaleString()} cr`}</button></div> : null; })}{!gameState.inventory.some((item) => getSellQuote(item, gameState.location)) && <p className="text-xs text-[#8b93a3]">No standard catalog items can be sold here.</p>}</div></GlassCard>
-      {market.npcMarket && <GlassCard className="p-5 border-l-2 border-[#a855f7]"><p className="text-[10px] tracking-[0.2em] text-[#a855f7]">CONTACT-RESTRICTED MARKET</p><h3 className="text-lg text-[#f2f0ea] font-semibold mt-2">{market.npcMarket.name}</h3><p className="text-sm text-[#a9adb8] mt-2">{market.npcMarket.note}</p><p className="text-xs text-[#c7c4bc] mt-3">Possible offerings: {market.npcMarket.goods.join(" · ")}</p><p className="text-[10px] text-[#5c6370] mt-3">Access requires an established contact, a credible encounter, and authorization from the Game Master.</p></GlassCard>}
-    </div>
-  );
-}
+/* ---------- Travel ---------- */
 
 function TravelView({ setTab }) {
   const { gameState, character, travelToLocation, sending, saveReady, saveError } = useGame();
@@ -490,14 +522,14 @@ function PlayerPageBody() {
   const economy = getEconomicSnapshot(gameState);
 
   return (
-    <div className="gc-page-row flex flex-col md:flex-row flex-1 min-h-0 h-full gap-3 px-3 pb-3 overflow-hidden">
+    <div className="gc-page-row gc-player-workspace flex flex-col md:flex-row flex-1 min-h-0 gap-3 px-3 pb-3">
       <NavRail tab={tab} setTab={setTab} />
-      <div className="gc-player-panel flex-1 min-w-0 min-h-0 overflow-y-auto md:overflow-hidden gc-glass rounded-2xl">
+      <div key={tab} data-player-tab={tab} className={`gc-player-panel flex-1 min-w-0 min-h-0 gc-glass rounded-2xl ${tab === "play" && character ? "overflow-hidden" : "overflow-y-auto"}`} role="region" aria-label={tab === "economy" ? "Bank" : tab === "market" ? "Marketplace" : "Player workspace"} tabIndex={tab === "play" ? undefined : 0}>
         {tab === "play" && (!character ? <CreationWizard /> : <PlayView />)}
         {tab === "inventory" && (character ? <InventoryView items={gameState.inventory} readOnly /> : <EmptyNote text="NO CHARACTER ON FILE." />)}
         {tab === "properties" && (character ? <PropertiesView items={gameState.properties} economicItems={economy.properties} readOnly /> : <EmptyNote text="NO CHARACTER ON FILE." />)}
         {tab === "hangar" && (character ? <HangarView items={gameState.ships} economicItems={economy.ships} readOnly /> : <EmptyNote text="NO CHARACTER ON FILE." />)}
-        {tab === "economy" && (character ? <EconomyView /> : <EmptyNote text="NO CHARACTER ON FILE." />)}
+        {tab === "economy" && (character ? <BankView /> : <EmptyNote text="NO CHARACTER ON FILE." />)}
         {tab === "market" && (character ? <MarketplaceView setTab={setTab} /> : <EmptyNote text="NO CHARACTER ON FILE." />)}
         {tab === "travel" && <TravelView setTab={setTab} />}
         {tab === "user" && (user?.role === "admin" ? <UserControlsView /> : <EmptyNote text="ADMINISTRATOR ACCESS REQUIRED." />)}

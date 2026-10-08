@@ -1,3 +1,5 @@
+import { localMarket, localTradeAccess, localSellQuote } from "./localMarketplace";
+
 export const BASE_GOODS = [
   { id: "medpac", name: "Medpac", category: "Medical", base: 200, minLevel: 1, tags: ["Core", "Outer Rim"] },
   { id: "comlink", name: "Encrypted comlink", category: "Communications", base: 350, minLevel: 1, tags: ["Core", "Outer Rim", "Hutt Space"] },
@@ -118,14 +120,8 @@ export function getExchange(location) {
   };
 }
 
-export function getMarket(location, level = 1) {
-  const exchange = getExchange(location);
-  const goods = BASE_GOODS
-    .filter((good) => good.minLevel <= Math.max(1, Number(level) || 1))
-    .filter((good) => good.tags.some((tag) => location?.toLowerCase().includes(tag.toLowerCase())) || good.tags.includes("Outer Rim"))
-    .map((good) => ({ ...good, price: Math.max(1, Math.round(good.base * exchange.modifier)) }));
-  const npcMarket = NPC_MARKETS.find((market) => (location || "").toLowerCase().includes(market.match) && level >= market.minLevel);
-  return { exchange, goods, npcMarket };
+export function getMarket(location, level = 1, gameState = {}) {
+  return localMarket(location, level, gameState);
 }
 
 const CONFINEMENT_TERMS = ["prison", "detention", "infirmary", "brig", "cell block", "custody"];
@@ -135,32 +131,9 @@ const PUBLIC_MARKET_TERMS = [
 ];
 
 export function getTradeAccess(location, character, gameState, good = null) {
-  const lower = String(location || "").toLowerCase();
-  const level = Math.max(1, Number(character?.level) || 1);
-  const confined = CONFINEMENT_TERMS.some((term) => lower.includes(term));
-  const publicMarket = !confined && PUBLIC_MARKET_TERMS.some((term) => lower.includes(term));
-  const levelReady = !good || level >= Number(good.minLevel || 1);
-  const affordable = !good || Number(gameState?.credits || 0) >= Number(good.price || good.base || 0);
-  const reasons = [];
-  if (confined) reasons.push("You cannot complete an ordinary retail transaction while confined.");
-  else if (!publicMarket) reasons.push("No verified public market is available at the current location.");
-  if (!levelReady) reasons.push(`Character level ${good.minLevel} is required for this item.`);
-  if (!affordable) reasons.push("Available credits do not cover the listed price.");
-  return {
-    direct: publicMarket && levelReady && affordable,
-    publicMarket,
-    confined,
-    levelReady,
-    affordable,
-    reason: reasons.join(" ") || "Public retail purchase is available at the listed price.",
-  };
+  return localTradeAccess(location, character, gameState, good);
 }
 
 export function getSellQuote(item, location) {
-  if (!item?.name) return null;
-  const catalog = BASE_GOODS.find((good) => good.name.toLowerCase() === String(item.name).toLowerCase());
-  if (!catalog) return null;
-  const exchange = getExchange(location);
-  const currentPrice = Math.max(1, Math.round(catalog.base * exchange.modifier));
-  return { good: catalog, price: Math.max(1, Math.round(currentPrice * 0.55)) };
+  return localSellQuote(item, location);
 }

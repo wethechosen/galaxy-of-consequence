@@ -7,6 +7,6 @@ export async function GET() {
   return NextResponse.json({
     ok: true,
     service: "Galaxy of Consequence Custom GPT Controller",
-    version: "2.0.8",
+    version: "2.0.9",
   }, { headers: { "Cache-Control": "no-store" } });
 }

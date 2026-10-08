@@ -18,10 +18,10 @@ export function Shell({ children }) {
     return () => document.removeEventListener("pointerdown", closeOnOutside);
   }, [settings.hudVisible, toggleHud]);
   return (
-    <div ref={shellRef} className="original-game w-full h-[100dvh] max-h-[100dvh] flex flex-col relative overflow-hidden" style={{ minHeight: 0, background: "#07060b", color: "#e7e5df", "--sig": !user ? "#ff7a1a" : gameState.forceAlignment < 35 ? "#ed5266" : gameState.forceAlignment > 65 ? "#4fd8e8" : "#ff7a1a", "--sig2": !user ? "#ff9b50" : gameState.forceAlignment < 35 ? "#b92550" : gameState.forceAlignment > 65 ? "#75f5d0" : "#ff9b50" }}>
+    <div ref={shellRef} className="original-game w-full h-[100dvh] max-h-[100dvh] flex flex-col relative overflow-x-hidden overflow-y-auto" style={{ minHeight: 0, background: "#07060b", color: "#e7e5df", "--sig": !user ? "#ff7a1a" : gameState.forceAlignment < 35 ? "#ed5266" : gameState.forceAlignment > 65 ? "#4fd8e8" : "#ff7a1a", "--sig2": !user ? "#ff9b50" : gameState.forceAlignment < 35 ? "#b92550" : gameState.forceAlignment > 65 ? "#75f5d0" : "#ff9b50" }}>
       <div className="gc-blobs"><div className="gc-blob b1" /><div className="gc-blob b2" /><div className="gc-blob b3" /></div>
       <div className="gc-starfield" />
-      <div className="relative z-10 flex flex-col flex-1 min-h-0">
+      <div className="gc-shell-content relative z-10 flex flex-col flex-1 min-h-0">
         {user && <CampaignStatus />}
         {user && !saveReady && saveStatus === "loading" ? <DatapadBoot characterName={character?.name} /> : children}
       </div>

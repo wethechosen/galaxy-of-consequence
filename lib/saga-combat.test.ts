@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { beginCombat, endPlayerTurn, isAttackDeclaration, isCombatMovementDeclaration, isCombatWithdrawDeclaration, isEndTurnDeclaration, resolvePlayerAttack, spendPlayerMove, withdrawFromCombat, type SagaCombatState } from "./saga-combat";
+import { beginCombat, endPlayerTurn, isAttackDeclaration, isCombatMovementDeclaration, isCombatWithdrawDeclaration, isEndTurnDeclaration, resolveCombatAction, resolvePlayerAttack, spendPlayerMove, withdrawFromCombat, type SagaCombatState } from "./saga-combat";
 
 const character = {
   name: "D'mir Holloran", level: 1,
@@ -82,19 +82,39 @@ describe("Saga combat authority", () => {
     expect(result.combat.log).toHaveLength(1);
     expect(result.combat.combatants[1].hp).toBe(10);
   });
-  it("spends movement once without inventing position", () => {
+  it("spends movement and then legally converts the remaining standard action", () => {
     const result = spendPlayerMove(activeFixture(), "I move behind the overturned table");
     expect(result.combat.playerActions.move).toBe(0);
     expect(result.summary).toMatch(/position remains governed/i);
-    expect(() => spendPlayerMove(result.combat, "I move again")).toThrow(/move action/i);
+    const substitute = spendPlayerMove(result.combat, "I move again");
+    expect(substitute.combat.playerActions.standard).toBe(0);
+    expect(() => spendPlayerMove(substitute.combat, "I move a third time")).toThrow(/move action/i);
   });
 
-  it("uses the move action to withdraw and closes the encounter without XP", () => {
-    const result = withdrawFromCombat(activeFixture(), "I disengage and head upward");
+  it("uses the move action to withdraw and closes only after the scene confirms escape", () => {
+    const result = withdrawFromCombat(activeFixture(), "I disengage and head upward", { escapeConfirmed: true, escapeReason: "The passage reaches the upper market boundary." });
     expect(result.combat).toMatchObject({ status: "escaped", activeSide: "none", playerActions: { move: 0 } });
     expect(result.combat.endedAt).toBeTruthy();
     expect(result.combat.log.at(-1)).toMatchObject({ kind: "player-withdraw", distance: "half-speed" });
     expect(result.experienceAward).toBe(0);
+  });
+
+  it("supports aim, recovery, second wind, and total defense through the action dispatcher", () => {
+    const aimed = resolveCombatAction(activeFixture(), { kind: "aim", action: "I aim at the guard" }, { character, currentHealth: 18 });
+    expect(aimed.accepted).toBe(true);
+    expect(aimed.combat.combatants[0].aimTargetId).toBe("npc-1");
+    const hurt = activeFixture();
+    hurt.combatants[0].hp = 8;
+    hurt.combatants[0].conditionTrack = 1;
+    const wind = resolveCombatAction(hurt, { kind: "second_wind", action: "I catch a second wind", dayId: "day-1" }, { character, currentHealth: 8 });
+    expect(wind.accepted).toBe(true);
+    expect(wind.playerHealthDelta).toBe(4);
+    expect(wind.combat.combatants[0].secondWindUsedInEncounter).toBe(true);
+    const recover = resolveCombatAction(hurt, { kind: "recover", action: "I recover", swiftActions: 3 }, { character, currentHealth: 8 });
+    expect(recover.accepted).toBe(true);
+    expect(recover.playerConditionDelta).toBe(-1);
+    const defense = resolveCombatAction(activeFixture(), { kind: "total_defense", action: "I fight defensively" }, { character, currentHealth: 18 });
+    expect(defense.combat.combatants[0].defenseBonus).toBe(5);
   });
 
   it("resolves the NPC turn and refreshes the next player round", () => {

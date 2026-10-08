@@ -4,26 +4,48 @@ export function sceneDirections({ state = {}, character = {}, scene = "", action
   if (combat?.status === "active") {
     if (combat.activeSide !== "player") return ["Review the encounter before declaring your next action.", "Ask the GM about the visible battlefield."];
     const actions = combat.playerActions || {};
-    const enemy = (combat.combatants || []).find((npc) => npc.side === "opposition" && Number(npc.hp) > 0);
+    const player = (combat.combatants || []).find((combatant) => combatant.side === "player");
+    if (player && (Number(player.hp) <= 0 || Number(player.conditionTrack) >= 5)) return ["Ask the GM about the encounter while I am unable to act."];
+    const enemies = (combat.combatants || []).filter((npc) => npc.side === "opposition" && Number(npc.hp) > 0 && Number(npc.conditionTrack || 0) < 5 && !(npc.cover === "total" && (!npc.coverAgainst?.length || npc.coverAgainst.includes(player?.id))));
+    const enemy = enemies[0];
+    const availableSwift = [actions.swift, actions.move, actions.standard].reduce((sum, count) => sum + Math.max(0, Number(count) || 0), 0);
+    const canMove = Number(actions.move) > 0 || Number(actions.standard) > 0;
     const choices = [];
-    if (actions.standard && enemy) choices.push(`Attempt an attack against ${enemy.name}.`);
-    if (actions.move) choices.push("Reposition toward visible cover.");
-    choices.push("Assess the opposition's visible stance.", "End my turn.");
-    return choices.slice(0, 4);
+    if (actions.standard && enemy && !player?.defenseBonus) choices.push(`Attempt an attack against ${enemy.name}${enemies.length > 1 ? " or another visible opponent" : ""}.`);
+    if (canMove) choices.push("Reposition toward visible cover or a defensible angle.");
+    if (availableSwift && !player?.persistentCondition && Number(player?.conditionTrack ?? character?.conditionTrack ?? state.conditionTrack ?? 0) > 0) choices.push("Begin recovery on the Condition Track with consecutive swift actions.");
+    if (availableSwift && !player?.secondWindUsedInEncounter && player?.secondWindLastDay !== (combat.resourceDay || "campaign-day-1") && Number(state.health ?? player?.hp) > 0 && Number(state.health ?? player?.hp) <= Math.floor(Number(player?.maxHp || character?.maxHitPoints || character?.maxHp || 0) / 2)) choices.push("Catch a second wind if the encounter rules and daily use permit it.");
+    if (actions.standard) choices.push("Take total defense and give up attacks until my next turn.");
+    if (availableSwift >= 2 && enemy) choices.push(`Aim at ${enemy.name} for a later ranged attack.`);
+    if (canMove) choices.push("Attempt to withdraw toward a visible escape route.");
+    choices.push("Assess the opposition's visible stance.");
+    return [...choices.slice(0, 3), "End my turn."];
   }
   // Do not turn negated scenery into an available interactable.
-  const evidence = `${state.location || ""} ${scene.split(/(?<=[.!?])\s+/).filter((line) => !/\b(?:no|not|without|absent)\b/i.test(line)).join(" ")}`;
+  const visibleScene = `${scene} ${result}`.split(/(?<=[.!?])\s+/).filter((line) => !/\b(?:no|not|without|absent)\b/i.test(line)).join(" ");
+  const evidence = `${state.location || ""} ${visibleScene}`;
   const context = `${evidence} ${action} ${result}`;
-  // The immediate social scene wins over an old Force-route summary.
-  if (/market|shop|bazaar|vendor|store/i.test(String(state.location || "")) && /vendor|merchant|clothing|robe|tunic|suit|buy|purchase|price|pay|rest|shelter|lodging|room/i.test(`${action} ${result}`)) {
-    const quoted = (state.tradeOffers || []).filter(offer => offer.status === "open" && offer.location === state.location);
-    return [...new Set([
-      ...(/guesthouse|lodging|rest|shelter|room/i.test(`${action} ${result}`) ? ["Ask the guesthouse desk about paid lodging and its terms."] : []),
-      ...(quoted.length ? [`Consider ${quoted[0].items.map(item => item.name).join(" and ")} at the quoted price.`] : ["Ask the merchant to show suitable clothing and quote its price."]),
-      "Inspect the offered clothing before deciding whether to buy.",
-      "Ask another stall about a thick black robe.",
-      "Ask about local food and shelter.",
-    ])].slice(0, 4);
+  // A broad market location does not establish a clothing seller or a guesthouse.
+  // Only the visible scene establishes whom or what the player can approach.
+  const lodging = /\b(?:guesthouse|lodging|shelter|housing|accommodation|inn|hotel|rent|rental|lease|landlord)\b/i;
+  const lodgingContext = lodging.test(`${action} ${result}`) || lodging.test(evidence);
+  if (lodgingContext) {
+    const lodgingContact = lodging.test(evidence) && /\b(?:clerk|desk|receptionist|innkeeper|proprietor|landlord|broker|host)\b/i.test(visibleScene);
+    return [
+      lodgingContact ? "Ask about the full monthly rate, deposit, and lodging terms." : "Look for posted lodging rates, rental notices, or contact details.",
+      lodgingContact ? "Ask whether I may inspect the accommodation before deciding." : "Check publicly available information about the accommodation.",
+      "Review my budget before making a lodging offer.",
+      "Look for other lodging options nearby.",
+    ];
+  }
+  if (/\b(?:vendor|merchant|shopkeeper|seller)\b/i.test(visibleScene)) {
+    const clothing = /\b(?:clothing|robe|tunic|suit|garment)\b/i.test(visibleScene);
+    return [
+      clothing ? "Ask the seller about the displayed clothing and its prices." : "Ask the seller what goods are available and what they cost.",
+      "Ask to inspect an offered item before deciding whether to buy.",
+      "Compare the quoted cost with my available credits.",
+      "Ask the seller about payment and collection terms.",
+    ];
   }
   const choices = [];
   if (/terminal|console|control panel/i.test(evidence)) choices.push("Read the visible terminal display without changing its settings.");
@@ -34,7 +56,7 @@ export function sceneDirections({ state = {}, character = {}, scene = "", action
   if (/grille|vent|airflow|recycled air/i.test(scene)) choices.push("Check the accessible ventilation fittings from where you stand.");
   if (/bunker|hideout/i.test(evidence)) choices.push("Examine the bunker for signs of disturbance.");
   if (/transit|substructure|service|conduit|corridor/i.test(evidence) && choices.length < 2) choices.push("Study the route's visible layout before choosing a direction.", "Listen for nearby activity before moving farther.");
-  if (/market|shop|exchange/i.test(evidence)) choices.push("Ask about the listed goods and their prices.");
+  if (/market|shop|exchange/i.test(evidence)) choices.push("Look for public stall signs and price lists before choosing where to approach.");
   if (/infirmary|medical/i.test(evidence)) choices.push("Ask about available medical treatment.");
   const carried = (state.inventory || []).filter((item) => Number(item.qty) > 0);
   if (Number(state.health) < Number(character.maxHp || character.hitPoints || 0) && carried.some((item) => /medpac/i.test(item.name))) choices.unshift("Attempt first aid with my carried medpac.");
@@ -65,9 +87,15 @@ export function sceneDirections({ state = {}, character = {}, scene = "", action
 }
 
 export function genericDirections(options = []) {
-  if (!options.length) return true;
-  const text = options.map((option) => typeof option === "string" ? option : option.text).join(" ");
-  return /immediate surroundings|specific declared action|withdraw or wait|examine the immediate route|continue moving(?: through| along)? the route|stop and listen before moving/i.test(text);
+  const texts = options.map((option) => typeof option === "string" ? option : option?.text).filter((text) => typeof text === "string" && text.trim());
+  return !texts.length || texts.every((text) => /immediate surroundings|specific declared action|withdraw or wait|examine the immediate route|continue moving(?: through| along)? the route|stop and listen before moving/i.test(text));
+}
+
+// Authored options have already passed the GM pipeline's validation. Keep their
+// scene-specific detail; only missing/generic menus or active combat need a fallback.
+export function currentPlayerOptions({ options = [], ...context } = {}) {
+  if (context.state?.combat?.status !== "active" && !genericDirections(options)) return options;
+  return sceneDirections(context).map((text, index) => ({ label: String.fromCharCode(65 + index), text }));
 }
 
 export function sceneAtmosphere(location = "") {

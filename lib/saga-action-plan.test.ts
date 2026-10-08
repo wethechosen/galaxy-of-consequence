@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("./original-provider", () => ({ invokeNvidia: vi.fn() }));
 import { invokeNvidia } from "./original-provider";
-import { buildSemanticSagaCheck, interpretSagaAction, validateSagaSemanticAction } from "./saga-action-plan";
+import { buildSemanticSagaCheck, declaredForcePower, interpretSagaAction, validateSagaSemanticAction } from "./saga-action-plan";
 import type { SagaSemanticAction } from "./saga-action-plan";
 
 const character = { name: "D'mir Holloran", level: 1, sagaStats: "STR 12 | DEX 14 | CON 10 | INT 12 | WIS 10 | CHA 11", trainedSkills: ["Use Computer"] };
@@ -15,6 +15,15 @@ const reply = (plan: SagaSemanticAction) => vi.mocked(invokeNvidia).mockResolved
 beforeEach(() => vi.resetAllMocks());
 
 describe("semantic interpretation before Saga mechanics", () => {
+  it.each(["I pull the jammed hatch by hand", "I lift the crate onto the cart", "I choke the attacker with my hands"])("does not spend a Force technique for mundane action: %s", action => {
+    expect(declaredForcePower(action, semantic(action, { intent: "physical", checkNeeded: true, skill: "Climb" }))).toBeNull();
+    expect(declaredForcePower(action, null)).toBeNull();
+  });
+  it("routes an explicitly declared Force lift to the earned technique", () => {
+    const action = "I use the Force to lift the crate";
+    expect(declaredForcePower(action, semantic(action, { intent: "force", skill: "Use the Force" }))).toBe("move object");
+    expect(declaredForcePower(action, null)).toBe("move object");
+  });
   it("resolves equivalent computer intents without demanding trigger words", async () => {
     for (const declaration of ["I slice the locked terminal", "I work around the terminal's access restrictions", "I get the restricted terminal to show me its files"] ) {
       reply(semantic(declaration, { intent: "manipulate", canonicalAction: "I bypass the locked terminal's authentication using its computer interface", checkNeeded: true, skill: "Use Computer", rationale: "The terminal denies access; overcoming its access control is uncertain." }));

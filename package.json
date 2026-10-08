@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "engines": {
-    "node": ">=22.16.0"
+    "node": "^22.16.0"
+  },
+  "allowScripts": {
+    "tesseract.js": false
   },
   "scripts": {
     "play": "node scripts/start-local.mjs",

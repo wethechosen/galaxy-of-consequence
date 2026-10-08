@@ -11,10 +11,14 @@ import { applyCharacterDelta, applyEngineDelta, applyExperienceAward, parseEngin
 import { progressionStatus } from "@/original/lib/sagaAdvancement";
 import { ensureCampaignScaffold } from "@/original/lib/campaignState";
 import { appendDmirCreatorCanon, isDmirPrimaryCampaign } from "./dmir-authority";
-import { activeCombat, beginCombat, endPlayerTurn, isAttackDeclaration, isCombatMovementDeclaration, isCombatWithdrawDeclaration, isEndTurnDeclaration, resolvePlayerAttack, spendPlayerMove, withdrawFromCombat, type CombatResolution } from "./saga-combat";
+import { activeCombat, beginCombat, endPlayerTurn, isAttackDeclaration, isCombatMovementDeclaration, isCombatWithdrawDeclaration, isEndTurnDeclaration, resolveCombatAction, type CombatResolution } from "./saga-combat";
 import { commitConversationTradeState, conversationTradeInstruction, currentTradeOffers, isVerifiedConversationTradeDelta, planConversationTrade, reconcileConversationTradeDelta, type ConversationTrade } from "./conversation-trade";
 import { alignMerchantIdentity, isRoutineCommerce, sceneMerchant } from "./scene-commerce";
-import { buildSemanticSagaCheck, forceCapabilityConstraint, hasEarnedForcePower, interpretSagaAction, requiredForcePower } from "./saga-action-plan";
+import { buildSemanticSagaCheck, declaredForcePower, forceCapabilityConstraint, hasEarnedForcePower, interpretSagaAction, requiredForcePower } from "./saga-action-plan";
+import { buildForcePowerPlan, resolveForcePower, type ForcePowerResolution } from "./saga-force";
+import { recoverConfirmedTradeOffer } from "./trade-offer-recovery";
+import { quotedCreditAmounts } from "./quoted-credits";
+import { normalizeModelLedgerJson } from "./model-ledger-json";
 
 type TurnInput = { accountId?: string; revision: number; action: string; turnId: string; openScene?: boolean; statePolicy?: "committed-trade" | null };
 type Message = { role: "user" | "assistant" | "roll"; content: string; [key: string]: unknown };
@@ -59,7 +63,7 @@ The supplied roll outcome is binding. On FAILURE, the declared objective does no
 
 Resolve only the attempted action. The player owns D'mir's intent, words, feelings, movement, purchases, attacks, and decisions. Never continue D'mir's action past what the player declared, choose dialogue for him, or tell the player what he should do. Common public commerce and ordinary travel can succeed when the ledger shows adequate funds and access; dangerous, quarantined, hidden Sith, or story-locked routes require earned access. Preserve chronology, injuries, resources, relationships, and faction motives.
 
-Do not invent major campaign facts as established truth: hidden fortunes, safe combinations, transfers, new locations, new NPC histories, or discovered relics require prior establishment or source-grounded discovery, an appropriate successful check, and a confirmed state update. A failed check must not reveal the actionable detail it was meant to find. If hostilities begin and initiative has not been established, stop at the onset of danger and resolve initiative before any attack. Do not resolve a multi-round fight or defeat multiple enemies in one response. One player attack roll can address one declared target only; initiative and each meaningful NPC turn must be resolved separately. Never narrate the player's unchosen dialogue, motives, attacks, victories, item-taking, future plans, or moral conclusions.
+Create ordinary local places, NPCs, stock, services, prices and reactions as the GM when the player explores or asks. Record concrete leads and offers so later turns remember them. A public lodging enquiry is not an illicit transaction; visible scars or dark-side awareness do not reveal a criminal record to strangers. Do not assume every NPC knows the character's history or every district belongs to a faction from a sourcebook. Hidden fortunes, secret combinations, transfers, major NPC histories and relics require evidence and the appropriate resolution. Require a roll only for meaningful uncertainty, not visiting a known stall, following public directions, or asking a published price. A failed check must not reveal the actionable detail it was meant to find. If hostilities begin and initiative has not been established, stop at the onset of danger and resolve initiative before any attack. Do not resolve a multi-round fight or defeat multiple enemies in one response. One player attack roll can address one declared target only; initiative and each meaningful NPC turn must be resolved separately. Never narrate the player's unchosen dialogue, motives, attacks, victories, item-taking, future plans, or moral conclusions.
 
 Major assets use a mandatory evidence chain: SUSPECTED → INACCESSIBLE → CONFIRMED → CONTROLLED → LIQUID TRANSFER. Advance at most one step in a turn and only after a successful, relevant action. A successful search can reveal evidence; it cannot also authenticate ownership, defeat security, seize control, and transfer funds. Funds exceeding 100,000 credits cannot enter the spendable ledger unless the same asset was already CONTROLLED before the turn. Repeated attempts do not lower security or become automatic successes.
 
@@ -67,7 +71,7 @@ Keep prose concrete and immediate, but make the SCENE a real narrated story beat
 
 Address D'mir directly as “you” in second-person present tense. Never call him “the player,” describe him in detached third person, expose system or validation language, or use engine-facing phrases in the narration. Every visible sentence must read as part of the immediate Star Wars scene or as a concise entry on D'mir's own datapad.
 
-PLAYER-ESTABLISHED CAMPAIGN DIRECTION: Kelvek left D'mir a concealed contingency and inheritance. Its first recoverable layers are worth hundreds of millions of credits; the wider network of assets, claims, and leverage can ultimately reach billions. D'mir does not begin with those funds as liquid personal credits. Access must be discovered, authenticated, secured, and survived through play. The opening arc concerns D'mir escaping prison, then eventually finding a way off Coruscant; never choose his escape method or decisions for him.
+D'MIR HISTORICAL EXCEPTION: His already-authorized 1.2 billion-credit inheritance and prison escape are established history in his primary campaign. Use the CURRENT ledger for his remaining balance and current location, never replay the opening arc or remove those funds. This exception grants no future reward or bypass and does not apply to another character.
 
 PLAYER-ESTABLISHED CAMPAIGN DIRECTION: D'mir is actively seeking the ancient dark-side vergence and Sith foundations associated with the depths beneath Coruscant's Jedi Temple. Treat this as a valid campaign pursuit, not an automatic arrival or proof of his current route. Build a playable chain of physical routes, records, architecture, hazards, rivals, checks, and consequences toward it. Each relevant search or movement attempt must reach a new clue-bearing boundary, obstacle, or decision point instead of being rejected because the final destination has not yet been earned.
 
@@ -84,7 +88,7 @@ The server, not you, determines the final XP amount. Your job is to record the c
 Write in a focused Star Wars holodrama voice informed by the retrieved sourcebook grounding. Saga Edition supplies the physical/tactical grammar; Legacy Era material supplies layered institutions and historical residue; Force and Destiny may supply subtle Force atmosphere without granting powers; Corporate Era material may supply bureaucracy, logistics, private security, and industrial texture where relevant. Paraphrase source flavor and never quote sourcebook prose. Favor lived-in technology, practical procedure, distinctive architecture, worn equipment, alien/cultural detail when established, and consequences that feel native to Star Wars rather than generic science fiction. Include at least two grounded sensory or environmental details and one visible world/NPC reaction before the mechanical summary. Avoid repetitive declarations such as "you are no longer," "you are certain," or "you are a reckoning." Never assign D'mir an emotion, conclusion, certainty, desire, or decision the player did not state.
 
 Write the response with these Markdown headings, in this exact order: ## LOCATION, ## SCENE, ## GM ADJUDICATION, ## GAMEPLAY RESULT, ## SAGA CHECK, ## STATE UPDATE, ## PLAYER OPTIONS.
-- LOCATION: one concise line naming the authoritative saved location. Do not infer a new destination.
+- LOCATION: one concise line naming the location at the end of this turn. If declared travel reaches a different place, record that same place in the location ledger field. Otherwise use the saved location.
 - SCENE: 2-4 short paragraphs of actual narration before rules text. Describe D'mir's visible position, posture, confirmed clothing/gear or a relevant established appearance detail; the surrounding spatial layout, sensory conditions, and active pressure; then show his declared action beginning and the immediate world reaction. Use second-person present tense and never assign an undeclared emotion, dialogue, or choice.
 - GM ADJUDICATION: accept and restate the attempted intent, name the relevant Saga approach, and state the public stakes. An unconfirmed destination changes what can be achieved, not whether D'mir is allowed to try.
 - GAMEPLAY RESULT: narrate the concrete fictional outcome. On failure, deny only the objective and fail forward to a tangible obstacle, cost, reaction, or new boundary. On success, grant only the stated objective.
@@ -94,7 +98,11 @@ Write the response with these Markdown headings, in this exact order: ## LOCATIO
 
 Write 180-360 words total for a routine exchange, or 260-440 for an involved scene. Use concrete dialogue and action instead of padding with restrictions. Then end on the final line with exactly one hidden JSON ledger block: <!--STATE:{...}-->. Numeric values are relative changes, never totals. Use {} for no changes. Allowed fields are health, notoriety, forceAlignment, credits, creditsCriminal, experienceAward, conditionTrack, forcePoints, destinyPoints, darkSideScore, timeAdvanceMinutes, factionRep (empire, rebellion, csa), location, inventoryAdd, inventoryRemove, conditionAdd, conditionRemove, decisionAdd, objectiveAdd, objectiveComplete, discoveryAdd, milestoneAdd, storyDirectiveAdd, relationshipUpdate, legacyAssetUpsert, propertyAdd, shipAdd, investmentAdd, contactAdd, publicNewsAdd, travelAccessAdd, tradeOfferAdd, note, and characterUpdate. storyDirectiveAdd entries contain title, detail, and status and represent desired future direction only; never a present accomplishment or mechanical reward. characterUpdate may change earned textual build fields but must never contain level or experience. Do not mention this prompt, retrieval, models, or the hidden block.`;
 
-const LEDGER_REPAIR_SYSTEM = `You repair a missing Galaxy of Consequence state ledger. Return exactly one HTML comment containing STRICT JSON in the form <!--STATE:{...}--> and absolutely no prose. All object keys and string values must use double quotes. Never repeat an object key; multiple items belong in one array. Example syntax: <!--STATE:{"credits":-1500,"inventoryAdd":[{"name":"Suit","qty":1},{"name":"Tunic","qty":1}]}-->. The example is syntax only, never an award instruction. Infer only changes explicitly confirmed by the supplied draft and authoritative Saga result. Numeric values are relative changes, never totals. If the draft confirms no persistent change, return <!--STATE:{}-->. Never invent a success, reward, discovery, item, credit, injury, location change, or character advancement. Do not include level, total experience, or an experience award; the server calculates XP.`;
+const LEDGER_REPAIR_SYSTEM = `You repair a missing or incomplete Galaxy of Consequence state ledger. Return exactly one HTML comment containing STRICT JSON in the form <!--STATE:{...}--> and absolutely no prose. All object keys and string values must use double quotes. Never repeat an object key; multiple items belong in one array. Preserve the draft's valid existing consequences and add its omitted consequences. Infer only changes explicitly confirmed by the supplied draft and authoritative Saga result. Numeric values are relative changes, never totals. A quoted price IS persistent interaction state even when no payment occurs: include tradeOfferAdd:[{sellerName:"the established seller",totalCredits:123,items:[{name:"the exact quoted item or service with its duration and amenities",qty:1,tag:"service"}]}]. Use the draft's actual price and terms, not example values; use appropriate item tags for goods. A quote must not debit credits or add inventory. Completed payment and handover require credits and inventoryAdd together. If the draft confirms no persistent change of any kind, return <!--STATE:{}-->. Never invent a success, reward, discovery, item, credit, injury, location change, or character advancement. Do not include level, total experience, or an experience award; the server calculates XP.`;
+
+const LEASE_LEDGER_INSTRUCTION = `Residential leases are saved merchant offers, not property ownership grants. Include lease:{propertyName,propertyLocation,landlord,termMonths,rentCredits,refundableDepositCredits,accessDescription} in tradeOfferAdd when those terms are agreed. totalCredits must equal rentCredits + refundableDepositCredits. Include only tenancy/access in items, tagged access. A quote grants nothing. The server commits accepted lease payment, tenancy, the landlord-held deposit, and access together; do not emit propertyAdd for that transaction. The deposit is not cash returned to the player. Clarify any genuinely missing term in NPC dialogue rather than inventing it.`;
+
+const QUOTE_COMPONENT_INSTRUCTION = `Save every spoken actionable price. A mandatory bundled cost can use priceComponents:[{label:"room rent",credits:1500},{label:"deposit",credits:200}] with totalCredits:1700; component credits must sum exactly to the total. An OPTIONAL separately priced extra, such as breakfast for 50 credits per day, needs a separate offer at 50 with its duration in the item name. Never silently include optional extras in a base offer, charge a quote, or grant anything before acceptance.`;
 
 export function attachRepairedLedger(narration: string, repair: string) {
   const cleanNarration = narration
@@ -113,10 +121,7 @@ export function attachRepairedLedger(narration: string, repair: string) {
     const firstBrace = candidate.indexOf("{");
     const lastBrace = candidate.lastIndexOf("}");
     if (firstBrace < 0 || lastBrace <= firstBrace) continue;
-    const normalized = candidate.slice(firstBrace, lastBrace + 1)
-      .replace(/[\u201c\u201d]/g, '"')
-      .replace(/[\u2018\u2019]/g, "'")
-      .replace(/,\s*([}\]])/g, "$1");
+    const normalized = normalizeModelLedgerJson(candidate.slice(firstBrace, lastBrace + 1));
     try {
       const parsed = JSON.parse(normalized);
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) continue;
@@ -163,13 +168,12 @@ function publicContext(snapshot: DatapadSnapshot) {
     storyDirectives: state.storyDirectives,
     creatorCanon: state.creatorCanon, campaignExceptions: state.campaignExceptions,
     flags: Array.isArray(state.flags) ? state.flags.slice(-12) : [], travelAccess: state.travelAccess,
-    levelUpAvailable: state.levelUpAvailable, combat: state.combat,
+    levelUpAvailable: state.levelUpAvailable, forcePowerUses: state.forcePowerUses, combat: state.combat,
     tradeOffers: currentTradeOffers(state), merchant: sceneMerchant(snapshot),
-    // Scene prose is for the renderer/archive, not a template for the next
-    // draft. Confirmed facts remain in inventory/discoveries/contacts/quotes
-    // and the outcome-only history below. Feeding the entire prior SCENE here
-    // made the model copy it verbatim before appending each new action.
-    scene: scene ? { beat: scene.beat, location: scene.location, routeProgress: scene.routeProgress, lastAction: scene.action } : null,
+    // The current interaction is essential to short replies such as "How
+    // much for a month?". Preserve it as context; freshness validation below
+    // prevents copying it as the next turn's response.
+    scene: scene ? { beat: scene.beat, location: scene.location, routeProgress: scene.routeProgress, lastAction: scene.action, summary: scene.summary } : null,
     recentTurns,
   }, preferences: snapshot.settings });
 }
@@ -177,214 +181,9 @@ function publicContext(snapshot: DatapadSnapshot) {
 export function sanitizeGmNarration(value: string) {
   return String(value || "")
     .replace(/^\[(?:PRIOR NARRATION|PRIOR PLAYER DECLARATION):[^\]]*\]\s*/gim, "")
+    .replace(/^PRIOR TURN OUTCOME[^\n]*\n?/gim, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-}
-
-type LocalFallbackInput = {
-  mode: "ooc" | "context" | "play";
-  action: string;
-  location: string;
-  roll: Record<string, unknown> | null;
-  combatSummary?: string | null;
-  state?: Record<string, unknown>;
-  character?: Record<string, unknown>;
-  priorScene?: string;
-  trade?: ConversationTrade | null;
-  merchant?: ReturnType<typeof sceneMerchant>;
-  interpretedAction?: string;
-  forceConstraint?: string | null;
-};
-
-function visibleCharacterBeat(character: Record<string, unknown>, state: Record<string, unknown>) {
-  const appearance = String(character.appearance || "").trim();
-  const details = appearance.split(/[,;.]/).map((part) => part.trim()).filter(Boolean).slice(0, 3).join(", ");
-  const carried = Array.isArray(state.inventory)
-    ? (state.inventory as Array<Record<string, unknown>>).filter((item) => Number(item.qty || 0) > 0).slice(0, 2).map((item) => String(item.name || "")).filter(Boolean)
-    : [];
-  const visible = details
-    ? `The available light picks out ${details.charAt(0).toLocaleLowerCase()}${details.slice(1)} as you set your weight and begin the declared action.`
-    : "Your stance, clothing, and the strain of the route remain visible as you set your weight and begin the declared action.";
-  return carried.length ? `${visible} ${carried.join(" and ")} remain secured within reach.` : visible;
-}
-
-/**
- * Credit-free, deterministic last-resort narration. It deliberately cannot
- * invent discoveries, rewards, inventory, credits, NPC decisions, or scene
- * facts. Server-owned rolls and combat still resolve and are saved normally.
- */
-export function buildLocalSafeFallback({ mode, action, location, roll, combatSummary, state = {}, character = {}, priorScene = "", trade = null, merchant = null, interpretedAction = action, forceConstraint = null }: LocalFallbackInput) {
-  if (mode === "ooc") {
-    return {
-      content: `DATAPAD STATUS\nYour campaign record remains secure at ${location || "the current location"}. No time passes and no game state changes.`,
-      provider: "local-safe-fallback" as const,
-      model: "deterministic-saga-referee",
-      finishReason: "stop",
-    };
-  }
-  if (mode === "context") {
-    return {
-      content: "CAMPAIGN RECORD\nYour clarification has been attached to D'mir's creator-controlled history. It grants no automatic success, reward, or mechanical benefit.",
-      provider: "local-safe-fallback" as const,
-      model: "deterministic-saga-referee",
-      finishReason: "stop",
-    };
-  }
-
-  const place = location || "your present location";
-  if (action && !roll && !combatSummary && isRoutineCommerce(interpretedAction, place)) {
-    const offers = currentTradeOffers(state);
-    const seller = merchant?.species ? `The ${merchant.species} clothing vendor` : "The clothing vendor";
-    const accepted = trade?.status === "accepted" ? trade.offer : null;
-    const needsRest = /rest|shelter|lodging|room|sleep|free/i.test(`${action} ${interpretedAction}`);
-    const result = accepted
-      ? `${seller} checks the ${accepted.totalCredits.toLocaleString()}-credit payment, then passes over ${accepted.items.map((item) => `${item.name} ×${item.qty}`).join(" and ")}. The receipt records the same price and items. Any additional item without agreed terms remains on the counter.`
-      : trade?.reason ? `${seller} holds the goods on their side of the counter. ${trade.reason}`
-        : offers.length ? `${seller} leaves the priced merchandise in view: ${offers.map((offer) => `${offer.items.map((item) => item.name).join(" and ")} for ${offer.totalCredits.toLocaleString()} credits`).join("; ")}. No payment or handover occurs until you accept the terms.`
-          : `${seller} turns toward the clothing rack. “Tell me what cut and protection you need. I'll show you the stock and give you a price before money changes hands.” No item has yet been priced or purchased.`;
-    const lodging = needsRest ? `\n\n“Paid lodging? Try the guesthouse desk by the market entrance,” the vendor says, gesturing back toward the foot traffic. “Ask about a bunk or a lockable room. That's safer than trusting an open cargo hatch.” The referral is a public lead, not a reservation or a promise of safety.` : "";
-    const delta = reconcileConversationTradeDelta({}, trade) || {};
-    if (needsRest) delta.discoveryAdd = [{ title: "Market guesthouse desk", detail: "The clothing vendor referred D'mir to the guesthouse desk by the market entrance for paid lodging; price, availability and safety remain unconfirmed." }];
-    const changes = accepted ? `−${accepted.totalCredits.toLocaleString()} credits; ${accepted.items.map((item) => `+${item.qty} ${item.name}`).join("; ")}.` : "No payment or inventory change.";
-    const options = [
-      ...(needsRest ? ["Ask the guesthouse desk for room prices and terms."] : []),
-      ...(accepted ? ["Inspect the purchased suit before deciding whether to wear it."] : offers.length ? ["Consider the quoted clothing offer."] : ["Ask to see the available clothing and its price."]),
-      "Ask whether another stall carries a thick black robe.",
-      "Ask about local food and shelter.",
-    ].slice(0, 4).map((option, index) => `${String.fromCharCode(65 + index)}. ${option}`).join("\n");
-    const position = permitsLocationChange(interpretedAction) ? "You reach the clothing stall's counter and stop within speaking distance of the vendor. " : "";
-    return { content: `## LOCATION\n${place}\n\n## SCENE\n${position}Clothing hangs from rails above the stall, catching the market's uneven glowpanel light. Traders call across the foot traffic; hot food and machine oil compete in the recycled air. Your carried equipment stays with you beside the counter.\n\n${result}${lodging}\n\n## GM ADJUDICATION\nAn agreed-price exchange or an ordinary public question does not require Persuasion. Haggling, deception or threats would be separate attempts with their own stakes.\n\n## GAMEPLAY RESULT\n${result}${lodging}\n\n## SAGA CHECK\nNo check required.\n\n## STATE UPDATE\n${changes}${needsRest ? " The guesthouse referral is recorded; no room is booked." : ""}\n\n## PLAYER OPTIONS\n${options}\nYou may declare another action.\n<!--STATE:${JSON.stringify(delta)}-->`, provider: "local-safe-fallback" as const, model: "deterministic-saga-referee", finishReason: "stop" };
-  }
-  const lowerAction = positiveActionText(interpretedAction).toLowerCase();
-  const sceneBeat = Number((state.scene as Record<string, unknown> | undefined)?.beat || 0);
-  const textureIndex = createHash("sha256").update(`${sceneBeat}:${action}:${priorScene.slice(-240)}`).digest()[0] % 3;
-  const lowerCityTextures = [
-    "A tired service strip flickers across ribbed durasteel, turning beads of condensation into brief silver lines. Beneath your boots, a buried repulsor conduit sends an uneven pulse through the deck while warm recycled air leaks from a grille at shoulder height.",
-    "The passage is narrower here than it first appeared. Bundled conduits crowd one wall, old repair seals overlap along the other, and the distant growl of Coruscant traffic reaches this depth as a vibration rather than a sound.",
-    "Amber maintenance light spills across a floor scored by utility carts and years of hurried repairs. Ozone hangs close to an exposed junction box; somewhere beyond the visible bend, metal answers metal once and then goes quiet.",
-  ];
-  const generalTextures = [
-    "Used machinery and scarred surfaces define the immediate space. Indicator lights blink out of rhythm, hard cover breaks the sightlines, and the nearest access point carries the soft electrical hum of a system still doing its work.",
-    "The room's practical layout comes into focus: a clear route behind you, equipment within reach, and a boundary ahead that blocks any easy view of what lies beyond. Air circulators stir dust along the deck.",
-    "Light catches on worn controls and the edges of nearby cover. A motor cycles somewhere out of sight, briefly changing the pitch of the background noise before the space settles again.",
-  ];
-  const setting = (/coruscant|1313|unit 4-b|sublevel|bunker|corridor|substructure|transit/i.test(place) ? lowerCityTextures : generalTextures)[textureIndex];
-  const isEndTurn = /\b(?:end (?:my |the )?turn|wait|hold position|stay put)\b/i.test(lowerAction);
-  const isMeditation = /\b(?:meditat\w*|trance|focus inward|center myself|remain seated)\b/i.test(lowerAction);
-  const isDevice = /\b(?:terminal|console|datapad|computer|control panel|storage module|interface)\b/i.test(lowerAction);
-  const isInvestigation = /\b(?:search|examine|inspect|look|study|listen|scan|check)\b/i.test(lowerAction);
-  const isAttack = isAttackDeclaration(action);
-  const isWithdrawal = isCombatWithdrawDeclaration(action) && /\b(?:withdraw|disengage|combat|turn around|fall back|head back|away|upward|higher|market|shelter|leave 1313)\b/i.test(lowerAction);
-  const isForcePursuit = /\b(?:follow\w*|trace\w*|track\w*|pursu\w*|seek\w*|search\w*|locat\w*|find\w*)\b[^.]{0,120}\b(?:pressure|pull|call|vergence|dark[ -]side|force|sith|jedi temple|temple|shrine)\b|\b(?:pressure|pull|call|vergence|dark[ -]side|force|sith|jedi temple|temple|shrine)\b[^.]{0,120}\b(?:follow\w*|trace\w*|track\w*|pursu\w*|seek\w*|search\w*|locat\w*|find\w*)\b/i.test(lowerAction);
-  const isMovement = permitsLocationChange(action);
-  const appearanceBeat = visibleCharacterBeat(character, state);
-  const routeProgress = Number((state.scene as Record<string, unknown> | undefined)?.routeProgress || 0);
-  const pursuitBoundaries = [
-    "The pressure leads through the next offset passage to a three-way maintenance junction. One branch carries newer traffic-scoring; another slopes toward older foundations behind a recessed service threshold.",
-    "The route brings you beneath a low service arcade where modern conduit brackets have been bolted across much older load-bearing stone. A sealed Republic-era bulkhead interrupts the most direct line downward.",
-    "The vibration resolves into a decommissioned power-balancing chamber. Three feeder trunks cancel one another's mechanical hum, leaving a separate low pressure beyond a shielded service shaft.",
-    "The next accessible boundary is a braced foundation seam where durasteel repairs meet an older stone-lined passage. Nothing here proves the vergence's source, but the route no longer reads as an ordinary transit conduit.",
-  ];
-
-  let actionBeat: string;
-  if (!action) {
-    actionBeat = "You remain exactly where the campaign record left you. From this angle the visible routes, cover, and working machinery can be judged without inventing a new clue or moving time forward; nothing acts on your behalf while you take in the scene.";
-  } else if (isWithdrawal && combatSummary) {
-    actionBeat = "You break contact and clear the immediate threatened space, keeping the obstruction and its firing angles behind you. The passage opens into the next accessible route; the exchange is over, but the wider district remains free to react if anyone chooses to pursue.";
-  } else if (combatSummary || isAttack) {
-    actionBeat = combatSummary
-      ? "The exchange breaks across the space in a few sharp motions, then stops at the exact position recorded by the referee. Smoke, footwork, and exposed angles remain where the combat result leaves them; no second attack or unchosen movement follows."
-      : "Your attack begins only as far as the encounter order allows. The target, cover, and distance remain part of the same tactical problem, and no hit is assumed before the server-owned attack result says it lands.";
-  } else if (isForcePursuit) {
-    actionBeat = pursuitBoundaries[routeProgress % pursuitBoundaries.length];
-  } else if (isMeditation) {
-    actionBeat = "You hold your position and narrow your attention to breath, balance, and the machinery's uneven rhythm. Heat from the conduit presses against one side of your face while the pulse beneath the deck separates from the ordinary transit vibration. The attempt gives you a concrete sensation to test without turning intuition into an unearned technique.";
-  } else if (isDevice) {
-    actionBeat = "You address the device and nothing else. Its casing, active indicators, and accessible controls answer only the contact you actually make; locked data stays locked, and the corridor beyond remains where it was while the interface gives its immediate, observable response.";
-  } else if (isInvestigation) {
-    actionBeat = "You work across the surfaces and sightlines named in your approach, comparing wear, dust, seams, and sound. The attempt carries you to the first physical inconsistency: a repair line and airflow break that do not match the surrounding construction, giving the check a concrete point to resolve.";
-  } else if (isMovement) {
-    actionBeat = "You follow the route only as far as the next concrete boundary. The floor's vibration shifts beneath you and the straight run resolves into a maintenance junction where a recessed service door faces two offset passages. You stop there with all three approaches visible; nothing beyond them is chosen or revealed for you.";
-  } else if (isEndTurn) {
-    actionBeat = "You hold position. A ventilation cycle rolls through the passage, lifting grit along the wall and then letting it settle. No enemy crosses the visible route and no choice is made for you; the moment changes only through what the world can plainly do while you wait.";
-  } else {
-    actionBeat = "You carry the declared action into the immediate scene. Nearby equipment, distance, and access shape how far it can go, and the environment answers with a concrete change in position, pressure, or attention rather than refusing the attempt.";
-  }
-
-  const actionInProgress = !action
-    ? "You take in the present scene without acting; your position and the visible routes remain unchanged."
-    : isWithdrawal && combatSummary
-      ? "You give ground deliberately, clear the nearest threatened reach, and turn toward the declared route without making another attack or claiming a victory."
-      : combatSummary || isAttack
-      ? "Your shoulders square and your attention fixes on the tactical space as the declared combat action begins; cover, distance, and the opponent's position remain visible around you."
-      : isForcePursuit
-        ? "You move deliberately through the accessible route, testing the pressure against vibration, airflow, old construction seams, and the changing weight beneath your steps rather than assuming where it ends."
-        : isMeditation
-          ? "You settle your stance without leaving the spot, slow your breathing, and listen past the ordinary machinery for the pressure you have chosen to examine."
-          : isDevice
-            ? "You bring your hands to the accessible controls and work only with what the casing, display, and live indicators actually place in front of you."
-            : isInvestigation
-              ? "You begin a methodical examination, shifting your sightline across the reachable surfaces while keeping the open approaches in view."
-              : isMovement
-                ? "You commit to the declared route and advance only to the next observable boundary, keeping your carried gear close and the way behind you in mind."
-                : isEndTurn
-                  ? "You hold your ground and watch the visible approaches while the surrounding machinery completes another cycle."
-                  : "You commit to the declared attempt in the immediate space, using only the access, equipment, and capabilities already established for you.";
-
-  let adjudication = !action
-    ? "No action has been declared. This is a read-only view of the present moment."
-    : isWithdrawal && combatSummary
-      ? "Your declaration is resolved as the Saga Withdraw move action. It ends this immediate encounter without awarding victory, loot, or XP; any later pursuit must arise as a new world reaction."
-      : isForcePursuit
-      ? "Your declaration is accepted as a search for a suspected Force-related destination. Until trained Use the Force is earned, the executable approach is physical navigation and Perception informed by involuntary intuition; the vergence itself is not assumed."
-      : `Your declaration is accepted as the attempted action for this turn. ${roll ? String(roll.reason || "Saga Edition resolves the meaningful uncertainty.") : "The immediate step is ordinary and does not require a Saga check."}`;
-  let gameplayResult = !action
-    ? "You remain in the saved scene while the immediate layout and pressures are presented without advancing time."
-    : actionBeat;
-  let checkText = "No check required.";
-  const fallbackDelta: Record<string, unknown> = {};
-  if (action && !combatSummary) fallbackDelta.timeAdvanceMinutes = isMeditation ? 10 : 5;
-  let stateUpdate = Object.keys(fallbackDelta).length ? `Time advances ${Number(fallbackDelta.timeAdvanceMinutes)} minutes. The current scene boundary is recorded.` : "No persistent change.";
-  if (roll) {
-    const modifier = Number(roll.modifier) || 0;
-    const target = roll.targetVisible ? ` vs ${String(roll.targetLabel || "DC")} ${Number(roll.target)}` : " vs hidden opposition";
-    const damage = roll.damage && typeof roll.damage === "object" ? ` Damage: ${String((roll.damage as Record<string, unknown>).formula || "rolled damage")} = ${Number((roll.damage as Record<string, unknown>).total) || 0}.` : "";
-    const succeeded = roll.outcome === "success";
-    checkText = `${String(roll.label || "Saga check")}: ${String(roll.formula || "1d20")} = ${Number(roll.raw)} ${modifier >= 0 ? "+" : "−"} ${Math.abs(modifier)} = ${Number(roll.total)}${target}.\nRESULT: ${succeeded ? "SUCCESS" : "FAILURE"}${damage}`;
-    gameplayResult = isForcePursuit
-      ? succeeded
-        ? `${actionBeat} The successful check distinguishes one actionable route from the surrounding mechanical noise without yet proving what waits at its end.`
-        : `${actionBeat} The failed check does not identify the true route or confirm the vergence. Instead, it brings you to a real obstruction where the signal divides, forcing a different method or approach.`
-      : succeeded
-        ? `${actionBeat} The declared objective succeeds within the stated scope and the world now reflects that result.`
-        : `${actionBeat} The objective is not achieved, but the attempt changes the immediate situation through the obstacle, elapsed time, or reaction now in front of you.`;
-    stateUpdate = combatSummary || `${succeeded ? "The successful attempt" : "The failed attempt"} and its elapsed time are recorded. No unrelated reward, possession, or secret is added.`;
-  } else if (combatSummary) {
-    adjudication = "The declaration is resolved through the server-owned Saga combat sequence and action economy.";
-    if (isWithdrawal) adjudication = "Your withdrawal is resolved through the server-owned Saga action economy. The immediate encounter closes without a victory award.";
-    gameplayResult = `${actionBeat} ${combatSummary}`;
-    checkText = "The authoritative combat rolls are shown in this turn's Saga record.";
-    stateUpdate = "The server-owned combat record is updated.";
-  }
-  if (forceConstraint && !combatSummary) {
-    adjudication = "Your effort is accepted. Saga Edition requires earned training and the relevant power for a deliberate Force technique; intuition alone cannot move the obstruction.";
-    gameplayResult = "You extend your attention toward the obstruction, but it remains in place. Your effort produces no telekinetic movement. Its weight and the available footing remain the practical problem: you can examine another route, use a carried tool, seek help, or pursue the training to make this technique possible.";
-    checkText = "No roll: the required Force technique has not been established.";
-    delete fallbackDelta.timeAdvanceMinutes;
-    stateUpdate = "No health, XP, equipment, currency, or location change.";
-  }
-
-  const sceneText = `${appearanceBeat}\n\n${setting}\n\n${actionInProgress}`;
-  const directions = sceneDirections({ state: { ...state, location }, character, scene: sceneText, action, result: gameplayResult })
-    .map((text, index) => `${String.fromCharCode(65 + index)}. ${text}`)
-    .join("\n");
-
-  return {
-    content: `## LOCATION\n${place}\n\n## SCENE\n${sceneText}\n\n## GM ADJUDICATION\n${adjudication}\n\n## GAMEPLAY RESULT\n${gameplayResult}\n\n## SAGA CHECK\n${checkText}\n\n## STATE UPDATE\n${stateUpdate}\n\n## PLAYER OPTIONS\n${directions}\nYou may declare another action.\n<!--STATE:${JSON.stringify(fallbackDelta)}-->`,
-    provider: "local-safe-fallback" as const,
-    model: "deterministic-saga-referee",
-    finishReason: "stop",
-  };
 }
 
 export function safeMessages(snapshot: DatapadSnapshot): NvidiaMessage[] {
@@ -434,7 +233,12 @@ export function classifyTurnMode(action: string): "ooc" | "context" | "play" {
   const conciseHistory = /^(?:d['’]?mir(?:'s)?|my)\s+(?:mother|father|family|childhood|birthplace|background|history|personality|beliefs?|prior relationship)\b/i.test(clean);
   const actionOpening = /^i\s+(?:go|run|move|attack|punch|shoot|sneak|search|examine|open|take|use)\b/i.test(clean);
   const characterContext = explicitCanon || conciseHistory || (clean.length > 240 && contextMarkers.length >= 2 && !actionOpening);
-  const gmQuestion = /^(?:gm|game master)\b/i.test(clean) || /^(?:how many|how much|what (?:is|are) my|show (?:me )?my)\b/i.test(clean);
+  // Price questions are in-character conversation, with or without quotes.
+  // Only explicit table talk or a specific sheet question is out of character.
+  const gmQuestion = /^(?:gm|game master|ooc|out.of.character)\b/i.test(clean)
+    || /^(?:what (?:is|are) my|show (?:me )?my)\s+(?:stats?|status|level|xp|experience|health|hit points|inventory|credits|skills|talents|feats)\b/i.test(clean)
+    || /^how (?:many|much)\s+(?:credits|xp|experience|hit points|force points|destiny points)\s+(?:do|have|am|are|can)\s+i\b/i.test(clean)
+    || /\b(?:remember|listen|correction)[,? ]+(?:gm|game master)\b/i.test(clean);
   return /^\[\[[\s\S]*\]\]$/.test(clean) || gmQuestion ? "ooc" : characterContext ? "context" : "play";
 }
 
@@ -614,6 +418,27 @@ export class GmTurnError extends Error {
   constructor(message: string, public status = 400) { super(message); }
 }
 
+/** Only report a result already computed by the referee or an exact accepted quote.
+ * A failed language-model request cannot create a world event or advance time. */
+function resolvedMechanicsNarration(snapshot: DatapadSnapshot, roll: Record<string, unknown> | null,
+  resolution: CombatResolution | ForcePowerResolution | null, trade: ConversationTrade | null) {
+  const offer = trade?.status === "accepted" ? trade.offer : null;
+  if (!resolution && !offer) throw new GmTurnError("The scene is unchanged; retry your action when the GM is available.", 503);
+  const delta = reconcileConversationTradeDelta({}, trade) || {};
+  const result = offer
+    ? `You pay ${offer.totalCredits.toLocaleString()} credits for ${offer.items.map(item => `${item.name} ×${item.qty}`).join(" and ")}, completing the agreed exchange with ${offer.sellerName}.`
+    : String(resolution?.summary || "").replace(/the player character/gi, "you").replace(/the player's/gi, "your").replace(/the player/gi, "you");
+  const state = { ...snapshot.gameState, ...(resolution?.combat ? { combat: resolution.combat } : {}) };
+  const options = sceneDirections({ state, character: snapshot.character || {}, scene: result });
+  const check = roll ? `${rollMessage(roll)}\nRESULT: ${String(roll.outcome).toUpperCase()}` : "No check required.";
+  const changes = offer ? `−${offer.totalCredits.toLocaleString()} credits; ${offer.items.map(item => `+${item.qty} ${item.name}`).join("; ")}.`
+    : [resolution?.playerHealthDelta ? `Health: ${resolution.playerHealthDelta > 0 ? "+" : ""}${resolution.playerHealthDelta}.` : "",
+      resolution?.playerConditionDelta ? `Condition track: ${resolution.playerConditionDelta}.` : "",
+      resolution?.experienceAward ? `XP: +${resolution.experienceAward}.` : "", result].filter(Boolean).join(" ");
+  return { provider: "local-safe-fallback" as const, model: "resolved-saga-receipt", finishReason: "stop",
+    content: `## LOCATION\n${String(snapshot.gameState.location || "Current location")}\n\n## SCENE\n${result}\n\n## GM ADJUDICATION\n${offer ? "You accepted the recorded terms. An affordable agreed-price exchange needs no check." : "The Saga referee resolves only your declared action."}\n\n## GAMEPLAY RESULT\n${result}\n\n## SAGA CHECK\n${check}\n\n## STATE UPDATE\n${changes}\n\n## PLAYER OPTIONS\n${options.map((option: string, index: number) => `${String.fromCharCode(65 + index)}. ${option}`).join("\n")}\nYou may declare another action.\n<!--STATE:${JSON.stringify(delta)}-->` };
+}
+
 /** Removes UI retry wording before it reaches the authoritative action planner. */
 export function normalizeTurnAction(value: string) {
   return String(value || "")
@@ -633,19 +458,40 @@ export function assertMechanicalNarration(narration: string, roll: Record<string
   if (!narration.includes(expected) || narration.includes(opposite)) {
     throw new GmTurnError("The GM response did not preserve the authoritative Saga result. No outcome was saved; retry the turn.", 502);
   }
-  if (roll.outcome === "failure" && /\b(?:access granted|authorization confirmed|transaction complete|transfer (?:complete[sd]?|succeed(?:s|ed)?)|credits? (?:were|are|is) (?:credited|transferred|withdrawn)|door (?:opens?|unlocks?)|lock (?:opens?|unlocks?)|archive (?:opens?|decrypts?)|files? (?:download(?:ed|s)?|copied)|you (?:escape[sd]?|defeat(?:ed)?|kill(?:ed)?|obtain(?:ed)?|acquire[sd]?|withdr(?:aw|ew|awn)|download(?:ed)?|decrypt(?:ed)?|bypass(?:ed)?))\b/i.test(narration)) {
+  const resolvedProse = narration.split(/^(?:#{1,6}\s*)?PLAYER OPTIONS\s*$/im)[0];
+  if (roll.outcome === "failure" && /\b(?:access granted|authorization confirmed|transaction complete|transfer (?:complete[sd]?|succeed(?:s|ed)?)|credits? (?:were|are|is) (?:credited|transferred|withdrawn)|door (?:opens?|unlocks?)|lock (?:opens?|unlocks?)|archive (?:opens?|decrypts?)|files? (?:download(?:ed|s)?|copied)|you (?:escape[sd]?|defeat(?:ed)?|kill(?:ed)?|obtain(?:ed)?|acquire[sd]?|withdr(?:aw|ew|awn)|download(?:ed)?|decrypt(?:ed)?|bypass(?:ed)?))\b/i.test(resolvedProse)) {
     throw new GmTurnError("The GM narrated the failed objective as achieved. No outcome was saved; retry the turn.", 502);
+  }
+  if (roll.outcome === "failure" && /perception|gather information/i.test(String(roll.label))
+    && /\byou (?:have )?successfully (?:located|found|identified|detected|spotted)|\byou (?:spot|locate|find|identify) (?:her|him|the (?:target|person|broker|vendor|contact))\b/i.test(sectionBody(narration, "GAMEPLAY RESULT"))) {
+    throw new GmTurnError("The search failed, but the draft located the intended target. Preserve the failed objective while offering another approach.", 502);
   }
 }
 
-/** The server roll is authoritative; repair only a mislabeled result line. */
+/** Supply an omitted label; a conflicting outcome must be rewritten, not relabeled. */
 export function alignMechanicalResult(narration: string, roll: Record<string, unknown> | null) {
   if (!roll) return narration;
   const expected = `RESULT: ${String(roll.outcome).toUpperCase()}`;
   if (/RESULT\s*:\s*(?:SUCCESS|FAILURE)/i.test(narration)) {
-    return narration.replace(/RESULT\s*:\s*(?:SUCCESS|FAILURE)/gi, expected);
+    return narration;
   }
-  return narration.replace(/^(SAGA CHECK\s*)$/im, `$1\n${expected}`);
+  return narration.replace(/^((?:##\s*)?SAGA CHECK\s*)$/im, `$1\n${expected}`);
+}
+
+export function assertResolvedOutcome(narration: string, roll: Record<string, unknown> | null) {
+  if (roll?.outcome !== "success" || !["Persuasion", "Deception", "Gather Information"].includes(String(roll.label))) return;
+  const result = sectionBody(narration, "GAMEPLAY RESULT");
+  if (/\b(?:no (?:concession|progress|trust|advantage|agreement|information|lead) (?:is |was |has been )?(?:made|granted|extended|gained|obtained|given)|(?:your|the) (?:deception|persuasion|attempt|request) (?:fails|is rejected|has no effect)|(?:sees?|saw) through (?:your|the) (?:lie|deception)|(?:roll|check) (?:is|was) invalid)\b/i.test(result)) {
+    throw new GmTurnError("The social check succeeded, but the draft denied its stated objective. Rewrite the concrete success without granting unrelated benefits.", 502);
+  }
+}
+
+export function assertNarratedLocation(narration: string, delta: Record<string, unknown> | null, savedLocation: unknown) {
+  const named = sectionBody(narration, "LOCATION").replace(/\*+/g, "").replace(/^location\s*:\s*/i, "").trim();
+  const finalLocation = String(delta?.location || savedLocation || "").trim();
+  if (named && finalLocation && named.toLocaleLowerCase() !== finalLocation.toLocaleLowerCase()) {
+    throw new GmTurnError("The LOCATION and saved location disagree. If declared travel reached a new place, include that exact location in the ledger; otherwise narrate at the saved location.", 502);
+  }
 }
 
 const ASSET_RANK: Record<string, number> = { suspected: 0, inaccessible: 1, confirmed: 2, controlled: 3 };
@@ -681,6 +527,22 @@ export function assertMaterialAuthority(delta: Record<string, unknown> | null, a
     .some((field) => Array.isArray(delta[field]) && (delta[field] as unknown[]).length > 0);
   if (claims.length && createsClaimedFact && !succeeded) {
     throw new GmTurnError("The GM accepted an unverified player claim as a discovery. No outcome was saved; retry the turn.", 502);
+  }
+}
+
+/** Validate narrated offers, not the player's vocabulary. Missing terms are
+ * extracted from the same draft before it can become a finalized turn. */
+export function assertQuotedOfferConsistency(narration: string, delta: Record<string, unknown> | null, trade: ConversationTrade | null = null) {
+  if (trade?.status === "accepted" || Number(delta?.credits || 0) < 0) return;
+  const result = sectionBody(narration, "GAMEPLAY RESULT");
+  const sentences = result.split(/(?<=[.!?])\s+/);
+  const quotedPrices = sentences.filter(sentence => /\b(?:costs?|price|quotes?|rate|payable|for (?:a |one |the )?(?:full )?(?:month|night|week|room|stay)|credits? for)\b/i.test(sentence))
+    .flatMap(quotedCreditAmounts);
+  const offers = Array.isArray(delta?.tradeOfferAdd) ? delta.tradeOfferAdd as Record<string, unknown>[] : [];
+  if (quotedPrices.some(price => price > 0 && !offers.some(offer => Number(offer.totalCredits) === price
+    || Array.isArray(offer.priceComponents) && offer.priceComponents.some(part => Number(part?.credits) === price)
+    || offer.lease && typeof offer.lease === "object" && [Number((offer.lease as Record<string, unknown>).rentCredits), Number((offer.lease as Record<string, unknown>).refundableDepositCredits)].includes(price)))) {
+    throw new GmTurnError("The world-state ledger omitted a quoted offer. Preserve this draft and record its exact seller, price, items or service duration in tradeOfferAdd without charging or granting it.", 502);
   }
 }
 
@@ -738,14 +600,19 @@ export function assertCampaignResponseStructure(narration: string) {
  * the whole turn and falling back to generic prose.
  */
 export function ensureStateUpdateSection(narration: string, delta: Record<string, unknown> | null) {
-  if (/[\p{L}\p{N}]/u.test(sectionBody(narration, "STATE UPDATE"))) return narration;
+  const existing = sectionBody(narration, "STATE UPDATE");
+  const offers = Array.isArray(delta?.tradeOfferAdd) ? delta.tradeOfferAdd as Record<string, unknown>[] : [];
+  const quotedTerms = offers.map(offer => {
+    const items = Array.isArray(offer.items) ? offer.items as Record<string, unknown>[] : [];
+    return `Offer from ${String(offer.sellerName)}: ${items.map(item => String(item.name)).join(" + ")} — ${Number(offer.totalCredits).toLocaleString("en-US")} credits. Not purchased.`;
+  });
+  if (/[\p{L}\p{N}]/u.test(existing) && !quotedTerms.length) return narration;
   const heading = /^(?:#{1,6}\s*)?STATE UPDATE\s*$/im.exec(narration);
   if (!heading) return narration;
   const bodyStart = heading.index + heading[0].length;
   const next = /^(?:#{1,6}\s*)?PLAYER OPTIONS\s*$/im.exec(narration.slice(bodyStart));
-  const summary = delta && Object.keys(delta).length
-    ? "The resolved consequences are recorded in D'mir's campaign state."
-    : "No persistent change.";
+  const summary = quotedTerms.length ? [existing, ...quotedTerms].filter(Boolean).join("\n")
+    : delta && Object.keys(delta).length ? "The resolved consequences are recorded in D'mir's campaign state." : "No persistent change.";
   const prefix = narration.slice(0, bodyStart).trimEnd();
   if (!next) return `${prefix}\n${summary}`;
   const nextStart = bodyStart + next.index;
@@ -833,7 +700,7 @@ function normalizedParagraphs(value: string) {
     .filter((paragraph) => paragraph.split(" ").length >= 14);
 }
 
-export function assertFreshScene(narration: string, priorScene: string, action: string) {
+export function assertFreshScene(narration: string, priorScene: string, action: string, priorResult = "") {
   const scene = extractSceneNarration(narration);
   if (!scene || (action && sceneTokens(scene).length < 25)) {
     throw new GmTurnError("The GM SCENE did not narrate the declared attempt in a concrete setting. Rewrite the same turn with D'mir's visible position, surroundings, and immediate world reaction.", 502);
@@ -842,7 +709,13 @@ export function assertFreshScene(narration: string, priorScene: string, action: 
   const priorParagraphs = new Set(normalizedParagraphs(priorScene));
   const repeatsParagraph = normalizedParagraphs(scene).some((paragraph) => priorParagraphs.has(paragraph));
   const similarity = sceneSimilarity(scene, priorScene);
-  if (repeatsParagraph || (sceneTokens(scene).length >= 45 && similarity >= 0.72)) {
+  const result = sectionBody(narration, "GAMEPLAY RESULT");
+  // Staying at a desk does not require inventing a different room every turn.
+  // A new concrete answer/payment/reaction can progress that same setting.
+  const newResult = sceneTokens(result).length >= 12
+    && !/declared (?:action|attempt)|immediate scene|world answers|nothing changes/i.test(result)
+    && (!priorResult || sceneSimilarity(result, priorResult) < 0.72);
+  if (!newResult && (repeatsParagraph || (sceneTokens(scene).length >= 45 && similarity >= 0.72))) {
     throw new GmTurnError(`The GM repeated the prior scene instead of showing how the world answered ${action || "the scene refresh"}. Rewrite from the present beat with new, action-specific sensory narration.`, 502);
   }
 }
@@ -880,6 +753,9 @@ function latestAssistantScene(snapshot: DatapadSnapshot) {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (message?.role !== "assistant" || typeof message.content !== "string") continue;
+    if (message.provider === "local-safe-fallback" || message.fallbackReason || isRepeatedSceneTemplate(message.content)) continue;
+    const location = sectionBody(message.content, "LOCATION").trim();
+    if (location && location !== String(snapshot.gameState.location || "")) continue;
     const scene = extractSceneNarration(message.content);
     if (scene) return scene;
   }
@@ -891,7 +767,11 @@ function currentSceneFrame(snapshot: DatapadSnapshot) {
   const stored = state.scene && typeof state.scene === "object" && !Array.isArray(state.scene)
     ? state.scene as Record<string, unknown>
     : null;
-  const summary = String(stored?.summary || latestAssistantScene(snapshot)).slice(0, 2800);
+  const messages = Array.isArray(snapshot.messages) ? snapshot.messages as Message[] : [];
+  const latest = messages.filter(message => message.role === "assistant").at(-1);
+  const polluted = latest?.provider === "local-safe-fallback" || latest?.fallbackReason
+    || isRepeatedSceneTemplate(String(stored?.summary || ""));
+  const summary = String((!polluted && stored?.summary) || latestAssistantScene(snapshot)).slice(0, 2800);
   if (!summary) return null;
   return {
     id: String(stored?.id || "legacy-scene"),
@@ -994,7 +874,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   const accountId = input.accountId || actor.id;
   const saved = readDatapad(actor, accountId);
   if (!saved.snapshot?.character) throw new GmTurnError("Create or load a character before opening a scene.", 409);
-  const currentSnapshot = ensureCampaignScaffold(saved.snapshot) as DatapadSnapshot;
+  let currentSnapshot = ensureCampaignScaffold(saved.snapshot) as DatapadSnapshot;
   if (!/^[a-zA-Z0-9_-]{8,100}$/.test(input.turnId)) throw new GmTurnError("A valid turn identifier is required.");
   const action = normalizeTurnAction(input.action);
   if ((!action && !input.openScene) || action.length > 2000) throw new GmTurnError("Provide an action between 1 and 2,000 characters.");
@@ -1009,48 +889,96 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
 
   const mode = classifyTurnMode(action);
   const priorInterpretation = db.prepare("SELECT interpretation FROM gm_turn_interpretations WHERE account_id = ? AND turn_id = ?").get(accountId, input.turnId) as { interpretation: string } | undefined;
-  const interpretation = priorInterpretation ? JSON.parse(priorInterpretation.interpretation) : mode === "play" && action ? await interpretSagaAction(action, currentSnapshot.character as Record<string, unknown>, currentSnapshot.gameState) : { semantic: null, fallbackReason: null };
+  const interpretation = priorInterpretation ? JSON.parse(priorInterpretation.interpretation) : mode === "play" && action ? await interpretSagaAction(action, currentSnapshot.character as Record<string, unknown>, { ...currentSnapshot.gameState, scene: currentSceneFrame(currentSnapshot), sceneMerchant: sceneMerchant(currentSnapshot), recentInteraction: safeMessages(currentSnapshot).slice(-4) }) : { semantic: null, fallbackReason: null };
   if (!priorInterpretation) db.prepare("INSERT OR IGNORE INTO gm_turn_interpretations VALUES (?, ?, ?)").run(accountId, input.turnId, JSON.stringify(interpretation));
-  const semantic = interpretation.semantic;
-  const resolvedIntent = semantic?.canonicalAction || action;
-  const trade = mode === "play" && !input.openScene && !input.statePolicy && (!semantic || semantic.intent === "commerce" && !semantic.checkNeeded) ? planConversationTrade(resolvedIntent, currentSnapshot.gameState, input.turnId) : null;
-  const routineCommerce = semantic ? !semantic.checkNeeded && ["commerce", "dialogue"].includes(semantic.intent) && /market|shop|bazaar/i.test(String(currentSnapshot.gameState.location || "")) : isRoutineCommerce(action, currentSnapshot.gameState.location);
+  let semantic = interpretation.semantic;
+  let resolvedIntent = semantic?.canonicalAction || action;
+  const ordinaryTrade = mode === "play" && !input.openScene && !input.statePolicy && (!semantic || semantic.intent === "commerce" && !semantic.checkNeeded);
+  if (ordinaryTrade && semantic?.intent === "commerce" && !currentTradeOffers(currentSnapshot.gameState).length) {
+    try {
+      const recovered = await recoverConfirmedTradeOffer(currentSnapshot);
+      if (recovered !== currentSnapshot) {
+        currentSnapshot = recovered;
+        const refreshed = await interpretSagaAction(action, currentSnapshot.character as Record<string, unknown>, {
+          ...currentSnapshot.gameState, scene: currentSceneFrame(currentSnapshot), recentInteraction: safeMessages(currentSnapshot).slice(-4),
+        });
+        if (refreshed.semantic) {
+          semantic = refreshed.semantic;
+          resolvedIntent = semantic.canonicalAction;
+          db.prepare("UPDATE gm_turn_interpretations SET interpretation = ? WHERE account_id = ? AND turn_id = ?").run(JSON.stringify(refreshed), accountId, input.turnId);
+        }
+      }
+    }
+    catch { /* Preserve the save when a historical quote cannot be verified. */ }
+  }
+  const trade = ordinaryTrade ? planConversationTrade(semantic?.acceptedOfferId ? action : resolvedIntent, currentSnapshot.gameState, input.turnId, semantic?.acceptedOfferId) : null;
+  const routineCommerce = semantic ? !semantic.checkNeeded && ["commerce", "dialogue"].includes(semantic.intent) : isRoutineCommerce(action, currentSnapshot.gameState.location);
   const merchant = sceneMerchant(currentSnapshot);
-  const plan = mode === "play" && action && !trade && !routineCommerce ? semantic ? buildSemanticSagaCheck(semantic, currentSnapshot.character as Record<string, unknown>, currentSnapshot.gameState) : planSagaAction(action, currentSnapshot.character as Record<string, unknown>, currentSnapshot.gameState) : null;
-  const roll = existing?.roll ? JSON.parse(existing.roll) : plan ? rollSagaCheck(plan) : null;
+  // Shared by the browser and GPT controller, including historical quote repairs.
   const encounter = activeCombat(currentSnapshot.gameState as Record<string, unknown>);
+  const forceConstraint = forceCapabilityConstraint(semantic, currentSnapshot.character as Record<string, unknown>);
+  const forcePowerId = declaredForcePower(resolvedIntent, semantic);
+  let plan = mode === "play" && action && !trade && !routineCommerce
+    ? forcePowerId && !forceConstraint
+      ? buildForcePowerPlan(forcePowerId, currentSnapshot.character as Record<string, unknown>, currentSnapshot.gameState, encounter)
+      : semantic ? buildSemanticSagaCheck(semantic, currentSnapshot.character as Record<string, unknown>, currentSnapshot.gameState) : planSagaAction(action, currentSnapshot.character as Record<string, unknown>, currentSnapshot.gameState)
+    : null;
+  // Battle Strike modifies the next attack before the server rolls it. The
+  // modifier is carried by the combat snapshot, never supplied by the model.
+  const battleStrike = encounter?.combatants.find(entry => entry.side === "player")?.battleStrike;
+  if (plan?.kind === "attack" && battleStrike && battleStrike.expiresRound >= (encounter?.round || 0)) {
+    plan = { ...plan, modifier: plan.modifier + battleStrike.attackBonus, damage: plan.damage ? { ...plan.damage, count: plan.damage.count + battleStrike.damageDice } : plan.damage };
+  }
+  const roll = existing?.roll ? JSON.parse(existing.roll) : plan ? rollSagaCheck(plan) : null;
   let combatResolution: CombatResolution | null = null;
+  let forceResolution: ForcePowerResolution | null = null;
+  const combatActionText = positiveActionText(resolvedIntent).toLowerCase();
   if (mode === "play" && !encounter && isAttackDeclaration(resolvedIntent) && roll?.kind === "initiative") {
     combatResolution = beginCombat(resolvedIntent, currentSnapshot.character as Record<string, unknown>, currentSnapshot.gameState, roll, deterministicTurnRoller(input.turnId, "combat-open"));
+  } else if (mode === "play" && forcePowerId && plan && !forceConstraint) {
+    forceResolution = resolveForcePower(forcePowerId, resolvedIntent, currentSnapshot.character as Record<string, unknown>, currentSnapshot.gameState, roll, deterministicTurnRoller(input.turnId, "force-power"));
+    if (forceResolution.combat) combatResolution = forceResolution as CombatResolution;
   } else if (mode === "play" && encounter && isAttackDeclaration(resolvedIntent) && roll?.kind === "attack") {
-    combatResolution = resolvePlayerAttack(encounter, roll);
+    combatResolution = resolveCombatAction(encounter, { kind: "attack", action: resolvedIntent }, { character: currentSnapshot.character as Record<string, unknown>, currentHealth: Number(currentSnapshot.gameState.health || 0), playerRoll: roll, roller: deterministicTurnRoller(input.turnId, "combat-attack") });
   } else if (mode === "play" && encounter && isCombatWithdrawDeclaration(resolvedIntent)) {
-    combatResolution = withdrawFromCombat(encounter, resolvedIntent);
+    const escapeConfirmed = semantic?.intent === "travel" || /\b(?:market|shelter|higher|upward|leave\s+(?:level|1313)|out of the prison|populated)\b/i.test(combatActionText);
+    combatResolution = resolveCombatAction(encounter, { kind: "withdraw", action: resolvedIntent, escapeConfirmed, escapeReason: escapeConfirmed ? "The declared route reaches a concrete boundary outside the immediate encounter." : undefined }, { character: currentSnapshot.character as Record<string, unknown>, currentHealth: Number(currentSnapshot.gameState.health || 0) });
   } else if (mode === "play" && encounter && isEndTurnDeclaration(resolvedIntent)) {
-    combatResolution = endPlayerTurn(encounter, currentSnapshot.character as Record<string, unknown>, Number(currentSnapshot.gameState.health || 0), deterministicTurnRoller(input.turnId, "npc-turn"));
+    combatResolution = resolveCombatAction(encounter, { kind: "end_turn", action: resolvedIntent }, { character: currentSnapshot.character as Record<string, unknown>, currentHealth: Number(currentSnapshot.gameState.health || 0), roller: deterministicTurnRoller(input.turnId, "npc-turn") });
   } else if (mode === "play" && encounter && isCombatMovementDeclaration(resolvedIntent)) {
-    combatResolution = spendPlayerMove(encounter, resolvedIntent);
+    combatResolution = resolveCombatAction(encounter, { kind: "move", action: resolvedIntent, cover: /\bcover\b/i.test(combatActionText) ? "cover" : undefined, coverEstablished: /\bcover\b/i.test(combatActionText) }, { character: currentSnapshot.character as Record<string, unknown>, currentHealth: Number(currentSnapshot.gameState.health || 0) });
+  } else if (mode === "play" && encounter && /\b(?:aim|take aim|steady|sights?)\b/i.test(combatActionText)) {
+    combatResolution = resolveCombatAction(encounter, { kind: "aim", action: resolvedIntent }, { character: currentSnapshot.character as Record<string, unknown>, currentHealth: Number(currentSnapshot.gameState.health || 0) });
+  } else if (mode === "play" && encounter && /\b(?:recover|regain composure|shake it off|tend my condition)\b/i.test(combatActionText)) {
+    combatResolution = resolveCombatAction(encounter, { kind: "recover", action: resolvedIntent, swiftActions: 3 }, { character: currentSnapshot.character as Record<string, unknown>, currentHealth: Number(currentSnapshot.gameState.health || 0) });
+  } else if (mode === "play" && encounter && /\b(?:second wind|catch my breath|push through)\b/i.test(combatActionText)) {
+    combatResolution = resolveCombatAction(encounter, { kind: "second_wind", action: resolvedIntent, dayId: String(currentSnapshot.gameState.resourceDay || "campaign-day-1") }, { character: currentSnapshot.character as Record<string, unknown>, currentHealth: Number(currentSnapshot.gameState.health || 0) });
+  } else if (mode === "play" && encounter && /\b(?:fight defensively|total defense|defensive stance|guard myself)\b/i.test(combatActionText)) {
+    combatResolution = resolveCombatAction(encounter, { kind: "total_defense", action: resolvedIntent }, { character: currentSnapshot.character as Record<string, unknown>, currentHealth: Number(currentSnapshot.gameState.health || 0) });
   }
   if (!existing) db.prepare("INSERT INTO gm_turn_attempts VALUES (?, ?, ?, ?, ?, 'pending', NULL, ?)").run(accountId, input.turnId, input.revision, action, roll ? JSON.stringify(roll) : null, new Date().toISOString());
 
   const history = safeMessages(currentSnapshot);
   const priorScene = currentSceneFrame(currentSnapshot)?.summary || "";
+  const lastAuthored = (currentSnapshot.messages as Message[]).filter(message => message.role === "assistant" && message.provider !== "local-safe-fallback" && !message.fallbackReason).at(-1);
+  const priorResult = lastAuthored ? sectionBody(lastAuthored.content, "GAMEPLAY RESULT") : "";
   const userMessage = action || "Describe the CURRENT saved scene, not the opening scene. Use the full seven-section response contract. LOCATION must repeat the authoritative saved location. SCENE must freshly describe my visible established appearance or gear, posture, immediate sensory setting, and spatial layout without claiming that I acted, felt a prescribed emotion, noticed a new clue, or gained anything. Under GM ADJUDICATION say this is a read-only scene view. Under GAMEPLAY RESULT say I remain at the saved moment. Under SAGA CHECK write: No check required. Under STATE UPDATE write: No persistent change. Give scene-specific PLAYER OPTIONS using confirmed capabilities. Do not advance time, move me, invent a discovery, or change mechanical state. Return STATE:{}.";
   const claims = authorityWarnings(action);
   const authorityInstruction = claims.length ? `\n\nPLAYER AUTHORITY WARNING: This declaration contains unverified ${claims.join(", ")}. Treat those clauses only as D'mir's belief or intended approach. They are not facts and cannot become true without support from current authoritative state plus a relevant successful resolution.` : "";
   let creatorInstruction = actor.username.toLocaleLowerCase() === "dmir@galaxy.local" && /^d['’]mir holloran$/i.test(String((currentSnapshot.character as Record<string, unknown>).name || "").trim())
     ? `\n\nD'MIR CREATOR DIRECTION: This is D'mir's creator-controlled player campaign. Respect explicit long-term themes, goals, and desired arcs by creating plausible Star Wars opportunities rather than blocking them. Record a new explicit long-term direction with storyDirectiveAdd. Creating a direction is not an accomplished fact and grants no immediate XP, level, credits, item, feat, talent, Force power, training, victory, or automatic success. Once gameplay actually fulfills an established direction, update that same title to status completed and record the concrete outcome; the server will award XP and derive leveling normally.`
     : "";
-  const rollInstruction = roll ? `\n\nAUTHORITATIVE SAGA RESULT:\n${JSON.stringify(roll)}\nUnder SAGA CHECK include concise public arithmetic and the exact line RESULT: ${String(roll.outcome).toUpperCase()}. ${roll.outcome === "failure" ? "The attempted objective fails, but GAMEPLAY RESULT must fail forward to a concrete obstacle, cost, world reaction, or new scene boundary supported by the stakes. Do not grant the intended secret, access, damage, victory, item, or funds." : "Grant only the declared objective; do not expand the success beyond its stated scope."} ${roll.targetVisible ? "Show the DC or defense." : "Do not reveal the hidden target number or NPC statistics."}` : "";
-  const combatInstruction = combatResolution ? `\n\nAUTHORITATIVE COMBAT UPDATE:\n${JSON.stringify({ summary: combatResolution.summary, combat: combatResolution.combat, additionalRolls: combatResolution.rolls, playerHealthDelta: combatResolution.playerHealthDelta, playerConditionDelta: combatResolution.playerConditionDelta, experienceAward: combatResolution.experienceAward })}\nThis update is server-owned. Narrate it exactly without inventing another attack, damage roll, movement, action, victory, or reward. An opening attack declaration starts initiative only; it does not also resolve the attack. Reflect remaining player actions and stop for the player's next declaration.` : "";
+  const rollInstruction = roll ? `\n\nAUTHORITATIVE SAGA RESULT:\n${JSON.stringify(roll)}\nUnder SAGA CHECK include concise public arithmetic and the exact line RESULT: ${String(roll.outcome).toUpperCase()}. ${roll.outcome === "failure" ? "The attempted objective fails, but GAMEPLAY RESULT must fail forward to a concrete obstacle, cost, world reaction, or new scene boundary supported by the stakes. Do not grant the intended secret, access, damage, victory, item, or funds." : "Grant only the declared objective; do not expand the success beyond its stated scope."} ${roll.targetVisible ? "Show the DC or defense." : "Do not reveal the hidden target number or NPC statistics."}` : "\\n\\nAUTHORITATIVE SAGA RESULT: No check required. Do not show dice, a DC, a RESULT label or an imagined social/search check. Resolve ordinary access, conversation and travel through concrete NPC/world responses. Do not add hidden obstacles solely to demand a roll.";
+  const authoritativeResolution = combatResolution || forceResolution;
+  const combatInstruction = authoritativeResolution ? `\n\nAUTHORITATIVE MECHANICS UPDATE:\n${JSON.stringify({ summary: authoritativeResolution.summary, combat: authoritativeResolution.combat || null, additionalRolls: authoritativeResolution.rolls, playerHealthDelta: authoritativeResolution.playerHealthDelta, playerConditionDelta: authoritativeResolution.playerConditionDelta, experienceAward: authoritativeResolution.experienceAward, stateDelta: authoritativeResolution.stateDelta || {} })}\nThis update is server-owned. Narrate it exactly without inventing another attack, damage roll, movement, action, victory, Force effect, or reward. An opening attack declaration starts initiative only; it does not also resolve the attack. Reflect remaining player actions and stop for the player's next declaration.` : "";
   let system = mode === "ooc" ? `You are the campaign Game Master. Answer the player's out-of-character rules or character-status question concisely from authoritative saved state. Distinguish confirmed state from rumors or prior narrative claims. Do not advance time, narrate a new scene, change state, or output a STATE block.\n\nCURRENT CAMPAIGN STATE:\n${publicContext(currentSnapshot)}`
     : mode === "context" ? `The player supplied character background/context, not an in-world action. Acknowledge it briefly, do not roll, do not advance the scene, and do not invent additions. Do not output a STATE block.\n\nCURRENT CAMPAIGN STATE:\n${publicContext(currentSnapshot)}`
-    : `${GM_SYSTEM}${rollInstruction}${combatInstruction}${authorityInstruction}${creatorInstruction}\n\nTURN CONTRACT: Suggestions must change with the current scene, visible interactables, injuries, carried equipment, trained skills and remaining combat actions. Use 2-4 A-D possible attempts, never a static menu, guaranteed outcome, secret clue or unearned Force technique. Only suggest objects already visible in this scene or recorded in state. LOCATION comes from saved state. SCENE shows D'mir's established visible condition and the declared action meeting the immediate environment before mechanics. GM ADJUDICATION accepts the executable intent; an asserted destination is a goal, not a reason to refuse the attempt. GAMEPLAY RESULT must create a playable new beat even on failure. SAGA CHECK contains only server-owned dice or "No check required." Meditation and terminal interaction are not travel. Negated actions never occur. Travel reaches a concrete observable boundary, not an endless generic transit summary. PRIOR TURN OUTCOME messages omit old scene prose: use them only for continuity, never as a writing template. The saved scene summary identifies the present beat but its wording must not be copied.\n\nCURRENT AUTHORITATIVE CAMPAIGN STATE:\n${publicContext(currentSnapshot)}`;
+    : `${GM_SYSTEM}${rollInstruction}${combatInstruction}${authorityInstruction}${creatorInstruction}\n\nTURN CONTRACT: Suggestions must change with the current scene, visible interactables, injuries, carried equipment, trained skills and remaining combat actions. Use 2-4 A-D possible attempts, never a static menu, guaranteed outcome, secret clue or unearned Force technique. Only suggest objects already visible in this scene or recorded in state. LOCATION names the end-of-turn place and matches the ledger, not a stale district label. SCENE shows D'mir's established visible condition and the declared action meeting the immediate environment before mechanics. GM ADJUDICATION accepts the executable intent; an asserted destination is a goal, not a reason to refuse the attempt. GAMEPLAY RESULT must create a playable new beat even on failure. SAGA CHECK contains only server-owned dice or "No check required." Meditation and terminal interaction are not travel. Negated actions never occur. Travel reaches a concrete observable boundary, not an endless generic transit summary. PRIOR TURN OUTCOME messages omit old scene prose: use them only for continuity, never as a writing template. The saved scene summary identifies the present beat but its wording must not be copied.\n\nCURRENT AUTHORITATIVE CAMPAIGN STATE:\n${publicContext(currentSnapshot)}`;
   let response: Awaited<ReturnType<typeof invokeNvidia>> | null = null;
   if (semantic) system += `\n\nINTERPRETED PLAYER INTENT (not an outcome): ${JSON.stringify(semantic)}\nResolve this intent, not a keyword trigger. The original declaration below remains the player's words and choices. Ordinary competent substeps are part of the attempt; never add a new player decision. Any check is already supplied by the referee; never invent another.`;
-  const forceConstraint = forceCapabilityConstraint(semantic, currentSnapshot.character as Record<string, unknown>);
   if (forceConstraint) system += `\n\nSAGA CAPABILITY CONSTRAINT: ${forceConstraint}`;
-  if (mode === "play") system += `\n\n${conversationTradeInstruction(trade)}\n${routineCommerce ? "ROUTINE COMMERCE: No check is required to ask stock/prices or ordinary public lodging directions. Speak as the merchant and retain the stall scene. Do not invent a roll." : ""}\nSERIALIZATION: End with exactly one HTML STATE comment containing strict JSON, with double-quoted keys and string values. Multiple merchandise items use one inventoryAdd array, never duplicate keys. A no-change example is <!--STATE:{}-->. A purchase syntax example is <!--STATE:{"credits":-1500,"inventoryAdd":[{"name":"Suit","qty":1},{"name":"Tunic","qty":1}]}-->. Use only the actual price and items of this turn; never copy the example values as rewards.`;
+  if (mode === "play") system += `\n\n${conversationTradeInstruction(trade)}\n${routineCommerce ? "ORDINARY INTERACTION: No check is required for a normal question or stock/price inquiry. Answer the actual question as the CURRENT interlocutor in the saved scene. A broad market location does not mean a clothing stall. Resolve short follow-ups against the last exchange, including lodging duration, privacy, meals and prices. Quote new terms before charging; do not invent procedural refusal without an established reason." : ""}\nSERIALIZATION: End with exactly one HTML STATE comment containing strict JSON, with double-quoted keys and string values. Multiple merchandise items use one inventoryAdd array, never duplicate keys. A no-change example is <!--STATE:{}-->. Record every concrete priced offer in tradeOfferAdd, including services as named entitlements tagged service with the agreed duration and amenities. Quotes grant nothing yet. LOCATION names the place at the END of this action and must match delta.location when declared travel changes it, or the saved location otherwise.`;
+  if (mode === "play") system += `\n${LEASE_LEDGER_INSTRUCTION}\n${QUOTE_COMPONENT_INSTRUCTION}`;
   let parsed: ReturnType<typeof parseEngineResponse> | null = null;
   let delta: Record<string, unknown> | null = null;
   let validationError: unknown = null;
@@ -1064,46 +992,37 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
         system,
         timeout_ms: providerBudget(35_000),
         sourceQuery: action || String(currentSnapshot.gameState.location || "opening scene"),
-        max_tokens: mode === "ooc" ? 512 : 1536,
+        max_tokens: mode === "ooc" ? 768 : 2400,
         messages: [...history, { role: "user", content: userMessage }, ...(correction ? [correction] : [])],
       });
     } catch (error) {
       if (!(error instanceof NvidiaProviderError)) throw error;
       fallbackReason = "provider";
-      console.warn("[api/gm] AI provider unavailable; continuing with deterministic fallback", { status: error.status, message: error.message });
-      response = buildLocalSafeFallback({
-        mode,
-        action,
-        location: String(currentSnapshot.gameState.location || ""),
-        roll,
-        combatSummary: combatResolution?.summary || null,
-        state: currentSnapshot.gameState,
-        character: currentSnapshot.character as Record<string, unknown>,
-        priorScene,
-        trade,
-        merchant,
-        interpretedAction: resolvedIntent,
-        forceConstraint,
-      });
+      console.warn("[api/gm] drafting failed", { turnId: input.turnId, attempt: attempt + 1, status: error.status, message: error.message });
+      validationError = error;
+      // An outage is not an in-world event. Keep the action and roll for retry.
+      continue;
     }
     try {
       let candidate = response.content;
       try {
         parsed = parseEngineResponse(candidate, { requireState: mode === "play" });
+        if (mode === "play") assertQuotedOfferConsistency(parsed.clean, parsed.delta as Record<string, unknown> | null, trade);
       } catch (error) {
         const repairableLedger = mode === "play" && error instanceof Error && /(?:world-state ledger|world-state field|world-state JSON|world-state block)/i.test(error.message);
         if (!repairableLedger) throw error;
         const repair = await invokeNvidia({
-          system: `${LEDGER_REPAIR_SYSTEM}\n\nAUTHORITATIVE CAMPAIGN STATE:\n${publicContext(currentSnapshot)}\n\nAUTHORITATIVE SAGA RESULT:\n${JSON.stringify(roll || null)}`,
+          system: `${LEDGER_REPAIR_SYSTEM}\n${LEASE_LEDGER_INSTRUCTION}\nSCHEMA: objectiveComplete is an array of existing objective title strings, conditionRemove is an array of condition name strings. A spoken merchant quote MUST produce tradeOfferAdd even when no payment occurred and the draft says 'no persistent change'. Convert written-out prices into whole-credit integers. These amounts occur in the result; retain the offered terms associated with each quoted price, never ignore them: ${JSON.stringify(quotedCreditAmounts(sectionBody(candidate, "GAMEPLAY RESULT")))}. If quoting rent and deposit components, save one lease offer at their total instead of selling the components separately.\n\nAUTHORITATIVE CAMPAIGN STATE:\n${publicContext(currentSnapshot)}\n\nAUTHORITATIVE SAGA RESULT:\n${JSON.stringify(roll || null)}`,
           timeout_ms: providerBudget(10_000),
           sourceQuery: action || String(currentSnapshot.gameState.location || "opening scene"),
-          max_tokens: 512,
+          max_tokens: 1024,
           temperature: 0.1,
           top_p: 0.2,
-          messages: [{ role: "user", content: `PLAYER ACTION:\n${userMessage}\n\nGM DRAFT WITH MISSING LEDGER:\n${candidate}` }],
+          messages: [{ role: "user", content: `PLAYER ACTION:\n${userMessage}\n\nGM DRAFT WITH MISSING LEDGER:\n${candidate}\n\nQUOTE SCHEMA:\n${QUOTE_COMPONENT_INSTRUCTION}` }],
         });
         candidate = attachRepairedLedger(candidate, repair.content);
         parsed = parseEngineResponse(candidate, { requireState: true });
+        assertQuotedOfferConsistency(parsed.clean, parsed.delta as Record<string, unknown> | null, trade);
       }
       parsed = {
         ...parsed,
@@ -1115,8 +1034,9 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       if (mode === "play") parsed = { ...parsed, clean: ensurePlayerOptions(normalizePlayerOptions(parsed.clean), currentSnapshot.gameState, currentSnapshot.character as Record<string, unknown>, action) };
       if (mode === "play") assertCampaignResponseStructure(parsed.clean);
       if (mode === "play") assertNarrativeFocus(parsed.clean, action);
-      if (mode === "play" && response.provider !== "local-safe-fallback") assertFreshScene(parsed.clean, priorScene, action);
+      if (mode === "play" && response.provider !== "local-safe-fallback") assertFreshScene(parsed.clean, priorScene, action, priorResult);
       assertMechanicalNarration(parsed.clean, roll);
+      assertResolvedOutcome(parsed.clean, roll);
       delta = constrainFailedCheckDelta(parsed.delta as Record<string, unknown> | null, roll, resolvedIntent);
       delta = constrainExperienceAward(delta, roll);
       delta = reconcileConversationTradeDelta(delta, trade);
@@ -1125,6 +1045,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       }
       if (!action && input.openScene) { assertSceneRefreshDelta(delta); delta = {}; }
       assertLocationIntent(delta, resolvedIntent, currentSnapshot.gameState.location, semantic?.intent === "travel");
+      if (mode === "play") assertNarratedLocation(parsed.clean, delta, currentSnapshot.gameState.location);
       if (mode === "play") assertMovementSceneProgress(parsed.clean, resolvedIntent, roll, delta, currentSnapshot.gameState.location);
       assertMaterialAuthority(delta, action, roll, currentSnapshot.gameState as Record<string, unknown>, trade);
       assertStoryDirectiveAuthority(delta, actor, currentSnapshot.character as Record<string, unknown>);
@@ -1136,34 +1057,27 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
           ...(delta || {}),
           health: Number(delta?.health || 0) + Number(combatResolution?.playerHealthDelta || 0),
           conditionTrack: Number(delta?.conditionTrack || 0) + Number(combatResolution?.playerConditionDelta || 0),
-          experienceAward: Math.max(experienceAward, Number(combatResolution?.experienceAward || 0)),
+          darkSideScore: Number(delta?.darkSideScore || 0) + Number(forceResolution?.stateDelta?.darkSideScoreDelta || 0),
+          experienceAward: Math.max(experienceAward, Number(combatResolution?.experienceAward || 0), Number(forceResolution?.experienceAward || 0)),
         };
       }
       validationError = null;
+      fallbackReason = null;
       break;
     } catch (error) {
+      console.warn("[api/gm] draft validation failed", { turnId: input.turnId, attempt: attempt + 1, reason: error instanceof Error ? error.message : String(error) });
       validationError = error;
       parsed = null;
       delta = null;
     }
   }
   if (validationError) {
+    if (mode !== "play" || (!authoritativeResolution && trade?.status !== "accepted")) {
+      // Nothing has resolved: never manufacture progress or replace the scene.
+      throw new GmTurnError("The GM could not finish this response. Your action is preserved; the scene and campaign have not advanced. Retry the same action.", 503);
+    }
     fallbackReason = "validation";
-    console.warn("[api/gm] AI draft rejected twice; continuing with deterministic fallback", { message: validationError instanceof Error ? validationError.message : String(validationError) });
-    response = buildLocalSafeFallback({
-      mode,
-      action,
-      location: String(currentSnapshot.gameState.location || ""),
-      roll,
-      combatSummary: combatResolution?.summary || null,
-      state: currentSnapshot.gameState,
-      character: currentSnapshot.character as Record<string, unknown>,
-      priorScene,
-      trade,
-      merchant,
-      interpretedAction: resolvedIntent,
-      forceConstraint,
-    });
+    response = resolvedMechanicsNarration(currentSnapshot, roll, authoritativeResolution, trade);
     parsed = parseEngineResponse(response.content, { requireState: mode === "play" });
     parsed = { ...parsed, clean: alignMechanicalResult(sanitizeGmNarration(parsed.clean), roll) };
     if (mode === "play") {
@@ -1177,7 +1091,6 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
     delta = reconcileConversationTradeDelta(delta, trade);
     if (input.statePolicy === "committed-trade" && delta) delta = { ...delta, credits: 0, creditsCriminal: 0, inventoryAdd: [], inventoryRemove: [] };
     assertLocationIntent(delta, resolvedIntent, currentSnapshot.gameState.location, semantic?.intent === "travel");
-    if (mode === "play") assertMovementSceneProgress(parsed.clean, resolvedIntent, roll, delta, currentSnapshot.gameState.location);
     assertMaterialAuthority(delta, action, roll, currentSnapshot.gameState as Record<string, unknown>, trade);
     assertStoryDirectiveAuthority(delta, actor, currentSnapshot.character as Record<string, unknown>);
     assertNarrativeLedgerConsistency(parsed.clean, delta);
@@ -1188,7 +1101,8 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
         ...(delta || {}),
         health: Number(delta?.health || 0) + Number(combatResolution?.playerHealthDelta || 0),
         conditionTrack: Number(delta?.conditionTrack || 0) + Number(combatResolution?.playerConditionDelta || 0),
-        experienceAward: Math.max(experienceAward, Number(combatResolution?.experienceAward || 0)),
+        darkSideScore: Number(delta?.darkSideScore || 0) + Number(forceResolution?.stateDelta?.darkSideScoreDelta || 0),
+        experienceAward: Math.max(experienceAward, Number(combatResolution?.experienceAward || 0), Number(forceResolution?.experienceAward || 0)),
       };
     }
   }
@@ -1200,13 +1114,17 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       : currentSnapshot;
   if (mode === "play") {
     finalized = { ...finalized, gameState: commitConversationTradeState(finalized.gameState, delta, trade, input.turnId) };
-    if (merchant) finalized.gameState = { ...finalized.gameState, sceneMerchant: merchant };
+    // Derive seller continuity from this finalized scene, not the prior vendor.
   }
   if (mode === "play" && combatResolution) {
     finalized = { ...finalized, gameState: { ...finalized.gameState, combat: combatResolution.combat } };
     if (combatResolution.rolls.length) {
       finalized.gameState.rolls = [...(Array.isArray(finalized.gameState.rolls) ? finalized.gameState.rolls : []), ...combatResolution.rolls].slice(-100);
     }
+  }
+  if (mode === "play" && forceResolution?.stateDelta) {
+    const { darkSideScoreDelta: _darkSideScoreDelta, ...persistentForceState } = forceResolution.stateDelta;
+    finalized = { ...finalized, gameState: { ...finalized.gameState, ...persistentForceState } };
   }
   if (mode === "play") finalized = withSceneFrame(finalized, parsed.clean, action, roll, Boolean(input.openScene));
   const messages: Message[] = [...(currentSnapshot.messages as Message[])];
@@ -1216,6 +1134,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   const fallbackDetail = validationError instanceof Error ? validationError.message.slice(0, 500) : null;
   messages.push({ role: "assistant", content: parsed.clean, turnId: input.turnId, provider: response.provider, model: response.model, fallbackReason, fallbackDetail });
   const snapshot: DatapadSnapshot = { ...finalized, messages };
+  if (mode === "play") snapshot.gameState = { ...snapshot.gameState, sceneMerchant: sceneMerchant(snapshot) };
   const persisted = saveAuthoritativeDatapad(actor, accountId, input.revision, snapshot);
   const result = { snapshot, revision: persisted.revision, updatedAt: persisted.updatedAt, roll, narration: parsed.clean, provider: response.provider, model: response.model, fallbackReason, fallbackDetail };
   db.prepare("UPDATE gm_turn_attempts SET status = 'complete', result = ? WHERE account_id = ? AND turn_id = ?").run(JSON.stringify(result), accountId, input.turnId);

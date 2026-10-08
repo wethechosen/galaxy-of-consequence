@@ -867,6 +867,34 @@ If this is the very first message of the session, open the scene in-character ba
     return sendTurn(`I use the Syndicates intelligence brief to ${action} with ${syndicate.name}. The listed access fee is ${cost} credits. Resolve whether I can actually approach them from my current location; charge only if the approach occurs. Known possible operatives: ${operativeBrief}. Useful encounter patterns: ${patternBrief}. Internal pressure: ${syndicate.internalConflict}. Treat this as a request, not a guaranteed reward. Resolve the faction's response in-world, respect my current level, credits, notoriety, location, and established continuity. Do not grant credits, gear, allies, or reputation without earning and validating them. Give the operative a distinct voice, personal objective, and reason to accept, refuse, test, manipulate, or remember my character.`, messages);
   }
 
+  async function transferBankCredits(action, amount) {
+    if (!character || activeTurn.current || !saveReady || saveSession.current?.error) return false;
+    const session = saveSession.current;
+    activeTurn.current = true;
+    setSending(true); setTurnError(""); setSaveStatus("saving");
+    try {
+      await session.queue;
+      if (saveSession.current !== session) return false;
+      const choices = { action, amount };
+      const transactionId = pendingOperation(localStorage, session.accountId, session.revision, "bank", choices);
+      const response = await fetch("/api/bank", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: session.accountId, revision: session.revision, transactionId, ...choices }) });
+      const result = await response.json();
+      if (saveSession.current !== session) return false;
+      if ([400, 403, 404, 422].includes(response.status)) clearPendingOperation(localStorage, session.accountId, "bank");
+      if (!response.ok || !result.snapshot) throw new Error(result.error || "The bank could not confirm this transfer.");
+      const completed = normalizeSnapshot(result.snapshot);
+      applySnapshot(completed); session.snapshot = completed; session.revision = result.revision; session.lastSaved = JSON.stringify(completed); session.error = "";
+      setSaveError(""); setSaveStatus("saved");
+      clearPendingOperation(localStorage, session.accountId, "bank");
+      return true;
+    } catch (error) {
+      if (saveSession.current !== session) return false;
+      setTurnError(error.message || "The bank could not confirm this transfer.");
+      setSaveStatus("saved");
+      return false;
+    } finally { if (saveSession.current === session) { activeTurn.current = false; setSending(false); } }
+  }
+
   async function buyMarketGood(good) {
     if (!character || !good || !Number.isFinite(good.price) || good.price < 0 || gameState.credits < good.price || activeTurn.current || !saveReady || saveSession.current?.error) return false;
     const access = getTradeAccess(gameState.location, character, gameState, good);
@@ -876,10 +904,12 @@ If this is the very first message of the session, open the scene in-character ba
       setSending(true); setTurnError(""); setSaveStatus("saving");
       try {
         await session.queue;
-        const choices = { action: "buy", goodId: good.id };
+        if (saveSession.current !== session) return false;
+        const choices = { action: "buy", goodId: good.id, merchantId: good.merchantId, quotedPrice: good.price };
         const transactionId = pendingOperation(localStorage, session.accountId, session.revision, "market", choices);
         const response = await fetch("/api/market", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: session.accountId, revision: session.revision, transactionId, ...choices }) });
         const result = await response.json();
+        if (saveSession.current !== session) return false;
         if ([400, 403, 404, 422].includes(response.status)) clearPendingOperation(localStorage, session.accountId, "market");
         if (!response.ok || !result.snapshot) throw new Error(result.error || "The transaction could not be completed.");
         const completed = normalizeSnapshot(result.snapshot);
@@ -888,10 +918,11 @@ If this is the very first message of the session, open the scene in-character ba
         clearPendingOperation(localStorage, session.accountId, "market");
         return true;
       } catch (error) {
+        if (saveSession.current !== session) return false;
         setTurnError(error.message || "The market terminal could not confirm the transaction.");
         setSaveStatus("saved");
         return false;
-      } finally { activeTurn.current = false; setSending(false); }
+      } finally { if (saveSession.current === session) { activeTurn.current = false; setSending(false); } }
     }
     return sendTurn(`I try to acquire one ${good.name} from the local market for the listed ${good.price} credits. Resolve availability, access, legality, my location, and any confinement. If the purchase succeeds, deduct the price exactly once and add one item to inventory. Otherwise do not charge me or grant the item.`, messages);
   }
@@ -906,10 +937,12 @@ If this is the very first message of the session, open the scene in-character ba
     setSending(true); setTurnError(""); setSaveStatus("saving");
     try {
       await session.queue;
+      if (saveSession.current !== session) return false;
       const choices = { action: "sell", itemId: item.id };
       const transactionId = pendingOperation(localStorage, session.accountId, session.revision, "market", choices);
       const response = await fetch("/api/market", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: session.accountId, revision: session.revision, transactionId, ...choices }) });
       const result = await response.json();
+      if (saveSession.current !== session) return false;
       if ([400, 403, 404, 422].includes(response.status)) clearPendingOperation(localStorage, session.accountId, "market");
       if (!response.ok || !result.snapshot) throw new Error(result.error || "The sale could not be completed.");
       const completed = normalizeSnapshot(result.snapshot);
@@ -918,10 +951,11 @@ If this is the very first message of the session, open the scene in-character ba
       clearPendingOperation(localStorage, session.accountId, "market");
       return true;
     } catch (error) {
+      if (saveSession.current !== session) return false;
       setTurnError(error.message || "The market terminal could not confirm the sale.");
       setSaveStatus("saved");
       return false;
-    } finally { activeTurn.current = false; setSending(false); }
+    } finally { if (saveSession.current === session) { activeTurn.current = false; setSending(false); } }
   }
 
   async function advanceCharacter(choices) {
@@ -1068,7 +1102,7 @@ If this is the very first message of the session, open the scene in-character ba
     creationStep, setCreationStep, draftChar, setDraftChar,
     input, setInput, sending, scrollRef, turnError, retryTurn, sendTurn, initializeDmir,
     saveReady, saveStatus, saveError, retrySave, loadSavedVersion, selectedAccountId: accountId, selectedAccount, selectAccount, legacyDmirAvailable, importLegacyCharacter,
-    handleSend, sendCommsMessage, travelToLocation, interactWithSyndicate, buyMarketGood, sellMarketGood, advanceCharacter, finishCreation, resetAll, resetForNewGame,
+    handleSend, sendCommsMessage, travelToLocation, interactWithSyndicate, buyMarketGood, sellMarketGood, transferBankCredits, advanceCharacter, finishCreation, resetAll, resetForNewGame,
     saveDirective, saveSettings,
     updateGameStateField, updateCharacterField,
     addListItem, removeListItem, updateListItem,

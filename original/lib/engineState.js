@@ -1,4 +1,5 @@
 import { sagaLevelForExperience } from "@/original/lib/sagaAdvancement";
+import { validateLeaseTerms, validatePriceComponents } from "@/original/lib/leaseTerms";
 
 // Only this whitelist may cross from generated prose into the campaign ledger.
 // Validate the whole response before committing any of its effects.
@@ -93,6 +94,14 @@ function validateDelta(value) {
       const sellerName = string(offer.sellerName, "tradeOfferAdd.sellerName", 160);
       if (!sellerName) invalid("tradeOfferAdd.sellerName");
       const entry = { sellerName, totalCredits: number(offer.totalCredits, "tradeOfferAdd.totalCredits", 1, MAX_MONEY, true) };
+      if (own(offer, "lease")) {
+        try { entry.lease = validateLeaseTerms(offer.lease, entry.totalCredits); }
+        catch { invalid("tradeOfferAdd.lease"); }
+      }
+      if (own(offer, "priceComponents")) {
+        try { entry.priceComponents = validatePriceComponents(offer.priceComponents, entry.totalCredits); }
+        catch { invalid("tradeOfferAdd.priceComponents"); }
+      }
       if (own(offer, "sellerSpecies")) {
         const species = string(offer.sellerSpecies, "tradeOfferAdd.sellerSpecies", 160);
         if (species) entry.sellerSpecies = species;
@@ -140,7 +149,7 @@ function validateDelta(value) {
   for (const field of ["conditionRemove", "objectiveComplete"]) {
     if (!own(value, field)) continue;
     if (!Array.isArray(value[field]) || value[field].length > 50) invalid(field);
-    result[field] = value[field].map((item) => string(item, field, 200)).filter(Boolean);
+    result[field] = value[field].map((item) => string(record(item) ? item[field === "objectiveComplete" ? "title" : "name"] : item, field, 200)).filter(Boolean);
   }
   return result;
 }

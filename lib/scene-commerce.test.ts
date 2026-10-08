@@ -29,4 +29,59 @@ describe('market conversation continuity', () => {
     const otherStall = 'A Rodian vendor two stalls over sells armor. The Rodian armor dealer waves. A Rodian customer walks past.';
     expect(alignMerchantIdentity(otherStall, merchant)).toBe(otherStall);
   });
+
+  it('clears the clothing merchant at the active guesthouse desk within the same market', () => {
+    const snapshot: any = { gameState: {
+      location: 'market', sceneMerchant: { name: 'clothing vendor', species: "Twi'lek", location: 'market' },
+      scene: { location: 'market', summary: 'You stand at the guesthouse desk. The human clerk quotes five hundred credits for seven nights.' },
+    }, messages: [
+      { role: 'assistant', provider: 'nvidia', content: "LOCATION\nmarket\nSCENE\nThe Twi'lek clothing vendor unfolds the suit.\nGM ADJUDICATION\nAn ordinary purchase." },
+    ] };
+    expect(sceneMerchant(snapshot)).toBeNull();
+    const lodging = "SCENE\nYou stand at the guesthouse desk. The human clerk serves you while the Rodian vendor walks past outside.\nGM ADJUDICATION\nA price question.";
+    expect(alignMerchantIdentity(lodging, snapshot.gameState.sceneMerchant)).toBe(lodging);
+  });
+
+  it('uses the latest authored clerk interaction when an outage template reset the scene', () => {
+    const snapshot: any = { gameState: {
+      location: 'market', sceneMerchant: { name: 'clothing vendor', species: "Twi'lek", location: 'market' },
+      scene: { location: 'market', summary: "The Twi'lek clothing vendor turns toward the rack." },
+    }, messages: [
+      { role: 'assistant', provider: 'nvidia', content: "LOCATION\nmarket\nThe Twi'lek clothing vendor unfolds the suit." },
+      { role: 'assistant', provider: 'nvidia', content: 'LOCATION\nmarket\nSCENE\nThe clerk behind the desk listens to your housing request.\nGM ADJUDICATION\nDialogue.' },
+      { role: 'assistant', provider: 'local-safe-fallback', fallbackReason: 'validation', content: "LOCATION\nmarket\nThe Twi'lek clothing vendor turns toward the rack." },
+    ] };
+    expect(sceneMerchant(snapshot)).toBeNull();
+  });
+
+  it('retains a seller during a lodging referral without treating suggestions as the active scene', () => {
+    const snapshot: any = { gameState: { location: 'market' }, messages: [
+      { role: 'assistant', provider: 'nvidia', content: "LOCATION\nmarket\nSCENE\nThe Twi'lek vendor points toward the guesthouse desk. “Ask the clerk there for a room,” she says.\nGM ADJUDICATION\nA public question.\nPLAYER OPTIONS\nA. Visit the housing authority office." },
+    ] };
+    expect(sceneMerchant(snapshot)?.species).toBe("Twi'lek");
+  });
+
+  it('starts a new merchant identity after an intervening conversation', () => {
+    const snapshot: any = { gameState: { location: 'market', sceneMerchant: { name: 'clothing vendor', species: "Twi'lek", location: 'market' } }, messages: [
+      { role: 'assistant', provider: 'nvidia', content: "LOCATION\nmarket\nThe Twi'lek clothing vendor unfolds the suit." },
+      { role: 'assistant', provider: 'nvidia', content: 'LOCATION\nmarket\nYou stand at the guesthouse desk. The clerk greets you.' },
+      { role: 'assistant', provider: 'nvidia', content: 'LOCATION\nmarket\nNara, the Rodian clothing vendor, shows you her stock.' },
+      { role: 'assistant', provider: 'nvidia', content: 'LOCATION\nmarket\nThe human vendor quotes a price.' },
+    ] };
+    const merchant = sceneMerchant(snapshot);
+    expect(merchant).toEqual({ name: 'Nara', species: 'Rodian', location: 'market' });
+    expect(alignMerchantIdentity('Nara, the Human clothing vendor, folds a tunic.', merchant)).toBe('Nara, the Rodian clothing vendor, folds a tunic.');
+    expect(alignMerchantIdentity("Pello, the Twi'lek clothing vendor, waves.", merchant)).toBe("Pello, the Twi'lek clothing vendor, waves.");
+  });
+
+  it('does not import merchant identity across a location or a declared new stall', () => {
+    const old = { role: 'assistant', provider: 'nvidia', content: "LOCATION\nmarket\nThe Twi'lek vendor unfolds the suit." };
+    expect(sceneMerchant({ gameState: { location: 'housing authority' }, messages: [old] } as any)).toBeNull();
+    const snapshot: any = { gameState: { location: 'market' }, messages: [old,
+      { role: 'assistant', provider: 'nvidia', content: 'LOCATION\nmarket\nYou approach another vendor. The Rodian vendor greets you.' },
+    ] };
+    expect(sceneMerchant(snapshot)?.species).toBe('Rodian');
+    const nextStall = 'You approach another vendor. The Rodian vendor greets you.';
+    expect(alignMerchantIdentity(nextStall, { name: 'clothing vendor', species: "Twi'lek", location: 'market' })).toBe(nextStall);
+  });
 });

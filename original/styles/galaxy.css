@@ -1,16 +1,20 @@
 
 .gc-display { font-family: 'Orbitron', sans-serif; }
 
-/* The application owns the viewport; individual pages own their scroll. This
-   keeps touch scrolling predictable on phones and prevents nested flex areas
-   from trapping the browser's scroll gesture. */
+/* Each workspace has one vertical scroller. The shell can also scroll when a
+   short viewport cannot fit the navigation and a usable workspace. */
 html, body, #root { min-height: 100%; }
 body { overflow: hidden; }
-.original-game { height: 100dvh; min-height: 100dvh; max-height: none; }
+.original-game { height: 100dvh; min-height: 0; max-height: 100dvh; }
+.original-game .gc-shell-content { flex: 1 0 100%; }
+.original-game .gc-shell-content > :not(.gc-page-row):not(main) { flex-shrink: 0; }
+.original-game .gc-player-workspace { min-height: 25rem; }
+.gc-play-view > :not([data-gc-play-transcript]) { flex-shrink: 0; }
+.original-game .gc-player-panel[data-player-tab]:not([data-player-tab="play"]) { overflow-y: auto; }
 .original-game main, .original-game [role="main"] { min-height: 0; }
 .gc-page-scroll, .gc-player-panel, .gc-comms-rail, [data-gc-play-transcript] {
   -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
+  overscroll-behavior-y: auto;
   scrollbar-gutter: stable;
 }
 .gc-page-scroll { touch-action: pan-y; }
@@ -21,7 +25,9 @@ body { overflow: hidden; }
   .original-game > .relative { min-height: 0; }
   .original-game > .relative > .gc-primary-nav { min-width: 0; }
   .gc-primary-nav { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; padding-bottom: 3px; touch-action: pan-x; }
-  .gc-player-rail { min-height: 0; max-height: 8.5rem; flex-direction: row; align-items: flex-start; overflow-y: hidden; touch-action: pan-x; }
+  .gc-player-rail { min-height: 0; max-height: 6rem; flex-direction: row; align-items: flex-start; overflow-y: hidden; touch-action: pan-x; }
+  .gc-player-rail > div > div { flex-direction: row; }
+  .original-game .gc-player-workspace { min-height: 34rem; }
   .gc-player-rail > div { flex: 0 0 auto; }
   .gc-player-rail-action { white-space: nowrap; }
   .gc-player-panel { min-height: 0; }
