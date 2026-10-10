@@ -19,6 +19,18 @@ function snapshot(): DatapadSnapshot {
     comms: [], settings: {} };
 }
 describe("legacy confirmed offer recovery and natural consent", () => {
+  it("recovers a written-out transport quote when a later clarification omitted the price", async () => {
+    const before = snapshot();
+    before.messages = [
+      { role: "assistant", turnId: "jax-quote-words", provider: "nvidia", content: `## LOCATION\n${location}\n## GAMEPLAY RESULT\nJax quotes a Taris run for sixty-two thousand credits, departing at 0300 tomorrow. She asks whether you want berth or bulkhead accommodation.\n## PLAYER OPTIONS\nA. Choose accommodation.` },
+      { role: "assistant", turnId: "jax-clarify", provider: "nvidia", content: `## LOCATION\n${location}\n## GAMEPLAY RESULT\nJax waits for your accommodation choice. No price is repeated.\n## PLAYER OPTIONS\nA. Choose bulkhead.` },
+    ];
+    provider.mockResolvedValue({ content: JSON.stringify({ offers: [{ sellerName: "Jax", totalCredits: 62000, items: [{ name: "Bulkhead accommodation", qty: 1, tag: "service" }] }] }) });
+    const next = await recoverConfirmedTradeOffer(before);
+    expect(currentTradeOffers(next.gameState)).toEqual([expect.objectContaining({ sellerName: "Jax", totalCredits: 62000, sourceTurnId: "jax-quote-words" })]);
+    expect(provider).toHaveBeenCalledTimes(1);
+  });
+
   it("recovers confirmed unpaid terms with provenance without paying, moving, or rewarding", async () => {
     const before = snapshot();
     provider.mockResolvedValue({ content: JSON.stringify({ offers: [offer] }) });
