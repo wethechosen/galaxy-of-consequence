@@ -123,9 +123,10 @@ export function parseImmersiveMessage(content = "") {
 
 export function immersiveTurnError(error = "") {
   const value = String(error).toLowerCase();
-  if (/campaign|revision|newer.*record/.test(value)) return "Your datapad detected a newer campaign record. Reload before continuing; no outcome was lost.";
+  if (/latest saved campaign is loaded/.test(value)) return String(error);
+  if (/campaign|revision|newer.*record/.test(value)) return "Another saved campaign record is newer than this page. Your action is preserved, but its outcome is not confirmed. Reload the saved record before retrying.";
   if (/dice|interrupt|turn identifier|already used/.test(value)) return "The last transmission ended before the outcome was confirmed. Retry the transmission; no duplicate outcome will be recorded.";
   if (/ledger|validat|state update|four alphabetical|response did not/.test(value)) return "The scene reached a rules checkpoint before it could be safely resolved. Your action was not completed and nothing changed. Retry the same declaration when the comlink clears.";
-  if (/nvidia|openai|http|fetch|provider|model|api|network|database/.test(value)) return "Static cuts across the comlink before the scene can answer. Your action was not completed and nothing was added or lost. Retry when the signal returns.";
-  return "The comlink cuts out before the scene is resolved. Your action was not completed and the campaign remains unchanged. Retry when ready.";
+  if (/nvidia|openai|http|fetch|provider|model|api|network|database/.test(value)) return "The connection ended before the outcome could be confirmed. Your action is preserved. Check the latest saved scene before retrying.";
+  return "The scene response was interrupted. Your action is preserved, but its outcome is not yet confirmed. Check the saved scene before retrying.";
 }

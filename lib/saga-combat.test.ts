@@ -91,6 +91,14 @@ describe("Saga combat authority", () => {
     expect(() => spendPlayerMove(substitute.combat, "I move a third time")).toThrow(/move action/i);
   });
 
+  it("applies equipped armor defenses and nonproficiency to the combatant", () => {
+    const armored = { ...character, equipArmor: "Armored spacer's flight suit" };
+    const untrained = beginCombat("I punch the guard", armored, { health: 18, conditionTrack: 0 }, { total: 19 }, sequence(5));
+    expect(untrained.combat.combatants.find((entry) => entry.side === "player")).toMatchObject({ reflex: 17, fortitude: 12, attackModifier: -1 });
+    const proficient = beginCombat("I punch the guard", { ...armored, featSelections: [{ id: "armor-proficiency-light", name: "Armor Proficiency (light)" }] }, { health: 18, conditionTrack: 0 }, { total: 19 }, sequence(5));
+    expect(proficient.combat.combatants.find((entry) => entry.side === "player")).toMatchObject({ reflex: 17, fortitude: 14, attackModifier: 1 });
+  });
+
   it("uses the move action to withdraw and closes only after the scene confirms escape", () => {
     const result = withdrawFromCombat(activeFixture(), "I disengage and head upward", { escapeConfirmed: true, escapeReason: "The passage reaches the upper market boundary." });
     expect(result.combat).toMatchObject({ status: "escaped", activeSide: "none", playerActions: { move: 0 } });

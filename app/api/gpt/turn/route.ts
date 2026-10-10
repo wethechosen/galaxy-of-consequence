@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { GptActionError, authenticateGptAction, readGptActionBody } from "@/lib/gpt-action";
 import { runGmTurn, GmTurnError } from "@/lib/gm";
+import { AdvancementRequiredError, advancementErrorBody } from "@/lib/advancement-gate";
 import { hostedGet, hostedPersistenceEnabled, hydrateHostedSave, saveHostedResult } from "@/lib/hosted-bridge";
 import { anchorNarrationLocation } from "@/lib/gpt-narration";
 import { replayHostedTurn } from "@/lib/hosted-turn-replay";
@@ -108,6 +109,7 @@ export async function POST(request: Request) {
       state: { location: state.location, health: state.health, conditionTrack: state.conditionTrack, credits: state.credits, inventory: state.inventory, objectives: state.objectives, combat: state.combat },
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
+    if (error instanceof AdvancementRequiredError) return NextResponse.json(advancementErrorBody(error), { status: error.status });
     console.error("[gpt/turn] failure", error);
     const status = error instanceof GptActionError || error instanceof GmTurnError ? error.status : 500;
     return NextResponse.json({ error: error instanceof Error ? error.message : "Custom GPT turn failed. No outcome was applied." }, { status });

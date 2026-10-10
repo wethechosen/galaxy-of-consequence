@@ -25,9 +25,9 @@ export default function ArchiveMapsPage() {
   const map = maps.find((entry) => entry.id === selected);
   const destinations = GALAXY_LOCATIONS.filter((place) => `${place.name} ${place.region} ${place.tags.join(" ")}`.toLowerCase().includes(query.toLowerCase()));
   return <Shell><TopBar /><main className="gc-page-scroll flex-1 min-h-0 overflow-y-auto p-6 max-w-6xl mx-auto w-full">
-    <p className="text-[10px] tracking-[0.25em] text-[var(--sig)]">ARCHIVE & NAVICOMPUTER // 155 ABY CAMPAIGN INDEX</p>
+    <p className="text-[10px] tracking-[0.25em] text-[var(--sig)]">ARCHIVE & NAVICOMPUTER // 150 ABY CAMPAIGN INDEX</p>
     <h1 className="gc-display text-3xl font-bold mt-2 text-[#f2f0ea]">GALACTIC ATLAS</h1>
-    <p className="text-sm text-[#a9adb8] mt-2 max-w-3xl">Historical charts are reference material, not automatic character knowledge or a valid hyperspace route. The destination registry below is the campaign's reviewed 155 ABY travel layer.</p>
+    <p className="text-sm text-[#a9adb8] mt-2 max-w-3xl">Historical charts are reference material, not automatic character knowledge or a valid hyperspace route. The destination registry below is the campaign's reviewed 150 ABY travel layer.</p>
     <GlassCard className="p-5 mt-6">
       <div className="flex flex-wrap items-end gap-3"><label className="text-[10px] tracking-widest text-[#8b93a3]">CHART<select className="gc-input block px-3 py-2 mt-1 min-w-[260px]" value={selected} onChange={(event) => setSelected(event.target.value)}>{maps.map((entry) => <option key={entry.id} value={entry.id}>{entry.title}{entry.available ? "" : " — not imported"}</option>)}</select></label>{user?.role === "admin" && map && !map.available && <label className="gc-btn cursor-pointer px-3 py-2 text-[10px]">{importing ? "IMPORTING…" : "IMPORT SELECTED CHART"}<input className="sr-only" type="file" accept={map.file.endsWith(".png") ? "image/png" : "image/jpeg"} disabled={importing} onChange={(event) => importChart(event.target.files?.[0])}/></label>}<span className="text-xs text-[#8b93a3]">{map?.category} · {map?.note}</span></div>
       {error && <p role="alert" className="text-[#ff8a8a] mt-4">{error}</p>}

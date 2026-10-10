@@ -25,8 +25,33 @@ export function sagaTrained(character: Sheet, skill: string) {
   return new RegExp(`trained(?:\\s+in)?\\s+${escaped}`, "i").test(String(character.skills || ""));
 }
 export function sagaConditionPenalty(step: unknown) { return [0, -1, -2, -5, -10, -10][Math.max(0, Math.min(5, Math.floor(Number(step) || 0)))]; }
+const ARMORED_FLIGHT_SUIT = /\barmou?red\b.*\bflight suit\b|\bflight suit\b.*\barmou?red\b/i;
+const ARMOR_PENALTY_SKILLS = new Set(["acrobatics", "climb", "endurance", "initiative", "jump", "stealth", "swim"]);
+export function sagaWearsArmoredFlightSuit(character: Sheet) {
+  return ARMORED_FLIGHT_SUIT.test(String(character.equipArmor || ""));
+}
+export function sagaLightArmorProficient(character: Sheet) {
+  return sagaHasFeat(character, "armor-proficiency-light", "Armor Proficiency (light)");
+}
+export function sagaEquipmentSkillModifier(character: Sheet, skill: string) {
+  return sagaWearsArmoredFlightSuit(character) && !sagaLightArmorProficient(character) && ARMOR_PENALTY_SKILLS.has(normalized(skill)) ? -2 : 0;
+}
+export function sagaEquipmentAttackModifier(character: Sheet) {
+  return sagaWearsArmoredFlightSuit(character) && !sagaLightArmorProficient(character) ? -2 : 0;
+}
+export function sagaArmorDefenseAdjustments(character: Sheet) {
+  if (!sagaWearsArmoredFlightSuit(character)) return { reflex: 0, fortitude: 0 };
+  const level = Math.max(1, Math.floor(Number(character.level) || 1));
+  const dexterity = sagaAbilityModifier(character, "dexterity");
+  return {
+    // Saga Core: armor replaces the heroic-level Reflex bonus; this suit has +5 armor and Max Dex +3.
+    reflex: (5 - level) + (Math.min(dexterity, 3) - dexterity),
+    fortitude: sagaLightArmorProficient(character) ? 2 : 0,
+  };
+}
 export function sagaSkillModifier(character: Sheet, state: Sheet, skill: string, ability: string) {
   const focused = sagaHasFeat(character, `skill-focus-${skill.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`, `Skill Focus (${skill})`);
   return Math.floor(Math.max(1, Number(character.level) || 1) / 2) + sagaAbilityModifier(character, ability)
-    + (sagaTrained(character, skill) ? 5 : 0) + (focused ? 5 : 0) + sagaConditionPenalty(state.conditionTrack);
+    + (sagaTrained(character, skill) ? 5 : 0) + (focused ? 5 : 0) + sagaConditionPenalty(state.conditionTrack)
+    + sagaEquipmentSkillModifier(character, skill);
 }

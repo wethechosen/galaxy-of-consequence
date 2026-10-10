@@ -100,7 +100,12 @@ export function planConversationTrade(action: string, state: Ledger, turnId: str
   if (/\b(?:steal|snatch|rob|without paying|refuse to pay|don't pay|do not pay|don't buy|do not buy|won't buy|will not buy)\b/i.test(action)) return null;
   const isSoldAcceptance = /^["“']?\s*sold[.!]?["”']?\s*$/i.test(text);
   const accepts = isSoldAcceptance || /\b(?:i(?:'ll| will)?\s+(?:buy|purchase|pay|take|grab|accept)|buy\s+(?:the|a|an|it|them)|purchase\s+(?:the|a|an|it|them)|i(?:'ll| will)\s+take\s+(?:it|them)|i(?:'ll| will)?\s+accept\s+(?:the\s+)?(?:offer|deal|bundle|outfit|[^.!?\n]{1,100}\boffer))/i.test(text);
-  if ((!accepts && !acceptedOfferId) || /\b(?:can|could|may|should)\s+i\s+(?:buy|purchase|take|grab|pay)\b/i.test(text)) return null;
+  // The server's semantic interpreter can confirm a polite acceptance of an
+  // exact saved offer. Question-shaped wording is only an outage-fallback
+  // ambiguity, not a veto over that interpretation. Consent guards still apply.
+  const purchaseQuestion = /\b(?:can|could|may|should)\s+i\s+(?:buy|purchase|take|grab|pay)\b/i.test(text);
+  const inquiryOnly = /^["“']?\s*(?:can|could|may|should)\s+i\s+(?:buy|purchase|take|grab|pay)\b[^.!?\n]*\?\s*["”']?\s*$/i.test(text);
+  if (inquiryOnly || (!acceptedOfferId && (!accepts || purchaseQuestion))) return null;
   const acceptanceClause = text.replace(/^["“']\s*/, "")
     .split(/[.!?\n"“”]|\b(?:and\s+)?(?:i\s+ask|i\s+say|ask\s+(?:if|whether))\b/i)[0];
   if (/\b(?:if|unless|provided|on condition|only when)\b|\b(?:after|once|when|until)\b[^.!?]{0,100}\b(?:agrees?|proves?|confirms?|verifies?|accepts?|discount|refund|lower)\b/i.test(acceptanceClause)) return null;

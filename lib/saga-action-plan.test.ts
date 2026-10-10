@@ -15,6 +15,12 @@ const reply = (plan: SagaSemanticAction) => vi.mocked(invokeNvidia).mockResolved
 beforeEach(() => vi.resetAllMocks());
 
 describe("semantic interpretation before Saga mechanics", () => {
+  it("applies a recorded Skill Focus choice to interpreted checks", () => {
+    const action = "I bypass the door lock";
+    const plan = validateSagaSemanticAction(semantic(action, { intent: "manipulate", checkNeeded: true, skill: "Mechanics" }), action);
+    const focused = { ...character, level: 2, trainedSkills: ["Mechanics"], featSelections: [{ id: "skill-focus-mechanics", featId: "skill-focus", skillId: "mechanics", name: "Skill Focus (Mechanics)" }] };
+    expect(buildSemanticSagaCheck(plan, focused, { ...state, conditionTrack: 1 })).toMatchObject({ label: "Mechanics", modifier: 11 });
+  });
   it.each(["I pull the jammed hatch by hand", "I lift the crate onto the cart", "I choke the attacker with my hands"])("does not spend a Force technique for mundane action: %s", action => {
     expect(declaredForcePower(action, semantic(action, { intent: "physical", checkNeeded: true, skill: "Climb" }))).toBeNull();
     expect(declaredForcePower(action, null)).toBeNull();
@@ -45,6 +51,26 @@ describe("semantic interpretation before Saga mechanics", () => {
       expect(result.semantic?.intent).toBe(intent);
       expect(buildSemanticSagaCheck(result.semantic!, character, state)).toBeNull();
     }
+  });
+
+  it("treats a terse service answer to the current NPC as dialogue instead of immediate travel", async () => {
+    const action = "Discreet travel to Taris";
+    const result = await interpretSagaAction(action, character, {
+      ...state,
+      scene: { summary: "Jax watches from behind the workbench and asks, ‘What do you need?’" },
+      recentInteraction: [{ role: "assistant", content: "Jax says: What do you need?" }],
+    });
+    expect(result.semantic).toMatchObject({ intent: "dialogue", checkNeeded: false, skill: null, travelTarget: null });
+    expect(result.semantic?.canonicalAction).toMatch(/current contact/i);
+    expect(invokeNvidia).not.toHaveBeenCalled();
+  });
+
+  it("does not require a bureaucracy roll to truthfully complete an available application", async () => {
+    const action = "I complete the government identity application using my legitimate personal information and provide the required biometrics.";
+    reply(semantic(action, { intent: "manipulate", checkNeeded: true, skill: "Knowledge (bureaucracy)", rationale: "The form has procedural fields." }));
+    const result = await interpretSagaAction(action, character, state);
+    expect(result.semantic).toMatchObject({ checkNeeded: false, skill: null });
+    expect(buildSemanticSagaCheck(result.semantic!, character, state)).toBeNull();
   });
 
   it("understands a sale acceptance without a coded buy phrase and retains the real scene context", async () => {

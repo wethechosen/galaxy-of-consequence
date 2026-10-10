@@ -55,7 +55,7 @@ export const FEAT_CATALOG = Object.freeze([
   feat("mobility", "Mobility", { requires: ["dodge"], minimumAbilities: { dexterity: 13 } }), feat("point-blank-shot", "Point Blank Shot"),
   feat("precise-shot", "Precise Shot", { requires: ["point-blank-shot"] }), feat("quick-draw", "Quick Draw", { minimumBab: 1 }), feat("rapid-shot", "Rapid Shot", { minimumAbilities: { strength: 13 }, minimumBab: 1, requiresAnyProficiency: true }),
   feat("rapid-strike", "Rapid Strike", { minimumAbilities: { dexterity: 13 }, minimumBab: 1, requiresAnyProficiency: true }), feat("running-attack", "Running Attack", { minimumAbilities: { dexterity: 13 } }), feat("shake-it-off", "Shake It Off", { minimumAbilities: { constitution: 13 }, trainedSkill: "endurance" }),
-  feat("skill-focus", "Skill Focus", { supported: false, unavailableReason: "Select and record a specific trained skill before applying Skill Focus." }), feat("skill-training", "Skill Training", { supported: false, unavailableReason: "Select and record a specific untrained class skill before applying Skill Training." }), feat("sniper", "Sniper", { requires: ["point-blank-shot", "precise-shot"], minimumBab: 4 }),
+  feat("skill-focus", "Skill Focus", { repeatable: true, skillChoice: "trained", description: "+5 competence bonus with one trained skill. Each selection must affect a different skill." }), feat("skill-training", "Skill Training", { repeatable: true, skillChoice: "untrained-class", description: "Become trained in one untrained class skill. Each selection must affect a different skill." }), feat("sniper", "Sniper", { requires: ["point-blank-shot", "precise-shot"], minimumBab: 4 }),
   feat("strong-in-force", "Strong in the Force"),
   feat("toughness", "Toughness"), feat("weapon-finesse", "Weapon Finesse", { minimumBab: 1 }), feat("weapon-focus-lightsabers", "Weapon Focus (lightsabers)", { requires: ["weapon-proficiency-lightsabers"] }),
   feat("weapon-focus-pistols", "Weapon Focus (pistols)", { requires: ["weapon-proficiency-pistols"] }), feat("weapon-focus-rifles", "Weapon Focus (rifles)", { requires: ["weapon-proficiency-rifles"] }), feat("weapon-focus-simple", "Weapon Focus (simple weapons)", { requires: ["weapon-proficiency-simple"] }),
@@ -95,7 +95,7 @@ export const FORCE_TALENT_TREES = Object.freeze([
 // remain outside this supported catalog; they must not grant implied benefits.
 export const SAGA_ADVANCEMENT_LIMITATIONS = Object.freeze([
   "The catalog covers a supported subset of core heroic-class options; prestige classes and supplement options are not implemented.",
-  "Skill Focus, Skill Training, and weapon-group talents remain unavailable until their player-selected skill or weapon metadata can be committed correctly.",
+  "Weapon-group talents remain unavailable until their player-selected weapon metadata can be committed correctly.",
   "Force Training offers the executable core power suite; additional core and supplement powers need their corresponding mechanics before selection.",
   "Conditional combat talent effects require adjudication when used; learning a talent does not activate it automatically.",
 ]);
@@ -127,6 +127,7 @@ const knownNumber = value => value != null && value !== "" && Number.isFinite(Nu
 
 function ownedFeatIds(character = {}) {
   const result = idSet(character.featSelections);
+  for (const entry of selectionRecords(character.featSelections)) if (entry.featId) result.add(entry.featId);
   for (const name of cleanList(character.feats)) {
     const entry = FEAT_CATALOG.find(item => item.name.toLowerCase() === name.toLowerCase());
     if (entry) result.add(entry.id);
@@ -152,6 +153,48 @@ export function availableClassSkills(character = {}, classId) {
   const ids = new Set([...classIds].flatMap(id => CLASS_SKILL_IDS[id] || []));
   if (ownedFeatIds(character).has("force-sensitivity") || classId === "jedi") ids.add("use-the-force");
   return SAGA_SKILL_OPTIONS.filter(item => ids.has(item.id));
+}
+
+// Verified against the supplied Core Rulebook, printed p. 88 / PDF p. 96.
+// These are choices attached to individual feat slots, never free skill ranks.
+export function availableFeatSkills(character = {}, classId, featId) {
+  const trained = trainedSkillIds(character);
+  const sensitive = ownedFeatIds(character).has("force-sensitivity");
+  if (featId === "skill-training") return availableClassSkills(character, classId).filter(item => !trained.has(item.id) && (item.id !== "use-the-force" || sensitive));
+  if (featId !== "skill-focus") return [];
+  const normalize = value => String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  return SAGA_SKILL_OPTIONS.filter(item => trained.has(item.id) && (item.id !== "use-the-force" || sensitive)
+    && !selectionRecords(character.featSelections).some(entry => entry.id === `skill-focus-${item.id}` || entry.featId === "skill-focus" && entry.skillId === item.id || normalize(entry.name) === normalize(`Skill Focus (${item.name})`))
+    && !cleanList(character.feats).some(name => normalize(name) === normalize(`Skill Focus (${item.name})`)));
+}
+
+const FEAT_SLOTS = ["startingFeatId", "classBonusFeatId", "generalFeatId", "humanBonusFeatId"];
+const featSkillField = slot => slot.replace(/Id$/, "SkillId");
+
+function validateFeatSkillMetadata(choices, slots) {
+  for (const slot of FEAT_SLOTS) {
+    const skillId = choices[featSkillField(slot)];
+    if (skillId == null || skillId === "") continue;
+    if (typeof skillId !== "string" || !slots.includes(slot) || !["skill-training", "skill-focus"].includes(choices[slot])) throw advancementError("A selected skill must belong to an earned Skill Training or Skill Focus feat slot.");
+  }
+}
+
+function featSelectionForSkill(entry, character, classId, skillId) {
+  if (!entry?.skillChoice) return entry;
+  const skill = availableFeatSkills(character, classId, entry.id).find(item => item.id === skillId);
+  if (!skill) throw advancementError(entry.id === "skill-training"
+    ? "Choose one untrained class skill for Skill Training; Use the Force also requires Force Sensitivity."
+    : "Choose one trained skill without an existing Skill Focus bonus.");
+  return { ...entry, featId: entry.id, id: `${entry.id}-${skill.id}`, skillId: skill.id, name: `${entry.name} (${skill.name})` };
+}
+
+function appendSelectedFeat(character, entry, metadata) {
+  if (!entry) return;
+  character.featSelections.push({ id: entry.id, name: entry.name, ...(entry.featId ? { featId: entry.featId, skillId: entry.skillId } : {}), ...metadata });
+  if (entry.featId === "skill-training") {
+    const name = SAGA_SKILL_OPTIONS.find(item => item.id === entry.skillId).name;
+    character.trainedSkills = [...new Set([...cleanList(character.trainedSkills), name])];
+  }
 }
 
 export function sagaLevelForExperience(experience) {
@@ -197,6 +240,21 @@ export function progressionStatus(character = {}) {
   const buildConsistent = validCharacterLevel && !invalidClasses && (assignedClassLevels === level || assignedClassLevels === 0 && level === 1);
   const abilityScoresEstablished = Object.values(parseAbilityScores(character)).every(value => value != null);
   return { level, experience, earnedLevel, assignedClassLevels, buildConsistent, abilityScoresEstablished, foundationRequired: assignedClassLevels === 0, levelsAvailable: Math.max(0, earnedLevel - level), nextLevelXp: nextLevelExperience(level), advancementAvailable: earnedLevel > level };
+}
+
+// Pausing play for pending advancement is this campaign's table policy, not
+// an extra Saga prerequisite. Reads, sheet choices, and table talk stay open.
+export function advancementGate(character = {}) {
+  const status = progressionStatus(character);
+  return {
+    ...status,
+    blocked: status.advancementAvailable,
+    code: status.advancementAvailable ? "advancement_required" : null,
+    dossierPath: "/character#advancement",
+    message: status.advancementAvailable
+      ? `You have earned level ${status.level + 1} with ${status.experience.toLocaleString()} XP. ${status.foundationRequired ? "First establish your missing level-1 build, then complete advancement" : "Complete your advancement choices"} in the Dossier before the next gameplay action. Your scene, money and possessions are unchanged.`
+      : "Your recorded advancement is complete.",
+  };
 }
 
 export function foundationRequirements(character = {}, classId, choices = {}) {
@@ -271,7 +329,7 @@ export function availableFeats(character = {}, classId, bonusOnly = false) {
   const owned = ownedFeatIds(character);
   const multiclass = Object.keys(character.classLevels || {}).filter(id => Number(character.classLevels[id]) > 0).length > 1;
   const allowed = bonusOnly ? new Set([...(HEROIC_CLASSES[classId]?.bonusFeats || []), ...(multiclass ? HEROIC_CLASSES[classId]?.startingFeats || [] : [])]) : null;
-  return FEAT_CATALOG.filter(item => (!owned.has(item.id) || item.repeatable) && (!allowed || allowed.has(item.id)) && hasPrerequisites(item, character, new Set(), owned));
+  return FEAT_CATALOG.filter(item => (!owned.has(item.id) || item.repeatable) && (!allowed || allowed.has(item.id)) && hasPrerequisites(item, character, new Set(), owned) && (!item.skillChoice || availableFeatSkills(character, classId, item.id).length > 0));
 }
 
 export function availableStartingFeats(character = {}, classId) {
@@ -307,7 +365,7 @@ function baseAttackBonusForClasses(classLevels) {
   return Object.entries(classLevels).reduce((sum, [id, level]) => sum + classLevelBab(id, Number(level)), 0);
 }
 
-export function advancementChoiceContext(character = {}, classId, choices = {}) {
+export function advancementChoiceContext(character = {}, classId, choices = {}, beforeFeatSlot = null) {
   const foundation = progressionStatus(character).foundationRequired;
   const classLevels = foundation ? { [classId]: 1 } : { ...(character.classLevels || {}), [classId]: Number(character.classLevels?.[classId] || 0) + 1 };
   const scores = parseAbilityScores(character);
@@ -324,11 +382,24 @@ export function advancementChoiceContext(character = {}, classId, choices = {}) 
     const selections = choices.trainedSkillIds.map(id => SAGA_SKILL_OPTIONS.find(item => item.id === id)?.name || id);
     result.trainedSkills = foundation ? selections : [...new Set([...cleanList(character.trainedSkills), ...selections])];
   }
-  for (const id of [choices.startingFeatId, choices.classBonusFeatId, choices.generalFeatId, choices.humanBonusFeatId]) {
+  const slots = foundation ? ["generalFeatId", "humanBonusFeatId"] : ["startingFeatId", "classBonusFeatId", "generalFeatId"];
+  for (const slot of slots) {
+    if (slot === beforeFeatSlot) break;
+    const id = choices[slot];
     const entry = FEAT_CATALOG.find(item => item.id === id);
-    if (entry && hasPrerequisites(entry, result)) result.featSelections.push({ id, name: entry.name });
+    if (entry && hasPrerequisites(entry, result)) {
+      // Incomplete draft choices must not grant a skill or satisfy later prerequisites.
+      if (entry.skillChoice && !availableFeatSkills(result, classId, id).some(skill => skill.id === choices[featSkillField(slot)])) continue;
+      appendSelectedFeat(result, featSelectionForSkill(entry, result, classId, choices[featSkillField(slot)]), { source: "draft" });
+    }
   }
   return result;
+}
+
+// Build each slot's options from earlier choices only: a feat cannot satisfy
+// its own prerequisite or remove its selected skill from its own menu.
+export function advancementFeatChoiceContext(character = {}, classId, choices = {}, slot) {
+  return advancementChoiceContext(character, classId, choices, slot);
 }
 
 function languageIdsForCharacter(character) {
@@ -441,6 +512,7 @@ export function applySagaAdvancement(snapshot, choices = {}, roller = sides => 1
   const classId = String(choices.classId || "").toLowerCase();
   const rules = advancementRequirements(current.character, classId);
   if (!rules.validClass) throw advancementError("Choose a valid heroic class for this level.");
+  validateFeatSkillMetadata(choices, ["startingFeatId", "classBonusFeatId", "generalFeatId"]);
   const abilityIncreases = Array.isArray(choices.abilityIncreases) ? choices.abilityIncreases.map(String) : [];
   if (abilityIncreases.length !== rules.abilityIncreasesRequired || new Set(abilityIncreases).size !== abilityIncreases.length || abilityIncreases.some(key => !ABILITIES.includes(key))) {
     throw advancementError(rules.abilityIncreasesRequired ? "Choose two different ability scores to increase." : "This level does not grant an ability-score increase.");
@@ -462,20 +534,22 @@ export function applySagaAdvancement(snapshot, choices = {}, roller = sides => 1
   if (newSkillIds.length !== intelligenceGain || new Set(newSkillIds).size !== newSkillIds.length || newSkillIds.some(id => ownedSkills.has(id) || !classSkills.has(id))) throw advancementError(`Choose ${intelligenceGain} new untrained class skill${intelligenceGain === 1 ? "" : "s"} from the Intelligence increase.`);
   character.trainedSkills = [...cleanList(character.trainedSkills), ...newSkillIds.map(id => SAGA_SKILL_OPTIONS.find(item => item.id === id).name)];
 
-  const appendFeat = (entry, source) => { if (entry) featSelections.push({ id: entry.id, name: entry.name, source, classId, level: rules.targetLevel }); };
+  const appendFeat = (entry, source) => appendSelectedFeat(character, entry, { source, classId, level: rules.targetLevel });
   const eligibleStarting = rules.nextClassLevel === 1 ? availableStartingFeats(character, classId) : [];
   const startingRequired = rules.nextClassLevel === 1 && eligibleStarting.length > 0;
   const startingFeat = startingRequired ? eligibleStarting.find(item => item.id === choices.startingFeatId) : null;
   if (startingRequired && !startingFeat) throw advancementError("Choose one eligible starting feat from the new class.");
   if (!startingRequired && choices.startingFeatId) throw advancementError("This level does not grant another starting feat.");
   appendFeat(startingFeat, "multiclass-starting-feat");
-  const classFeat = rules.classBonusFeatRequired ? findFeat(character, classId, String(choices.classBonusFeatId || ""), true) : null;
+  let classFeat = rules.classBonusFeatRequired ? findFeat(character, classId, String(choices.classBonusFeatId || ""), true) : null;
   if (rules.classBonusFeatRequired && !classFeat) throw advancementError("Choose an eligible bonus feat for the selected class.");
   if (!rules.classBonusFeatRequired && choices.classBonusFeatId) throw advancementError("This class level does not grant a bonus feat.");
+  classFeat = featSelectionForSkill(classFeat, character, classId, choices.classBonusFeatSkillId);
   appendFeat(classFeat, "class-bonus-feat");
-  const generalFeat = rules.generalFeatRequired ? findFeat(character, classId, String(choices.generalFeatId || ""), false) : null;
+  let generalFeat = rules.generalFeatRequired ? findFeat(character, classId, String(choices.generalFeatId || ""), false) : null;
   if (rules.generalFeatRequired && !generalFeat) throw advancementError("Choose an eligible character-level feat.");
   if (!rules.generalFeatRequired && choices.generalFeatId) throw advancementError("This character level does not grant a general feat.");
+  generalFeat = featSelectionForSkill(generalFeat, character, classId, choices.generalFeatSkillId);
   appendFeat(generalFeat, "general-feat");
   const talentChoice = rules.talentRequired ? findTalent(character, classId, String(choices.talentId || ""), current.gameState) : null;
   if (rules.talentRequired && !talentChoice) throw advancementError("Choose an eligible talent from the selected class's talent trees.");
@@ -523,7 +597,7 @@ export function applySagaAdvancement(snapshot, choices = {}, roller = sides => 1
   Object.assign(character, derivedDefenseChange(current.character, character));
   const wealthCreditGain = ownedTalentIds(character).has("wealth") ? 5_000 * Number(classLevels.noble || 0) : 0;
   if (wealthCreditGain) gameState.credits = Math.max(0, Number(gameState.credits) || 0) + wealthCreditGain;
-  const record = { advancementId, fromLevel: status.level, toLevel: rules.targetLevel, classId, classLevel: rules.nextClassLevel, talent: talentChoice || null, classBonusFeat: classFeat || null, generalFeat: generalFeat || null, startingFeat: startingFeat || null, abilityIncreases, trainedSkillIds: newSkillIds, languageIds: choices.languageIds || [], forcePowerSelections, wealthCreditGain, hitDie: `1d${HEROIC_CLASSES[classId].hitDie}`, hitDieRoll, constitutionModifier: abilityModifier(scores.constitution), newLevelHitPoints, constitutionHitPoints, toughnessHitPoints, hitPointGain, committedAt: now };
+  const record = { advancementId, fromLevel: status.level, toLevel: rules.targetLevel, classId, classLevel: rules.nextClassLevel, talent: talentChoice || null, classBonusFeat: classFeat || null, generalFeat: generalFeat || null, startingFeat: startingFeat || null, abilityIncreases, trainedSkillIds: newSkillIds, featSkillChoices: Object.fromEntries(FEAT_SLOTS.filter(slot => choices[featSkillField(slot)]).map(slot => [slot, choices[featSkillField(slot)]])), languageIds: choices.languageIds || [], forcePowerSelections, wealthCreditGain, hitDie: `1d${HEROIC_CLASSES[classId].hitDie}`, hitDieRoll, constitutionModifier: abilityModifier(scores.constitution), newLevelHitPoints, constitutionHitPoints, toughnessHitPoints, hitPointGain, committedAt: now };
   gameState.advancementHistory = [...gameState.advancementHistory, record].slice(-100);
   gameState.levelUpAvailable = progressionStatus(character).advancementAvailable;
   gameState.flags = [...(Array.isArray(gameState.flags) ? gameState.flags : []), { note: `Advanced to level ${rules.targetLevel}: ${HEROIC_CLASSES[classId].name} ${rules.nextClassLevel}; gained ${hitPointGain} hit points.`, ts: Date.parse(now) || Date.now() }];
@@ -554,6 +628,7 @@ export function applySagaFoundation(snapshot, choices = {}, now = new Date().toI
   const classId = String(choices.classId || "").toLowerCase();
   const heroic = HEROIC_CLASSES[classId];
   if (!heroic) throw advancementError("Choose a valid starting heroic class.");
+  validateFeatSkillMetadata(choices, ["generalFeatId", "humanBonusFeatId"]);
   const human = /^human$/i.test(String(current.character.species || "").trim());
   if (!human) throw advancementError("This foundation workflow currently verifies Human species traits. Reconstruct other species' starting traits before committing a complete build.");
   const character = { ...current.character, level: 1, classLevels: { [classId]: 1 }, baseAttackBonus: classLevelBab(classId, 1), abilityScores: scores, featSelections: [], talentSelections: [] };
@@ -572,12 +647,14 @@ export function applySagaFoundation(snapshot, choices = {}, now = new Date().toI
     // Noble Linguist and Scout Shake It Off are explicitly conditional.
     if (entry && hasPrerequisites(entry, character)) featSelections.push({ id, name: entry.name, source: "starting-class", classId, level: 1 });
   }
-  const generalFeat = findFeat(character, classId, String(choices.generalFeatId || ""), false);
+  let generalFeat = findFeat(character, classId, String(choices.generalFeatId || ""), false);
   if (!generalFeat) throw advancementError("Choose an eligible 1st-level feat.");
-  featSelections.push({ id: generalFeat.id, name: generalFeat.name, source: "level-1-feat", classId, level: 1 });
-  const humanBonusFeat = findFeat(character, classId, String(choices.humanBonusFeatId || ""), false);
+  generalFeat = featSelectionForSkill(generalFeat, character, classId, choices.generalFeatSkillId);
+  appendSelectedFeat(character, generalFeat, { source: "level-1-feat", classId, level: 1 });
+  let humanBonusFeat = findFeat(character, classId, String(choices.humanBonusFeatId || ""), false);
   if (!humanBonusFeat) throw advancementError("Choose an eligible Human bonus feat; nonrepeatable feats cannot be chosen twice.");
-  featSelections.push({ id: humanBonusFeat.id, name: humanBonusFeat.name, source: "human-bonus-feat", classId, level: 1 });
+  humanBonusFeat = featSelectionForSkill(humanBonusFeat, character, classId, choices.humanBonusFeatSkillId);
+  appendSelectedFeat(character, humanBonusFeat, { source: "human-bonus-feat", classId, level: 1 });
   if (selectedSkillIds.includes("use-the-force") && !ownedFeatIds(character).has("force-sensitivity")) throw advancementError("Training Use the Force requires Force Sensitivity.");
   const talentChoice = findTalent(character, classId, String(choices.talentId || ""), current.gameState);
   if (!talentChoice) throw advancementError("Choose an eligible talent from the starting class or available Force talent trees.");
@@ -609,7 +686,7 @@ export function applySagaFoundation(snapshot, choices = {}, now = new Date().toI
   if (gameState.destinyEnabled === true && gameState.destinyPoints == null) gameState.destinyPoints = 1;
   const wealthCreditGain = talentChoice.id === "wealth" ? 5_000 : 0;
   if (wealthCreditGain) gameState.credits = Math.max(0, Number(gameState.credits) || 0) + wealthCreditGain;
-  const record = { advancementId: foundationId, kind: "level-1-foundation", fromLevel: 1, toLevel: 1, classId, classLevel: 1, talent: talentChoice, generalFeat, humanBonusFeat, trainedSkillIds: selectedSkillIds, languageIds: choices.languageIds || [], forcePowerSelections, wealthCreditGain, startingFeats: featSelections.filter(item => item.source === "starting-class"), maxHitPoints, committedAt: now };
+  const record = { advancementId: foundationId, kind: "level-1-foundation", fromLevel: 1, toLevel: 1, classId, classLevel: 1, talent: talentChoice, generalFeat, humanBonusFeat, trainedSkillIds: selectedSkillIds, featSkillChoices: Object.fromEntries(FEAT_SLOTS.filter(slot => choices[featSkillField(slot)]).map(slot => [slot, choices[featSkillField(slot)]])), languageIds: choices.languageIds || [], forcePowerSelections, wealthCreditGain, startingFeats: featSelections.filter(item => item.source === "starting-class"), maxHitPoints, committedAt: now };
   gameState.advancementHistory = [...gameState.advancementHistory, record].slice(-100);
   gameState.levelUpAvailable = progressionStatus(character).advancementAvailable;
   gameState.flags = [...(Array.isArray(gameState.flags) ? gameState.flags : []), { note: `Level 1 Saga build established: ${heroic.name}; ${talentChoice.name}.`, ts: Date.parse(now) || Date.now() }];

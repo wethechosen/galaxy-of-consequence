@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { accountStore, type Account } from "./accounts";
 import { getMarket, getSellQuote, getTradeAccess } from "@/original/lib/marketCatalog";
+import { assertAdvancementReady } from "./advancement-gate";
 
 export type DatapadSnapshot = {
   character: Record<string, unknown> | null;
@@ -96,7 +97,11 @@ function saveSnapshot(actor: Account, requested: string | null | undefined, expe
     // or game-state facts. This prevents a generic autosave from self-awarding
     // credits, inventory, XP, levels, or dossier entries.
     if (established.character !== null) {
-      if (!validatedPublicTrade(established, validated)) {
+      if (validatedPublicTrade(established, validated)) {
+        // Older clients submit catalog trades through autosave. They must
+        // observe the same pending-advancement rule as the market endpoint.
+        assertAdvancementReady(established.character);
+      } else {
         validated = { ...validated, character: established.character, gameState: established.gameState };
       }
     }

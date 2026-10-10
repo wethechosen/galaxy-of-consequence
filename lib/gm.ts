@@ -9,6 +9,7 @@ import { permitsLocationChange, positiveActionText } from "./action-intent";
 import { sceneDirections, genericDirections } from "@/original/lib/sceneDirections";
 import { applyCharacterDelta, applyEngineDelta, applyExperienceAward, parseEngineResponse } from "@/original/lib/engineState";
 import { progressionStatus } from "@/original/lib/sagaAdvancement";
+import { assertAdvancementReady } from "./advancement-gate";
 import { ensureCampaignScaffold } from "@/original/lib/campaignState";
 import { appendDmirCreatorCanon, isDmirPrimaryCampaign } from "./dmir-authority";
 import { activeCombat, beginCombat, endPlayerTurn, isAttackDeclaration, isCombatMovementDeclaration, isCombatWithdrawDeclaration, isEndTurnDeclaration, resolveCombatAction, type CombatResolution } from "./saga-combat";
@@ -19,6 +20,7 @@ import { buildForcePowerPlan, resolveForcePower, type ForcePowerResolution } fro
 import { recoverConfirmedTradeOffer } from "./trade-offer-recovery";
 import { quotedCreditAmounts } from "./quoted-credits";
 import { normalizeModelLedgerJson } from "./model-ledger-json";
+import { itemStatBlock } from "@/original/lib/itemStats";
 
 type TurnInput = { accountId?: string; revision: number; action: string; turnId: string; openScene?: boolean; statePolicy?: "committed-trade" | null };
 type Message = { role: "user" | "assistant" | "roll"; content: string; [key: string]: unknown };
@@ -31,7 +33,7 @@ function deterministicTurnRoller(turnId: string, lane: string) {
   };
 }
 
-export const GM_SYSTEM = `You are the Game Master of Galaxy of Consequence, a persistent player-driven Star Wars Saga Edition campaign in 155 ABY. The player controls only their character. You control NPCs, scenes, factions, consequences, and continuity.
+export const GM_SYSTEM = `You are the Game Master of Galaxy of Consequence, a persistent player-driven Star Wars Saga Edition campaign in 150 ABY. The player controls only their character. You control NPCs, scenes, factions, consequences, and continuity.
 
 Act as the single director over four private specialist roles before writing the final response:
 - SAGA REFEREE: interprets only Saga Edition mechanics and accepts the authoritative server roll. It never invents a roll, modifier, defense, damage result, feat, talent, or Force power.
@@ -44,6 +46,10 @@ Reconcile these specialists privately. They are advisers, not independent narrat
 Combat is server-owned. Initiative must be established before attacks resolve. An attack spends the player's standard action; declared movement spends the move action; and an explicit end-turn declaration lets the server resolve the opposition and begin the next round. Never invent extra attacks, movement, damage, reactions, action recovery, defeat, or rewards. Reflect the authoritative combat record and clearly state the player's remaining actions without choosing one for them.
 
 The campaign is a sandbox tabletop RPG. A player may declare any intent. Translate it into the nearest legal Saga Edition action, skill, attack, movement, or sequence of steps and adjudicate it; never reject the declaration merely because the final goal is distant, dangerous, hidden, or beyond one turn. Constraints determine the check, cost, opposition, distance, and consequences—not whether the player is allowed to try. Nothing is granted automatically, but an attainable route, intermediate result, or concrete failure-forward beat must remain playable.
+
+CONTINUITY STANDARD: Canon, Expanded Universe, Legends, and this campaign's homebrew history form one playable 150 ABY continuity. The Fel dynasty, Skywalker legacy, Darth Krayt's aftermath, the IGFED, the XIII, and their surviving institutions may all coexist when chronology permits. Preserve established campaign facts first; reconcile apparent source conflicts as disputed records, regional accounts, propaganda, incomplete archives, divergent traditions, or later historical development. Never break immersion to lecture the player about continuity labels.
+
+SOURCE AUTHORITY: Star Wars Saga Edition and reviewed Saga supplements supply the mechanical chassis. Earlier d20, WEG, FFG, and other references may supply lore, worlds, species, factions, equipment concepts, encounter ideas, and conversion candidates. Their game mechanisms are useful design evidence but never silently replace Saga math. Convert a non-Saga mechanism into an explicit reviewed Saga stat or rule before it can affect a roll, defense, damage value, feat, talent, power, or advancement.
 
 Use only the supplied authoritative server roll for uncertain actions. Never reroll, change its modifier, target, stakes, or outcome. Do not invent an exact Saga rule when the retrieved sources do not support it. Keep hidden NPC statistics and secret DCs hidden. D'mir knows and accepts that he is Force-sensitive and recognizes the dark-side pull he has experienced. This awareness does not grant trained Use the Force, a Force power, or conscious command of a technique before it is earned.
 
@@ -161,8 +167,13 @@ function publicContext(snapshot: DatapadSnapshot) {
     location: state.location, health: state.health, conditionTrack: state.conditionTrack, conditions: state.conditions,
     forcePoints: state.forcePoints, destinyPoints: state.destinyPoints, darkSideScore: state.darkSideScore,
     campaignTimeMinutes: state.campaignTimeMinutes,
-    credits: state.credits, creditsCriminal: state.creditsCriminal, notoriety: state.notoriety,
+    credits: state.credits, bankCredits: state.bankCredits, creditsCriminal: state.creditsCriminal, notoriety: state.notoriety,
+    properties: state.properties, ships: state.ships, investments: state.investments,
+    bankTransactions: Array.isArray(state.bankTransactions) ? state.bankTransactions.slice(-8) : [],
+    tradeReceipts: Array.isArray(state.tradeReceipts) ? state.tradeReceipts.slice(-8) : [],
+    marketTransactions: Array.isArray(state.marketTransactions) ? state.marketTransactions.slice(-8) : [],
     forceAlignment: state.forceAlignment, factionRep: state.factionRep, inventory: state.inventory,
+    itemStatBlocks: [...(Array.isArray(state.inventory) ? state.inventory : []), ...(Array.isArray(state.properties) ? state.properties : []).map(item => ({ ...item, ownership: "property" })), ...(Array.isArray(state.ships) ? state.ships : []).map(item => ({ ...item, ownership: "vehicle" }))].slice(0, 30).map(item => ({ id: item.id, ...itemStatBlock(item, snapshot.character || {}, state) })),
     contacts: state.contacts, decisions: state.decisions, relationships: state.relationships, objectives: state.objectives,
     discoveries: state.discoveries, milestones: state.milestones, legacyAssets: state.legacyAssets,
     storyDirectives: state.storyDirectives,
@@ -550,19 +561,20 @@ export function assertNarrativeLedgerConsistency(narration: string, delta: Recor
   // "You receive directions" is information, not money. A completed retail
   // transaction can debit credits; it must not be validated as a credit gain.
   // Suggestions are future attempts, never claims about finalized state.
-  const resolved = narration.split(/^(?:#{1,6}\s*)?PLAYER OPTIONS\s*$/im)[0];
+  const resolved = sectionBody(narration, "GAMEPLAY RESULT") || narration.split(/^(?:#{1,6}\s*)?PLAYER OPTIONS\s*$/im)[0];
   const claimsLiquidTransfer = /\b(?:(?:[\d,]+\s+|the\s+)?credits?\s+(?:are\s+)?credited to (?:your|d['’]?holloran)|personal credits? (?:jump|rose|increase)|you (?:now have|receive[sd]?|withdraw|withdrew)\s+(?:(?:the|your|an? additional)\s+)?(?:[\d,]+\s+(?:galactic\s+)?credits?|(?:credits?|funds|money)\b))\b/i.test(resolved);
   const creditGain = Number(delta?.credits || 0) + Number(delta?.creditsCriminal || 0);
   if (claimsLiquidTransfer && creditGain <= 0) {
     throw new GmTurnError("The GM narrated a credit transfer that was not authorized by the ledger. No outcome was saved; retry the turn.", 502);
   }
-  const completedPayment = /\byou\s+(?:(?:hand|handed)\s+over|pay(?:s|ed)?|spend|spent)\s+(?:the\s+)?[\d,]+\s+credits?\b|\b(?:vendor|merchant|seller)\s+accepts?\s+(?:the|your)\s+payment\b/i.test(resolved);
-  if (completedPayment && Number(delta?.credits || 0) >= 0 && Number(delta?.creditsCriminal || 0) >= 0) {
+  const completedPayment = /\byou\s+(?:(?:hand|handed)\s+over|pay(?:s|ed)?|spend|spent)\s+(?:the\s+)?[\d,]+\s+credits?\b|\b(?:vendor|merchant|seller|server|bartender)\s+accepts?\s+(?:the|your)\s+payment\b|\bcredits?\s+(?:leave|left|are deducted from)\s+(?:your|the)\s+(?:ledger|account|balance)\b/i.test(resolved);
+  const settledTab = /(?:tab|bill) (?:is|was|has been) (?:cleared|paid|settled)/i.test(resolved);
+  if ((completedPayment || settledTab) && Number(delta?.credits || 0) >= 0 && Number(delta?.creditsCriminal || 0) >= 0) {
     throw new GmTurnError("The GM narrated a payment without its matching credit deduction. Rewrite the same transaction with an authoritative ledger.", 502);
   }
   const claimsItemGain = /\b(?:added to (?:your|the) inventory|you (?:take possession of|acquire|obtain|now own)\s+(?!(?:(?:an?|the|your)\s+)?(?:directions?|information|answers?|permission|address|lead|knowledge|access)\b)|handed to you|(?:vendor|merchant|seller)\s+(?:bundles?|hands?\s+(?:them|it|the items)\s+over))\b/i.test(resolved)
     || (completedPayment && /\b(?:take|took|hand(?:s|ed)?\s+(?:them|it)\s+over)\b/i.test(resolved));
-  if (claimsItemGain && !(Array.isArray(delta?.inventoryAdd) && delta.inventoryAdd.length > 0)) {
+  if (claimsItemGain && ![delta?.inventoryAdd, delta?.propertyAdd, delta?.shipAdd].some(items => Array.isArray(items) && items.length > 0)) {
     throw new GmTurnError("The GM narrated an item acquisition that was not authorized by the ledger. No outcome was saved; retry the turn.", 502);
   }
 }
@@ -730,6 +742,11 @@ export function assertMovementSceneProgress(
   if (!action || !permitsLocationChange(action)) return;
   if (delta?.location && delta.location !== currentLocation) return;
   const scene = extractSceneNarration(narration);
+  const result = sectionBody(narration, "GAMEPLAY RESULT");
+  const completedNamedPlace = /\byou\s+(?:arrive(?:\s+at)?|reach|enter|exit|leave)\b[^.!?\n]{0,100}\b(?:kiosk|office|market|concourse|shop|store|stall|apartment|residence|home|cantina|docking bay|spaceport|district|city|planet|ship|shuttle|transport|trailer)\b/i.test(`${scene}\n${result}`);
+  if (completedNamedPlace) {
+    throw new GmTurnError("The GM completed travel to a named place without saving that destination. Rewrite the same turn with the exact end location in the ledger.", 502);
+  }
   const establishesNewPosition = /\b(?:arrive|reach|stop at|draw near|close (?:in|the distance)|junction|intersection|threshold|door|hatch|gate|barrier|bend|turn|landing|stair|lift|opening|arch|bridge|platform|chamber|alcove|checkpoint|crossing|branch|fork|edge|entrance|exit|within reach|alongside|opposite)\b/i.test(scene);
   if (!establishesNewPosition) {
     throw new GmTurnError("The GM described movement without establishing a new observable position or scene boundary. Rewrite the same action so the route reaches a concrete stopping point.", 502);
@@ -888,6 +905,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   if (existing && existing.base_revision !== input.revision) throw new GmTurnError("The campaign changed after this turn began. Submit the action again as a new turn or reload the saved game.", 409);
 
   const mode = classifyTurnMode(action);
+  if (mode === "play" && action) assertAdvancementReady(currentSnapshot.character);
   const priorInterpretation = db.prepare("SELECT interpretation FROM gm_turn_interpretations WHERE account_id = ? AND turn_id = ?").get(accountId, input.turnId) as { interpretation: string } | undefined;
   const interpretation = priorInterpretation ? JSON.parse(priorInterpretation.interpretation) : mode === "play" && action ? await interpretSagaAction(action, currentSnapshot.character as Record<string, unknown>, { ...currentSnapshot.gameState, scene: currentSceneFrame(currentSnapshot), sceneMerchant: sceneMerchant(currentSnapshot), recentInteraction: safeMessages(currentSnapshot).slice(-4) }) : { semantic: null, fallbackReason: null };
   if (!priorInterpretation) db.prepare("INSERT OR IGNORE INTO gm_turn_interpretations VALUES (?, ?, ?)").run(accountId, input.turnId, JSON.stringify(interpretation));
@@ -1008,6 +1026,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       try {
         parsed = parseEngineResponse(candidate, { requireState: mode === "play" });
         if (mode === "play") assertQuotedOfferConsistency(parsed.clean, parsed.delta as Record<string, unknown> | null, trade);
+        if (mode === "play" && !trade && input.statePolicy !== "committed-trade") assertNarrativeLedgerConsistency(parsed.clean, parsed.delta as Record<string, unknown> | null);
       } catch (error) {
         const repairableLedger = mode === "play" && error instanceof Error && /(?:world-state ledger|world-state field|world-state JSON|world-state block)/i.test(error.message);
         if (!repairableLedger) throw error;

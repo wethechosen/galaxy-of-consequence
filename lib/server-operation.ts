@@ -18,12 +18,12 @@ function canonical(value: unknown): unknown {
   return value;
 }
 
-export function operationIdentity(id: unknown, kind: "advancement" | "foundation" | "market" | "bank", choices: Record<string, unknown>) {
+export function operationIdentity(id: unknown, kind: "advancement" | "foundation" | "market" | "bank" | "recovery", choices: Record<string, unknown>) {
   if (typeof id !== "string" || !/^[\w-]{8,100}$/.test(id)) throw operationError("A valid request identifier is required.", 400);
   return { id, fingerprint: createHash("sha256").update(JSON.stringify(canonical({ kind, ...choices }))).digest("hex") };
 }
 
-export function committedOperation(snapshot: DatapadSnapshot | null, field: "advancementHistory" | "marketTransactions" | "bankTransactions", identity: ReturnType<typeof operationIdentity>) {
+export function committedOperation(snapshot: DatapadSnapshot | null, field: "advancementHistory" | "marketTransactions" | "bankTransactions" | "recoveryTransactions", identity: ReturnType<typeof operationIdentity>) {
   const entries = snapshot?.gameState[field];
   if (!Array.isArray(entries)) return false;
   const prior = entries.find(item => item && typeof item === "object" && (item.advancementId || item.transactionId) === identity.id);

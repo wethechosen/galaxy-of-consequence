@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   SAGA_XP_THRESHOLDS, advancementRequirements, applySagaAdvancement, applySagaFoundation, availableTalents, availableFeats,
-  advancementChoiceContext, availableClassSkills, foundationRequirements, parseAbilityScores,
+  advancementChoiceContext, advancementFeatChoiceContext, availableClassSkills, availableFeatSkills, foundationRequirements, parseAbilityScores,
   forcePowerChoiceRequirements,
   ensureAdvancementScaffold, experienceForLevel, nextLevelExperience, progressionStatus, sagaLevelForExperience,
 } from "../original/lib/sagaAdvancement";
 import { applyExperienceAward } from "../original/lib/engineState";
+import { sagaSkillModifier } from "../lib/saga-character";
 
 const snapshot = (character, gameState = {}) => ({
   character,
@@ -116,10 +117,10 @@ describe("Saga Edition advancement", () => {
     expect(availableTalents(legal, "jedi").flatMap(tree => tree.talents).map(item => item.id)).toContain("redirect-shot");
   });
 
-  it("hides incomplete metadata-dependent grants and enforces deeper talent prerequisites", () => {
+  it("offers skill feats with eligible skills and enforces deeper talent prerequisites", () => {
     const character = { species: "Human", baseAttackBonus: 10, sagaStats: "STR 15 | DEX 15 | CON 15 | INT 15 | WIS 15 | CHA 15", feats: "Force Sensitivity", trainedSkills: ["Use the Force"] };
     expect(availableFeats(character, "jedi").map(item => item.id)).toContain("force-training");
-    for (const id of ["skill-focus", "skill-training"]) expect(availableFeats(character, "jedi").map(item => item.id)).not.toContain(id);
+    for (const id of ["skill-focus", "skill-training"]) expect(availableFeats(character, "jedi").map(item => item.id)).toContain(id);
     const scoutIds = availableTalents(character, "scout").flatMap(tree => tree.talents).map(item => item.id);
     expect(scoutIds).not.toContain("improved-initiative");
     expect(scoutIds).not.toContain("uncanny-dodge-1");
@@ -161,6 +162,88 @@ describe("Saga Edition advancement", () => {
     expect(character.classLevels).toBeUndefined();
     const trainedCharacter = { ...character, classLevels: { jedi: 1 }, trainedSkills: ["Acrobatics", "Perception"] };
     expect(advancementChoiceContext(trainedCharacter, "jedi", { trainedSkillIds: [] }).trainedSkills).toEqual(["Acrobatics", "Perception"]);
+  });
+
+  it("trains a selected class skill atomically and applies its bonus to checks", () => {
+    const current = snapshot({ species: "Human", level: 1, experience: 1050, classLevels: { soldier: 1 }, maxHitPoints: 30, sagaStats: "STR 10 | DEX 10 | CON 10 | INT 10 | WIS 10 | CHA 10", trainedSkills: ["Perception"], featSelections: [], talentSelections: [] });
+    const choices = { advancementId: "training-second", classId: "soldier", classBonusFeatId: "skill-training", classBonusFeatSkillId: "mechanics" };
+    const before = structuredClone(current);
+    expect(() => applySagaAdvancement(current, { ...choices, classBonusFeatSkillId: undefined }, () => { throw new Error("cannot roll before complete choices"); })).toThrow(/untrained class skill/);
+    for (const skill of ["perception", "persuasion", "use-the-force", "invented-skill"]) expect(() => applySagaAdvancement(current, { ...choices, classBonusFeatSkillId: skill }, () => 5)).toThrow(/untrained class skill/);
+    expect(current).toEqual(before);
+    const once = applySagaAdvancement(current, choices, () => 5);
+    expect(once.character.trainedSkills).toEqual(["Perception", "Mechanics"]);
+    expect(once.character.featSelections).toContainEqual(expect.objectContaining({ id: "skill-training-mechanics", featId: "skill-training", skillId: "mechanics", name: "Skill Training (Mechanics)", source: "class-bonus-feat" }));
+    expect(once.gameState.advancementHistory[0].classBonusFeat).toMatchObject({ featId: "skill-training", skillId: "mechanics" });
+    expect(sagaSkillModifier(once.character, once.gameState, "Mechanics", "intelligence")).toBe(6);
+    expect(sagaSkillModifier(once.character, once.gameState, "Persuasion", "charisma")).toBe(1);
+    expect(once.character.experience).toBe(1050);
+    expect(applySagaAdvancement(once, choices, () => { throw new Error("must not reroll"); })).toEqual(once);
+  });
+
+  it("focuses a trained skill once, allows different skills and never stacks duplicate Focus", () => {
+    const current = snapshot({ species: "Human", level: 1, experience: 1050, classLevels: { soldier: 1 }, maxHitPoints: 30, sagaStats: "STR 10 | DEX 10 | CON 10 | INT 10 | WIS 12 | CHA 10", trainedSkills: ["Perception", "Mechanics"], featSelections: [], talentSelections: [] });
+    const choices = { advancementId: "focus-second", classId: "soldier", classBonusFeatId: "skill-focus", classBonusFeatSkillId: "perception" };
+    expect(() => applySagaAdvancement(current, { ...choices, classBonusFeatSkillId: "pilot" }, () => 5)).toThrow(/trained skill/);
+    const once = applySagaAdvancement(current, choices, () => 5);
+    expect(once.character.feats).toContain("Skill Focus (Perception)");
+    expect(sagaSkillModifier(once.character, once.gameState, "Perception", "wisdom")).toBe(12);
+    expect(sagaSkillModifier(once.character, once.gameState, "Mechanics", "intelligence")).toBe(6);
+    expect(availableFeatSkills(once.character, "soldier", "skill-focus").map(item => item.id)).toEqual(["mechanics"]);
+    const next = { ...once, character: { ...once.character, experience: 3000 } };
+    const nextChoices = { advancementId: "focus-third", classId: "soldier", talentId: "melee-smash", generalFeatId: "skill-focus", generalFeatSkillId: "perception" };
+    expect(() => applySagaAdvancement(next, nextChoices, () => 5)).toThrow(/trained skill/);
+    const twice = applySagaAdvancement(next, { ...nextChoices, generalFeatSkillId: "mechanics" }, () => 5);
+    expect(twice.character.featSelections.filter(item => item.featId === "skill-focus")).toHaveLength(2);
+    expect(sagaSkillModifier(twice.character, twice.gameState, "Perception", "wisdom")).toBe(12);
+    expect(sagaSkillModifier(twice.character, twice.gameState, "Mechanics", "intelligence")).toBe(11);
+    expect(availableFeats(twice.character, "soldier").map(item => item.id)).not.toContain("skill-focus");
+    expect(availableFeatSkills({ ...current.character, feats: "Skill Focus (Perception)" }, "soldier", "skill-focus").map(item => item.id)).toEqual(["mechanics"]);
+  });
+
+  it("can train then focus in separate earned foundation slots with truthful previews", () => {
+    const character = { species: "Human", level: 1, experience: 1050, sagaStats: "STR 10 | DEX 10 | CON 10 | INT 10 | WIS 10 | CHA 10", feats: "None", talents: "None" };
+    const choices = { advancementId: "skill-foundation", classId: "soldier", talentId: "melee-smash", generalFeatId: "skill-training", generalFeatSkillId: "mechanics", humanBonusFeatId: "skill-focus", humanBonusFeatSkillId: "mechanics", trainedSkillIds: ["climb", "endurance", "initiative", "perception"], languageIds: [] };
+    const generalContext = advancementFeatChoiceContext(character, "soldier", choices, "generalFeatId");
+    expect(generalContext.trainedSkills).not.toContain("Mechanics");
+    expect(availableFeatSkills(generalContext, "soldier", "skill-training").map(item => item.id)).toContain("mechanics");
+    const humanContext = advancementFeatChoiceContext(character, "soldier", choices, "humanBonusFeatId");
+    expect(humanContext.trainedSkills).toContain("Mechanics");
+    expect(availableFeatSkills(humanContext, "soldier", "skill-focus").map(item => item.id)).toContain("mechanics");
+    const preview = advancementChoiceContext(character, "soldier", choices);
+    expect(availableFeatSkills(preview, "soldier", "skill-focus").map(item => item.id)).not.toContain("mechanics");
+    expect(character.trainedSkills).toBeUndefined();
+    const once = applySagaFoundation(snapshot(character), choices);
+    expect(once.character.trainedSkills).toHaveLength(5);
+    expect(sagaSkillModifier(once.character, once.gameState, "Mechanics", "intelligence")).toBe(10);
+    expect(once.character.level).toBe(1);
+    expect(once.character.experience).toBe(1050);
+    expect(once.gameState.advancementHistory[0].featSkillChoices).toEqual({ generalFeatId: "mechanics", humanBonusFeatId: "mechanics" });
+    const duplicate = { ...choices, humanBonusFeatId: "skill-training" };
+    expect(() => applySagaFoundation(snapshot(character), duplicate)).toThrow(/untrained class skill/);
+    const different = applySagaFoundation(snapshot(character), { ...duplicate, humanBonusFeatSkillId: "pilot" });
+    expect(different.character.trainedSkills).toEqual(expect.arrayContaining(["Mechanics", "Pilot"]));
+    expect(advancementChoiceContext(character, "soldier", { ...choices, generalFeatSkillId: "invalid", humanBonusFeatSkillId: "invalid" }).trainedSkills).not.toContain("invalid");
+  });
+
+  it("gates Force skill training by the selected feat and does not invent Force powers", () => {
+    const character = { species: "Human", forceSensitive: "Yes, latent", level: 1, sagaStats: "STR 10 | DEX 10 | CON 10 | INT 10 | WIS 10 | CHA 10", feats: "None", talents: "None" };
+    expect(availableFeatSkills(character, "soldier", "skill-training").map(item => item.id)).not.toContain("use-the-force");
+    const choices = { advancementId: "sensitive-foundation", classId: "soldier", talentId: "melee-smash", generalFeatId: "force-sensitivity", humanBonusFeatId: "skill-training", humanBonusFeatSkillId: "use-the-force", trainedSkillIds: ["climb", "endurance", "initiative", "perception"], languageIds: [] };
+    const context = advancementFeatChoiceContext(character, "soldier", choices, "humanBonusFeatId");
+    expect(availableFeatSkills(context, "soldier", "skill-training").map(item => item.id)).toContain("use-the-force");
+    const built = applySagaFoundation(snapshot(character), choices);
+    expect(built.character.trainedSkills).toContain("Use the Force");
+    expect(built.character.forcePowerSelections).toBeUndefined();
+    expect(built.character.featSelections.map(item => item.id)).not.toContain("force-training");
+    const multi = { ...character, classLevels: { soldier: 1, scoundrel: 1 } };
+    expect(availableFeatSkills(multi, "soldier", "skill-training").map(item => item.id)).toContain("persuasion");
+  });
+
+  it("rejects skill metadata attached to absent or unrelated feat slots", () => {
+    const character = { species: "Human", level: 1, experience: 1050, classLevels: { soldier: 1 }, maxHitPoints: 30, sagaStats: "STR 10 | DEX 10 | CON 10 | INT 10 | WIS 10 | CHA 10", trainedSkills: ["Perception"], featSelections: [], talentSelections: [] };
+    const choices = { advancementId: "bad-skill-slot", classId: "soldier", classBonusFeatId: "toughness" };
+    for (const extras of [{ classBonusFeatSkillId: "mechanics" }, { humanBonusFeatId: "skill-training", humanBonusFeatSkillId: "mechanics" }, { classBonusFeatId: "skill-training", classBonusFeatSkillId: ["mechanics"] }]) expect(() => applySagaAdvancement(snapshot(character), { ...choices, ...extras }, () => { throw new Error("cannot roll for invalid choices"); })).toThrow(/selected skill/);
   });
 
   it("updates multiclass class defenses, retroactive Constitution HP, Toughness and damage threshold", () => {

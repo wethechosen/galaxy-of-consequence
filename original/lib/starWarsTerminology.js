@@ -47,7 +47,7 @@ Actions and objects:
 
 Continuity rules:
 - Prefer terminology supported by the active sourcebooks and established campaign facts.
-- Use era-appropriate language for 155 ABY and identify regional variants rather than flattening every currency or institution into one universal term.
+- Use era-appropriate language for 150 ABY and identify regional variants rather than flattening every currency or institution into one universal term.
 - A player may use modern shorthand in an action. Understand it, resolve it, and answer with Star Wars terminology.
 - Never mention this glossary, prompt rules, model, API, sourcebook ingestion, or hidden engine state during in-character play.
 `;

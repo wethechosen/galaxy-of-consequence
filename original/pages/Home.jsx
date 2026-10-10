@@ -153,7 +153,7 @@ export default function Home() {
     <Shell>
       <TopBar character={character} gameState={gameState} />
       <main className="gc-page-scroll flex-1 min-h-0 overflow-y-auto p-6 max-w-3xl mx-auto w-full">
-        <p className="text-[10px] tracking-[0.3em] mb-3" style={{ color: "var(--sig)" }}>HOLONET NEWS // CORUSCANT DESK // 155 ABY</p>
+        <p className="text-[10px] tracking-[0.3em] mb-3" style={{ color: "var(--sig)" }}>HOLONET NEWS // CORUSCANT DESK // 150 ABY</p>
         <h1 className="gc-display text-3xl md:text-4xl font-bold mb-4 text-[#f2f0ea]">
           THE GALAXY IS MOVING.
         </h1>
@@ -185,7 +185,7 @@ export default function Home() {
         <section className="mb-8">
           <div className="flex items-center justify-between mb-3">
             <div>
-              <p className="text-[10px] tracking-[0.25em] text-[#ff7a1a]">CURRENT AFFAIRS // 155 ABY</p>
+              <p className="text-[10px] tracking-[0.25em] text-[#ff7a1a]">CURRENT AFFAIRS // 150 ABY</p>
               <p className="text-xs text-[#8b93a3] mt-1">Three windows on the same galaxy. None of them sees the whole truth.</p>
             </div>
             <span className="text-[10px] tracking-widest text-[#5c6370]"><Clock3 size={12} className="inline mr-1" />LIVE TRANSMISSION</span>

@@ -2,6 +2,7 @@ import { randomInt, randomUUID } from "node:crypto";
 import { rollSagaCheck, type SagaCheckPlan } from "./saga-dice";
 import { isHostileAttackDeclaration } from "./gpt-turn-intent";
 import { positiveActionText } from "./action-intent";
+import { sagaArmorDefenseAdjustments, sagaEquipmentAttackModifier } from "./saga-character";
 
 type RecordValue = Record<string, unknown>;
 type Roller = (min: number, max: number) => number;
@@ -217,9 +218,10 @@ export function combatTargetName(action: string) {
 function playerDefenses(character: RecordValue) {
   const defenses = character.defenses && typeof character.defenses === "object" && !Array.isArray(character.defenses) ? character.defenses as RecordValue : {};
   const level = Math.max(1, Math.floor(numberField(character.level, 1)));
+  const armor = sagaArmorDefenseAdjustments(character);
   return {
-    reflex: numberField(defenses.reflex, 10 + level + abilityModifier(character, "DEX")),
-    fortitude: numberField(defenses.fortitude, 10 + level + abilityModifier(character, "CON")),
+    reflex: numberField(defenses.reflex, 10 + level + abilityModifier(character, "DEX")) + armor.reflex,
+    fortitude: numberField(defenses.fortitude, 10 + level + abilityModifier(character, "CON")) + armor.fortitude,
     will: numberField(defenses.will, 10 + level + abilityModifier(character, "WIS")),
   };
 }
@@ -318,7 +320,7 @@ export function beginCombat(
     initiativeModifier: numberField(playerInitiative.modifier, abilityModifier(character, "DEX")),
     persistentCondition: gameState.persistentCondition === true,
     secondWindLastDay: typeof gameState.secondWindLastDay === "string" ? gameState.secondWindLastDay : undefined,
-    attackModifier: numberField(character.baseAttackBonus, 0) + abilityModifier(character, "STR"),
+    attackModifier: numberField(character.baseAttackBonus, 0) + abilityModifier(character, "STR") + sagaEquipmentAttackModifier(character),
     damage: { count: 1, sides: 4, modifier: abilityModifier(character, "STR"), type: "kinetic" },
   };
   const order = [player, ...opponents].sort((a, b) => b.initiative - a.initiative || (b.initiativeModifier || 0) - (a.initiativeModifier || 0) || roller(0, 2) * 2 - 1);

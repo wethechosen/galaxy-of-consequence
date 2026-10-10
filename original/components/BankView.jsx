@@ -2,15 +2,16 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useGame } from "@/original/lib/GameContext";
 import { GlassCard } from "./GalaxyUI";
+import { advancementGate } from "@/original/lib/sagaAdvancement";
 
 export function BankView() {
-  const { gameState, transferBankCredits, sending, saveReady, saveError, turnError } = useGame();
+  const { character, gameState, transferBankCredits, sending, saveReady, saveError, turnError } = useGame();
   const [amount, setAmount] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const value = Number(amount);
   const valid = Number.isSafeInteger(value) && value > 0;
   const credits = Number(gameState.credits || 0), deposited = Number(gameState.bankCredits || 0);
-  const disabled = sending || !saveReady || Boolean(saveError) || !valid;
+  const disabled = advancementGate(character || {}).blocked || sending || !saveReady || Boolean(saveError) || !valid;
   async function transfer(action) {
     setConfirmation("");
     if (await transferBankCredits(action, value)) {
@@ -24,6 +25,7 @@ export function BankView() {
       <GlassCard className="p-5"><p className="text-xs text-[#a9adb8]">SPENDABLE</p><p className="text-2xl text-[#22e5c5] mt-2">{credits.toLocaleString()} cr</p></GlassCard>
       <GlassCard className="p-5"><p className="text-xs text-[#a9adb8]">DEPOSITED</p><p className="text-2xl text-[#22e5c5] mt-2">{deposited.toLocaleString()} cr</p></GlassCard>
     </div>
+    <p className="text-sm text-[#a9adb8]">Total galactic funds: <strong className="text-[#f2f0ea]">{(credits + deposited).toLocaleString()} cr</strong>. Depositing changes the split, not your total wealth.</p>
     <GlassCard className="p-5 max-w-xl">
       <label htmlFor="bank-transfer-amount" className="text-sm text-[#f2f0ea]">Amount in galactic credits</label>
       <input id="bank-transfer-amount" type="number" inputMode="numeric" min="1" step="1" value={amount} onChange={event => setAmount(event.target.value)} className="gc-input w-full p-3 mt-2" placeholder="Enter a whole-credit amount" />

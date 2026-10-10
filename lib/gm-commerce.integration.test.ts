@@ -44,6 +44,19 @@ function setup() {
 }
 
 describe("authoritative GM conversational commerce end to end", () => {
+  it("pauses pending advancement before model calls or mutations, including client read-only flags", async () => {
+    const { actor, db, initial } = setup();
+    const pending = { ...initial, character: { ...initial.character, experience: 1050 } };
+    saveAuthoritativeDatapad(actor, null, 1, pending, db);
+    for (const extra of [{}, { openScene: true }, { statePolicy: "committed-trade" as const }]) {
+      await expect(runGmTurn(actor, { turnId: "level_gate_test", revision: 2, action: "I buy the tunic", ...extra })).rejects.toMatchObject({
+        status: 409, code: "advancement_required", advancement: expect.objectContaining({ blocked: true, level: 1 }),
+      });
+    }
+    expect(provider).not.toHaveBeenCalled();
+    expect(readDatapad(actor, null, db)).toMatchObject({ revision: 2, snapshot: pending });
+  });
+
   it("quotes, accepts once, replays retry, and continues lodging dialogue with fresh scenes and unchanged identity", async () => {
     const { actor, db, initial } = setup();
     const quoteScene = "Under a cracked blue glowpanel, you reach the clothing counter in prison-issued cloth, your pistol and encrypted comlink still carried. The vendor, a Twi'lek with one lekku wrapped in faded fabric, lifts reinforced flight gear from a hanging rail. Steam from the next stall drifts between customers; repaired shoulder plates knock softly against the frame.";

@@ -4,6 +4,7 @@ import { openStorage } from "./storage";
 import { readDatapad, type DatapadSnapshot } from "./datapad-save";
 import { POST as market } from "../app/api/market/route";
 import { POST as advancement } from "../app/api/advancement/route";
+import { POST as recovery } from "../app/api/recovery/route";
 import { hydrateHostedSave, type HostedSave } from "./hosted-bridge";
 
 const bridge = vi.hoisted(() => ({ get: vi.fn(), save: vi.fn() }));
@@ -33,7 +34,18 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); bridge.get.mockReset(); bridge.save.mockReset(); db.close(); });
 
 describe("durable button operations through the actual API routes", () => {
+  it("replays committed residence rest after a lost response without passing more time or healing twice", async () => {
+    cloud.snapshot.character = { ...cloud.snapshot.character, level:2, experience:1000, maxHitPoints:30 };
+    cloud.snapshot.gameState = { ...cloud.snapshot.gameState, health:20, location:"Unit A", properties:[{id:"home-a",name:"Unit A",type:"lease",location:"Unit A"}] };
+    const body={revision:5,transactionId:"rest-once-0001",propertyId:"home-a"};
+    expect((await recovery(request(body))).status).toBe(504);
+    expect(cloud.snapshot.gameState.health).toBe(22); expect(cloud.snapshot.gameState.campaignTimeMinutes).toBe(480);
+    expect((await recovery(request(body))).status).toBe(200);
+    expect(cloud.snapshot.gameState.health).toBe(22); expect(cloud.snapshot.gameState.recoveryTransactions).toHaveLength(1);
+    expect(bridge.save).toHaveBeenCalledTimes(1);
+  });
   it.each(["market", "advancement"])("replays a committed %s after a lost response with no second debit, item, or HP roll", async kind => {
+    if (kind === "market") cloud.snapshot.character!.experience = 500;
     const handler = kind === "market" ? market : advancement;
     const body = kind === "market" ? { revision: 5, transactionId: "purchase-once-01", action: "buy", goodId: "medpac" }
       : { revision: 5, advancementId: "advance-once-01", classId: "scoundrel", classBonusFeatId: "quick-draw", abilityIncreases: [] };
@@ -53,6 +65,7 @@ describe("durable button operations through the actual API routes", () => {
     expect(bridge.save).toHaveBeenCalledTimes(1);
   });
   it("uses the admin-selected player's hosted save and denies another player before reading it", async () => {
+    cloud.snapshot.character!.experience = 500;
     const body = { accountId: player.id, revision: 5, transactionId: "admin-market-01", action: "buy", goodId: "medpac" };
     vi.mocked(accounts.requireAccount).mockReturnValue({ ...player, id: "different-player" });
     expect((await market(request(body))).status).toBe(403);
@@ -62,5 +75,13 @@ describe("durable button operations through the actual API routes", () => {
     hydrateHostedSave(player, cloud);
     expect((await market(request(body))).status).toBe(504);
     expect(bridge.get).toHaveBeenCalledWith(player.username);
+  });
+  it("pauses a new purchase before mutation when advancement is pending", async () => {
+    const before = structuredClone(cloud);
+    const result = await market(request({ revision: 5, transactionId: "pending-level-market", action: "buy", goodId: "medpac" }));
+    expect(result.status).toBe(409);
+    expect(await result.json()).toMatchObject({ code: "advancement_required", gameplayAdvanced: false, advancement: { blocked: true, level: 1, earnedLevel: 2 } });
+    expect(cloud).toEqual(before);
+    expect(bridge.save).not.toHaveBeenCalled();
   });
 });

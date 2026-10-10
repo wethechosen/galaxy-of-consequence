@@ -21,7 +21,7 @@ export default function ExchangesPage() {
       <TopBar character={character} gameState={gameState} />
       <main className="flex-1 overflow-y-auto p-6 max-w-6xl mx-auto w-full">
         <div className="mb-8">
-          <p className="text-[10px] tracking-[0.3em] text-[#22e5c5] mb-2">GALACTIC COMMERCE // 155 ABY</p>
+          <p className="text-[10px] tracking-[0.3em] text-[#22e5c5] mb-2">GALACTIC COMMERCE // 150 ABY</p>
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
               <h1 className="gc-display text-3xl font-bold text-[#f2f0ea]">EXCHANGES</h1>

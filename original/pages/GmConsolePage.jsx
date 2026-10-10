@@ -29,7 +29,7 @@ function GmConsoleBody() {
   const [savedFlash, setSavedFlash] = useState(false);
   const rep = gameState.factionRep;
   const flags = gameState.flags;
-  const [flavorPrompt, setFlavorPrompt] = useState("Create three distinct NPC mannerisms and one Coruscant rumor for D'mir's current detention-infirmary scene. Keep them usable by the primary GM and consistent with 155 ABY.");
+  const [flavorPrompt, setFlavorPrompt] = useState("Create three distinct NPC mannerisms and one Coruscant rumor for D'mir's current scene. Keep them usable by the primary GM and consistent with 150 ABY.");
   const [flavorResult, setFlavorResult] = useState("");
   const [flavorLoading, setFlavorLoading] = useState(false);
 
@@ -48,7 +48,7 @@ function GmConsoleBody() {
         messages: [
           {
             role: "system",
-            content: "You are a secondary Star Wars world-building assistant for a human-administered campaign. Generate only optional NPC flavor, rumors, sensory detail, and setting ideas. Do not adjudicate rules, change player stats, award items or XP, override continuity, or speak as the primary Game Master. Use Saga Edition vocabulary and 155 ABY continuity. Treat the supplied references as grounding and do not quote them.",
+            content: "You are a secondary Star Wars world-building assistant for a human-administered campaign. Generate only optional NPC flavor, rumors, sensory detail, and setting ideas. Do not adjudicate rules, change player stats, award items or XP, override continuity, or speak as the primary Game Master. Use Saga Edition vocabulary and 150 ABY continuity. Treat the supplied references as grounding and do not quote them.",
           },
           {
             role: "user",

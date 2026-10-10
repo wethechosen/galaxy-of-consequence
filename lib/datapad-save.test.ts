@@ -61,6 +61,16 @@ describe("original campaign persistence", () => {
     expect(readDatapad(one, null, db).config).toEqual(config);
     expect(readDatapad(one, null, db).snapshot).not.toHaveProperty("apiKey");
   });
+  it("pauses legacy catalog trades for earned advancement while allowing presentation saves", () => {
+    const { db, one } = setup();
+    const established = { ...snapshot, character: { ...snapshot.character, level: 1, experience: 1050 }, gameState: { credits: 500, location: "Coruscant — lower-city market", inventory: [] } };
+    saveDatapad(one, null, 0, established, db);
+    const purchase = { ...established, gameState: { ...established.gameState, credits: 270, inventory: [{ id: "m", name: "Medpac", qty: 1, tag: "medical" }] } };
+    expect(() => saveDatapad(one, null, 1, purchase, db)).toThrow(/earned level 2/i);
+    expect(readDatapad(one, null, db)).toMatchObject({ revision: 1, snapshot: established });
+    saveDatapad(one, null, 1, { ...established, settings: { sound: false } }, db);
+    expect(readDatapad(one, null, db)).toMatchObject({ revision: 2, snapshot: { character: established.character, gameState: established.gameState, settings: { sound: false } } });
+  });
 });
 
 function hostedSetup() {
@@ -128,6 +138,19 @@ describe("hosted autosave authority", () => {
     expect((await getHostedDatapad(new Request(`http://localhost:3101/api/datapad?accountId=${test.two.id}`))).status).toBe(403);
     expect(test.get).not.toHaveBeenCalled();
     expect(test.put).not.toHaveBeenCalled();
+  });
+
+  it("returns the advancement gate for a hosted autosave purchase without committing it", async () => {
+    const test = hostedSetup();
+    test.established.character.experience = 1050;
+    const purchased = { ...test.established, gameState: { ...test.established.gameState, credits: 270,
+      inventory: [{ id: "medpac", name: "Medpac", qty: 1, tag: "medical" }] } };
+    const response = await putHostedDatapad(test.request(purchased));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "advancement_required", gameplayAdvanced: false, advancement: { blocked: true, experience: 1050, dossierPath: "/character#advancement" } });
+    expect(test.put).not.toHaveBeenCalled();
+    expect(test.cloud()).toMatchObject({ revision: 9, snapshot: test.established });
+    expect(readDatapad(test.one, null, test.db)).toMatchObject({ revision: 9, snapshot: test.established });
   });
 
   it("hydrates and saves the actual selected player when the operator accesses that campaign", async () => {

@@ -3,9 +3,11 @@ import { requireAccount, listAccounts, type Account } from "@/lib/accounts";
 import { assertLocalRequest } from "@/lib/local-http";
 import { DatapadError, readDatapad, saveDatapad, saveDatapadConfig } from "@/lib/datapad-save";
 import { hostedGet, hostedPersistenceEnabled, hydrateHostedSave, hostedPut, ensureHostedActor } from "@/lib/hosted-bridge";
+import { AdvancementRequiredError, advancementErrorBody } from "@/lib/advancement-gate";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 function errorResponse(error: unknown) {
+  if (error instanceof AdvancementRequiredError) return NextResponse.json(advancementErrorBody(error), { status: error.status });
   const status = error instanceof DatapadError ? error.status
     : error instanceof Error && Number.isInteger((error as Error & { status?: number }).status)
       ? (error as Error & { status: number }).status : 403;

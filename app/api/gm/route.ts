@@ -5,6 +5,7 @@ import { assertLocalRequest, readLocalObject } from "@/lib/local-http";
 import { NvidiaProviderError } from "@/lib/original-provider";
 import { hostedGet, hostedPersistenceEnabled, hydrateHostedSave, saveHostedResult } from "@/lib/hosted-bridge";
 import { replayHostedTurn } from "@/lib/hosted-turn-replay";
+import { AdvancementRequiredError, advancementErrorBody } from "@/lib/advancement-gate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ export async function POST(request: Request) {
       const replay = replayHostedTurn(hosted, typeof body.turnId === "string" ? body.turnId : "", typeof body.action === "string" ? body.action : "");
       if (replay) return NextResponse.json(replay, { headers: { "Cache-Control": "no-store" } });
       if (typeof body.revision !== "number" || body.revision !== hosted.revision) {
-        return NextResponse.json({ error: "The campaign changed elsewhere. Reload the saved game before continuing.", revision: hosted.revision }, { status: 409 });
+        return NextResponse.json({ error: "The campaign changed elsewhere. Reload the saved game before continuing.", code: "campaign_changed", revision: hosted.revision }, { status: 409 });
       }
       hydrateHostedSave(target, hosted);
     }
@@ -38,7 +39,9 @@ export async function POST(request: Request) {
     if (hosted) await saveHostedResult(target, hosted.revision, result.snapshot);
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
+    if (error instanceof AdvancementRequiredError) return NextResponse.json(advancementErrorBody(error), { status: error.status });
     const status = error instanceof GmTurnError || error instanceof NvidiaProviderError ? error.status
+      : error instanceof Error && "status" in error && [409,504].includes(Number(error.status)) ? Number(error.status)
       : error instanceof Error && /sign in/i.test(error.message) ? 401
       : error instanceof Error && /local access|cross-origin|cross-site/i.test(error.message) ? 403 : 500;
     return NextResponse.json({ error: error instanceof Error ? error.message : "The GM request failed. No outcome was applied." }, { status });

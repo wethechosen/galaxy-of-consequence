@@ -20,5 +20,6 @@ vendor/nvidia-rag/
 
 .agents/
 eng.traineddata
+tmp/
 supabase/.temp/
 

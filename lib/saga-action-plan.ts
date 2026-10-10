@@ -3,6 +3,7 @@ import { positiveActionText } from "./action-intent";
 import { planSagaAction } from "./saga-planner";
 import type { SagaCheckPlan } from "./saga-dice";
 import { forcePowerKnown } from "../original/lib/sagaForcePowers";
+import { sagaSkillModifier } from "./saga-character";
 
 type Ledger = Record<string, unknown>;
 export const SAGA_ACTION_INTENTS = ["dialogue", "commerce", "travel", "search", "manipulate", "social", "medical", "force", "attack", "physical", "rest", "wait", "goal", "other"] as const;
@@ -66,6 +67,33 @@ function interpretationContext(character: Ledger, state: Ledger) {
   };
 }
 
+function contextualReply(action: string, state: Ledger): SagaSemanticAction | null {
+  const declaration = action.trim();
+  const context = `${JSON.stringify(state.scene || {})} ${JSON.stringify(state.recentInteraction || [])}`;
+  const currentNpcSolicited = /\b(?:what do you need|what can i do for you|what are you looking for|waits? for (?:your|the) request|asks? what you need)\b/i.test(context);
+  const terseServiceAnswer = declaration.split(/\s+/).length <= 12
+    && /\b(?:travel|passage|transport|documents?|clearance|lodging|room|ship|outfit|armor|work|job|information)\b/i.test(declaration)
+    && !/^(?:i|we)\s+(?:go|leave|depart|walk|run|fly|travel|head|move|sneak|board)\b/i.test(declaration);
+  if (!currentNpcSolicited || !terseServiceAnswer) return null;
+  return {
+    intent: "dialogue",
+    canonicalAction: `I tell the current contact what I need: ${declaration}`,
+    declaredSpan: declaration,
+    checkNeeded: false,
+    skill: null,
+    rationale: "This is a direct answer to the current NPC's request, not movement or completion of the requested service.",
+    travelTarget: null,
+  };
+}
+
+function normalizeRoutineProcedure(semantic: SagaSemanticAction, action: string): SagaSemanticAction {
+  const legitimateForm = /\b(?:complete|fill(?:\s+out)?|submit|sign)\b[^.]{0,100}\b(?:application|form|paperwork)\b/i.test(action)
+    && /\b(?:legitimate|truthful|accurate|personal information|required biometrics?)\b/i.test(action)
+    && !/\b(?:forge|forged|false|fake|lie|deceive|alter|hack|bypass)\b/i.test(action);
+  if (!legitimateForm) return semantic;
+  return { ...semantic, checkNeeded: false, skill: null, rationale: "Truthfully completing an available routine form and supplying required biometrics is ordinary access; a real external obstacle may respond without inventing a skill check." };
+}
+
 const INTERPRETER_SYSTEM = `Interpret the player's natural-language action in a Star Wars Saga Edition sandbox. You are an intent translator, not a GM resolver. Recognize synonyms, slang, dialogue, object references, negation, and compound declarations without requiring a special phrase. Return exactly one JSON object with these fields: intent, canonicalAction, declaredSpan, checkNeeded, skill, rationale, travelTarget, acceptedOfferId. No markdown.
 intent is one of ${SAGA_ACTION_INTENTS.join(", ")}. declaredSpan must be a verbatim substring of PLAYER DECLARATION that actually states the attempted action. canonicalAction paraphrases only that declared intent using clear first-person wording; include the actual target. Do not add a target, strategy, movement, expenditure, attack, emotion, power, or extra decision. Preserve the player's accompanying dialogue in the original declaration; do not replace it with invented words. Choose the first consequential attempted action when several require resolution.
 checkNeeded is boolean. Ordinary speaking, stock/price inquiries, accepting a saved affordable merchant quote, using an unlocked interface, walking through a known accessible route, and resting safely need no check. Calling an action cautious does not itself require a roll. Threatening, bargaining for a discount, deceiving, forced access, hidden information, dangerous terrain, or an actual opponent can create uncertainty: explain the concrete uncertainty in rationale. Rejecting an NPC's suggestion or stating a desire never creates combat.
@@ -76,13 +104,15 @@ travelTarget is null except for explicitly declared travel, where it is the play
 /** A failed interpreter leaves the existing deterministic referee available. */
 export async function interpretSagaAction(action: string, character: Ledger, state: Ledger): Promise<SagaActionInterpretation> {
   if (!action.trim() || action.length > 2000) return { semantic: null, fallbackReason: "No valid player declaration to interpret." };
+  const reply = contextualReply(action, state);
+  if (reply) return { semantic: reply, fallbackReason: null };
   try {
     const response = await invokeNvidia({
       system: INTERPRETER_SYSTEM, max_tokens: 512, temperature: 0, top_p: 0.1, timeout_ms: 15_000,
       messages: [{ role: "user", content: `CURRENT SCENE CONTEXT:\n${JSON.stringify(interpretationContext(character, state)).slice(0, 10000)}\n\nPLAYER DECLARATION:\n${action}` }],
     });
     const content = response.content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-    return { semantic: validateSagaSemanticAction(JSON.parse(content), action), fallbackReason: null };
+    return { semantic: normalizeRoutineProcedure(validateSagaSemanticAction(JSON.parse(content), action), action), fallbackReason: null };
   } catch (error) {
     return { semantic: null, fallbackReason: error instanceof Error ? error.message.slice(0, 300) : "Action interpretation unavailable." };
   }
@@ -159,7 +189,7 @@ export function buildSemanticSagaCheck(semantic: SagaSemanticAction, character: 
   const level = Math.max(1, Math.min(20, Math.floor(Number(character.level) || 1)));
   return {
     needed: true, actor: "player", kind: skill === "Initiative" ? "initiative" : "skill", label: skill,
-    modifier: Math.floor(level / 2) + abilityModifier(character, SKILL_ABILITIES[skill]) + (trained(character, skill) ? 5 : 0),
+    modifier: sagaSkillModifier(character, state, skill, ({ STR: "strength", DEX: "dexterity", CON: "constitution", INT: "intelligence", WIS: "wisdom", CHA: "charisma" } as Record<string, string>)[SKILL_ABILITIES[skill]]),
     target, targetLabel: "DC", targetVisible: true, reason: semantic.rationale.slice(0, 180),
     stakes: "Success achieves only the declared rules-legal intent. Failure creates a concrete obstacle or consequence supported by this scene, preserving other available approaches.",
     provisional: !hasEstablishedAbilities(character) || ["Mechanics", "Use Computer"].includes(skill) && !trained(character, skill), damage: null,

@@ -71,14 +71,15 @@ export function getEconomicSnapshot(gameState = {}, now = Date.now()) {
   const factionPressure = Number(gameState.factionRep?.csa || 0) + Number(gameState.factionRep?.empire || 0) - Number(gameState.notoriety || 0);
   const factor = ((Math.sin(cycle / 5) * 1.5) + (factionPressure % 7) * 0.12) / 100;
   const propertyHoldings = (gameState.properties || []).map((property) => {
-    const base = property.baseValue || ((property.type || "").toLowerCase().includes("warehouse") ? 85000 : 45000);
+    const leased = property.type === "lease" || property.status === "leased";
+    const base = property.baseValue ?? (leased ? 0 : ((property.type || "").toLowerCase().includes("warehouse") ? 85000 : 45000));
     const change = Number((factor + ((hashText(property.name) % 9) - 4) / 100).toFixed(2));
-    return { ...property, value: Math.max(1000, Math.round(base * (1 + change))), change, income: property.income || Math.round(base * 0.002), upkeep: property.upkeep || Math.round(base * 0.001), risk: property.risk || (location.includes(String(property.location || "").toLowerCase()) ? "LOW" : "TRAVEL EXPOSURE") };
+    return { ...property, value: leased ? 0 : Math.max(0, Math.round(base * (1 + change))), change: leased ? 0 : change, income: property.income ?? (leased ? 0 : Math.round(base * 0.002)), upkeep: property.upkeep ?? (leased ? 0 : Math.round(base * 0.001)), risk: property.risk || (location.includes(String(property.location || "").toLowerCase()) ? "LOW" : "TRAVEL EXPOSURE") };
   });
   const shipHoldings = (gameState.ships || []).map((ship) => {
-    const base = ship.baseValue || ((ship.class || "").toLowerCase().includes("freighter") ? 120000 : 70000);
+    const base = ship.baseValue ?? ((ship.class || "").toLowerCase().includes("freighter") ? 120000 : 70000);
     const change = Number((factor + ((hashText(ship.name) % 11) - 5) / 100).toFixed(2));
-    return { ...ship, value: Math.max(1000, Math.round(base * (1 + change))), change, income: ship.income || 0, upkeep: ship.upkeep || Math.round(base * 0.003), risk: ship.risk || "MAINTENANCE / SEIZURE EXPOSURE" };
+    return { ...ship, value: Math.max(0, Math.round(base * (1 + change))), change, income: ship.income ?? 0, upkeep: ship.upkeep ?? Math.round(base * 0.003), risk: ship.risk || "MAINTENANCE / SEIZURE EXPOSURE" };
   });
   const investmentHoldings = (gameState.investments || []).map((holding) => {
     const principal = Number(holding.amount) || 0;
@@ -93,7 +94,7 @@ export const IGFED = {
   name: "Intergalactic Federal Reserve",
   abbreviation: "IGFED",
   mandate: "Stabilizes the galactic credit, clears recognized interstellar settlements, and publishes reserve guidance for participating banking institutions.",
-  status: "MONETARY AUTHORITY // 155 ABY",
+  status: "MONETARY AUTHORITY // 150 ABY",
   reserveRate: "4.75%",
   creditStandard: "Galactic credit backed by recognized reserve guarantees and settlement ledgers",
   bulletin: "Reserve officials caution that blockades, counterfeit credits, sanctions, and fragmented jurisdiction can create local spreads even when the central credit remains stable.",

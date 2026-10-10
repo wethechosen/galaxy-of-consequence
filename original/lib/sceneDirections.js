@@ -25,6 +25,22 @@ export function sceneDirections({ state = {}, character = {}, scene = "", action
   const visibleScene = `${scene} ${result}`.split(/(?<=[.!?])\s+/).filter((line) => !/\b(?:no|not|without|absent)\b/i.test(line)).join(" ");
   const evidence = `${state.location || ""} ${visibleScene}`;
   const context = `${evidence} ${action} ${result}`;
+  const currentResidence = (state.properties || []).find(holding => holding.location === state.location && /lease|home|residence|apartment/i.test(holding.type || holding.name || ""));
+  // The player's current intent wins over incidental lodging words in an old
+  // scene. Owning accommodation is not a reason to keep shopping for it.
+  const forceIntent = /\bmeditat\w*|\b(?:focus|reach out|draw on|use)\b.*\b(?:force|anger|dark[ -]?side|sensation)\b/i.test(action);
+  if (forceIntent) return [
+    "Describe the sensation I am trying to understand without assuming its source.",
+    "Choose whether to approach that sensation calmly or draw on the anger I have declared.",
+    "Stop the attempt and examine the visible surroundings instead.",
+    "Review which Force techniques my recorded build actually permits.",
+  ];
+  if (currentResidence) return [
+    "Inspect my recorded residence and check its entrances.",
+    "Rest here for eight uninterrupted hours if the scene is safe.",
+    "Review my possessions and the facilities actually installed here.",
+    "Leave my residence and choose where to go next.",
+  ];
   // A broad market location does not establish a clothing seller or a guesthouse.
   // Only the visible scene establishes whom or what the player can approach.
   const lodging = /\b(?:guesthouse|lodging|shelter|housing|accommodation|inn|hotel|rent|rental|lease|landlord)\b/i;
@@ -67,7 +83,7 @@ export function sceneDirections({ state = {}, character = {}, scene = "", action
   if (forcePressure) {
     const moralChoices = [
       "[Restraint] Study the pull without feeding it, comparing it to the physical route.",
-      "[Dark-side temptation] Let anger sharpen the attempt, accepting that the GM may impose a moral cost.",
+      "[Dark-side temptation] Describe how I choose to use my anger; resolve only that declared intent.",
       trainedInForce
         ? "[Force] Reach out with Use the Force and test the presence directly."
         : "[Pragmatic] Map the sensation against airflow, vibration, and the structure around me.",

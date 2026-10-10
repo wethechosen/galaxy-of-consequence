@@ -16,6 +16,7 @@ import { useAuth } from "@/original/lib/AuthContext";
 import { cleanPlayerMessage, immersiveTurnError, parseImmersiveMessage } from "@/original/lib/immersiveChat";
 import { currentPlayerOptions } from "@/original/lib/sceneDirections";
 import { hitPointDisplay } from "@/original/lib/hitPoints";
+import { advancementGate } from "@/original/lib/sagaAdvancement";
 import { buildCampaignRecap, campaignTranscript, sameCampaignLocation, shouldShowReturnRecap } from "@/original/lib/campaignResume";
 
 const NAV_GROUPS = [
@@ -202,6 +203,7 @@ function ReturnRecap({ recap, onContinue }) {
 function PlayView() {
   const { messages, sending, input, setInput, handleSend, scrollRef, gameState, character, saveReady, saveError, turnError, retryTurn, sendTurn, resetForNewGame, selectedAccountId } = useGame();
   const transcript = useMemo(() => campaignTranscript(messages), [messages]);
+  const advancement = advancementGate(character || {});
   const recap = useMemo(() => buildCampaignRecap({ messages, gameState, character }), [messages, gameState, character]);
   const [showRecap, setShowRecap] = useState(true);
   const [historyCount, setHistoryCount] = useState(0);
@@ -233,6 +235,7 @@ function PlayView() {
     return rolls;
   };
   async function submitAction() {
+    if (advancement.blocked) return;
     if (/^\/?new game$/i.test(input.trim())) {
       if (!character || !window.confirm(`Restart from the beginning with ${character.name || "this saved character"} at level 1? The current campaign timeline will be reset.`)) return;
       setInput("");
@@ -274,6 +277,7 @@ function PlayView() {
   return (
     <div className="gc-play-view flex flex-col h-full min-h-0 min-w-0">
       <LiveHudStrip gameState={gameState} character={character} />
+      {advancement.blocked && <div role="status" className="shrink-0 border-y border-[#22e5c5]/30 bg-[#22e5c5]/5 p-4"><p className="text-[10px] tracking-widest text-[#8fffea]">YOUR NEXT CHAPTER · LEVEL {advancement.level + 1} EARNED</p><p className="text-xs text-[#d7d4cc] mt-2">{advancement.message}</p><Link to={advancement.dossierPath} className="gc-btn inline-block px-4 py-2 text-xs mt-3">DEVELOP YOUR CHARACTER</Link></div>}
       <CombatStatus combat={gameState.combat} />
       <div className="shrink-0 flex flex-wrap items-center gap-3 border-b border-white/10 px-4 py-2 text-[11px] text-[#8b93a3]"><button type="button" onClick={() => { setShowRecap(!showRecap); if (scrollRef.current) scrollRef.current.scrollTop = 0; }} className="hover:text-[#22d3ee]">{showRecap ? "Return to scene" : "The story thus far"}</button>{!showRecap && earlierMessages.length > 0 && <button type="button" onClick={() => { followLatest.current = false; setHistoryCount(historyCount ? 0 : 20); }} className="hover:text-[#22d3ee]">{historyCount ? "Close earlier chapters" : "Earlier chapters"}</button>}{transcript.archived.length > 0 && <button type="button" onClick={() => { setShowArchive(!showArchive); setShowRecap(false); followLatest.current = false; }} className="ml-auto hover:text-[#a9adb8]">{showArchive ? "Close archived transmissions" : "Archived transmissions"}</button>}</div>
       <div ref={scrollRef} data-gc-play-transcript role="region" aria-label="Campaign story" tabIndex={0} onScroll={(event) => { const pane = event.currentTarget; followLatest.current = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 100; }} className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-5 space-y-4">
@@ -285,7 +289,7 @@ function PlayView() {
           <div key={m.sourceIndex} data-message-index={m.sourceIndex} className={`gc-msg-in ${m.role === "user" ? "flex justify-end" : ""}`}>
             <div className={`${m.role === "assistant" ? "max-w-4xl" : "max-w-2xl"} px-4 py-3 text-sm leading-relaxed rounded-2xl whitespace-pre-wrap break-words [overflow-wrap:anywhere]`}
               style={m.role === "user" ? { background: "linear-gradient(135deg, rgba(255,122,26,.18), rgba(255,61,110,.12))", border: "1px solid rgba(255,122,26,.25)", color: "#f2f0ea" } : m.role === "roll" ? { color: "#d9fbff", background: "linear-gradient(135deg, rgba(34,211,238,.12), rgba(168,85,247,.08))", border: "1px solid rgba(34,211,238,.3)", borderLeft: "3px solid #22d3ee", fontFamily: "monospace", fontSize: "12px" } : { color: "#e7e5df", background: "rgba(255,255,255,.03)", borderLeft: "3px solid var(--force-light)" }}>
-              {m.role === "assistant" ? <><p className="mb-3 text-[10px] tracking-widest text-[#8b93a3]">{m.sourceIndex === latestScene && !recap.sceneIsCurrent ? "LAST CONFIRMED EXCHANGE · RECORDED HISTORY" : ""}</p><AssistantTurn content={m.content} onChoose={setInput} current={recap.sceneIsCurrent && m.sourceIndex === latestScene && sameCampaignLocation(parseImmersiveMessage(m.content).location, gameState.location)} gameState={gameState} character={character} rolls={rollsForAssistant(m.sourceIndex)} /></> : <>{cleanPlayerMessage(m.content)}{transcript.pending.includes(m) && !sending && <span className="mt-2 block text-[10px] text-[#a9adb8]">Awaiting a resolved scene.</span>}</>}
+              {m.role === "assistant" ? <><p className="mb-3 text-[10px] tracking-widest text-[#8b93a3]">{m.sourceIndex === latestScene && !recap.sceneIsCurrent ? "LAST CONFIRMED EXCHANGE · RECORDED HISTORY" : ""}</p><AssistantTurn content={m.content} onChoose={setInput} current={!advancement.blocked && recap.sceneIsCurrent && m.sourceIndex === latestScene && sameCampaignLocation(parseImmersiveMessage(m.content).location, gameState.location)} gameState={gameState} character={character} rolls={rollsForAssistant(m.sourceIndex)} /></> : <>{cleanPlayerMessage(m.content)}{transcript.pending.includes(m) && !sending && <span className="mt-2 block text-[10px] text-[#a9adb8]">Awaiting a resolved scene.</span>}</>}
             </div>
           </div>
         ))}
@@ -293,10 +297,10 @@ function PlayView() {
         {sending && <div className="flex items-center gap-2 text-[#8b93a3] text-[11px] tracking-widest pl-4 gc-dot-bounce">THE GALAXY RESPONDS <span>.</span><span>.</span><span>.</span></div>}
         </>}
       </div>
-      {turnError && <div role="alert" className="flex-shrink-0 mx-4 mb-3 rounded-xl border border-[#e23b3b]/40 bg-[#e23b3b]/5 p-3 text-xs text-[#ff9b9b]"><p className="mb-1 text-[10px] font-bold tracking-[0.18em]">COMLINK STATIC</p><p className="text-[#d8d6d0]">{immersiveTurnError(turnError)}</p><button onClick={retryTurn} disabled={sending || !saveReady || Boolean(saveError)} className="gc-btn mt-2 px-3 py-2 disabled:opacity-40">RETRY SCENE</button></div>}
+      {turnError && <div role="alert" className="flex-shrink-0 mx-4 mb-3 rounded-xl border border-[#e23b3b]/40 bg-[#e23b3b]/5 p-3 text-xs text-[#ff9b9b]"><p className="mb-1 text-[10px] font-bold tracking-[0.18em]">COMLINK STATIC</p><p className="text-[#d8d6d0]">{immersiveTurnError(turnError)}</p><button onClick={retryTurn} disabled={advancement.blocked || sending || !saveReady || Boolean(saveError)} className="gc-btn mt-2 px-3 py-2 disabled:opacity-40">RETRY SCENE</button></div>}
       <div className="flex-shrink-0 p-4 flex gap-2" style={{ borderTop: "1px solid rgba(255,255,255,.08)" }}>
-        <input aria-label="Your character's action" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && submitAction()} disabled={sending || !saveReady || Boolean(saveError)} placeholder="What do you do?" className="gc-input flex-1 min-w-0 px-3.5 py-2.5 text-sm text-[#f2f0ea]" />
-        <button aria-label="Send action" onClick={submitAction} disabled={sending || !input.trim() || !saveReady || Boolean(saveError)} className="gc-btn px-4 py-2.5 disabled:opacity-40"><Send size={16} /></button>
+        <input aria-label="Your character's action" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && submitAction()} disabled={advancement.blocked || sending || !saveReady || Boolean(saveError)} placeholder={advancement.blocked ? "Complete your earned advancement in the Dossier" : "What do you do?"} className="gc-input flex-1 min-w-0 px-3.5 py-2.5 text-sm text-[#f2f0ea]" />
+        <button aria-label="Send action" onClick={submitAction} disabled={advancement.blocked || sending || !input.trim() || !saveReady || Boolean(saveError)} className="gc-btn px-4 py-2.5 disabled:opacity-40"><Send size={16} /></button>
       </div>
     </div>
   );
@@ -388,12 +392,12 @@ function TravelView({ setTab }) {
             {(() => {
               const fare = getTravelCost(place, gameState.location);
               const access = getTravelAccess(place, gameState, character);
-              const unavailable = !access.allowed || sending || !saveReady || Boolean(saveError);
+              const unavailable = advancementGate(character || {}).blocked || !access.allowed || sending || !saveReady || Boolean(saveError);
               return (
                 <>
             <div className="flex items-start justify-between gap-3">
               <div><p className="text-lg font-semibold text-[#f2f0ea]">{place.name}</p><p className="text-[10px] tracking-widest text-[#ff7a1a] mt-1">{place.region.toUpperCase()}</p></div>
-              <span className="text-[10px] text-[#8b93a3]">155 ABY · {access.label}</span>
+              <span className="text-[10px] text-[#8b93a3]">150 ABY · {access.label}</span>
             </div>
             <p className="text-xs leading-relaxed text-[#c7c4bc] mt-4">{place.description}</p>
             <p className="text-xs leading-relaxed text-[#8b93a3] mt-3">{place.era}</p>
@@ -423,7 +427,7 @@ function TravelView({ setTab }) {
             {selected.districts.map((area) => <option key={area} value={area}>{area}</option>)}
           </select>
           <p className="mt-3 text-xs text-[#a9adb8]">The GM resolves route access, confinement, and payment in Play. This request does not guarantee arrival.</p>
-          <div className="flex justify-end gap-2 mt-5"><button onClick={() => setSelected(null)} disabled={sending} className="px-3 py-2 text-xs text-[#8b93a3]">CANCEL</button><button disabled={sending || !saveReady || Boolean(saveError)} onClick={async () => { await travelToLocation(selected, district); setSelected(null); setTab("play"); }} className="gc-btn px-4 py-2 text-xs disabled:opacity-40">{sending ? "GM RESOLVING…" : "REQUEST PASSAGE"}</button></div>
+          <div className="flex justify-end gap-2 mt-5"><button onClick={() => setSelected(null)} disabled={sending} className="px-3 py-2 text-xs text-[#8b93a3]">CANCEL</button><button disabled={advancementGate(character || {}).blocked || sending || !saveReady || Boolean(saveError)} onClick={async () => { await travelToLocation(selected, district); setSelected(null); setTab("play"); }} className="gc-btn px-4 py-2 text-xs disabled:opacity-40">{sending ? "GM RESOLVING…" : "REQUEST PASSAGE"}</button></div>
         </div>
       </div>}
     </div>
@@ -525,6 +529,7 @@ function PlayerPageBody() {
     <div className="gc-page-row gc-player-workspace flex flex-col md:flex-row flex-1 min-h-0 gap-3 px-3 pb-3">
       <NavRail tab={tab} setTab={setTab} />
       <div key={tab} data-player-tab={tab} className={`gc-player-panel flex-1 min-w-0 min-h-0 gc-glass rounded-2xl ${tab === "play" && character ? "overflow-hidden" : "overflow-y-auto"}`} role="region" aria-label={tab === "economy" ? "Bank" : tab === "market" ? "Marketplace" : "Player workspace"} tabIndex={tab === "play" ? undefined : 0}>
+        {character && ["economy", "market", "travel"].includes(tab) && advancementGate(character).blocked && <div role="status" className="m-5 rounded-xl border border-[#22e5c5]/30 bg-[#22e5c5]/5 p-4 text-sm text-[#a9adb8]"><p>Browsing is available. Complete your earned advancement before transactions or travel.</p><Link className="inline-block mt-2 text-[#8fffea] underline" to="/character#advancement">CHOOSE YOUR NEXT LEVEL →</Link></div>}
         {tab === "play" && (!character ? <CreationWizard /> : <PlayView />)}
         {tab === "inventory" && (character ? <InventoryView items={gameState.inventory} readOnly /> : <EmptyNote text="NO CHARACTER ON FILE." />)}
         {tab === "properties" && (character ? <PropertiesView items={gameState.properties} economicItems={economy.properties} readOnly /> : <EmptyNote text="NO CHARACTER ON FILE." />)}

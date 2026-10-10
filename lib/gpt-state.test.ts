@@ -20,6 +20,7 @@ describe("shared GPT campaign reads", () => {
     const body = await response.json();
     expect(response.status).toBe(200);
     expect(body.revision).toBe(314);
+    expect(body.advancement).toMatchObject({ blocked: true, code: "advancement_required", experience: 1050, earnedLevel: 2, dossierUrl: "https://galaxy-local.vercel.app/character#advancement" });
     expect(body.lastNarration).toBe(content);
     expect(body.currentScene.description).toBe("");
     expect(body.currentScene.lastOutcome).toBe("");

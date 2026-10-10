@@ -2,6 +2,7 @@ import type { SagaCheckPlan } from "./saga-dice";
 import { activeCombat } from "./saga-combat";
 import { positiveActionText } from "./action-intent";
 import { isExplicitAttackDeclaration, isObjectAttackDeclaration } from "./gpt-turn-intent";
+import { sagaEquipmentAttackModifier, sagaSkillModifier } from "./saga-character";
 
 type RecordValue = Record<string, unknown>;
 const ABILITY_KEYS = { strength: "STR", dexterity: "DEX", constitution: "CON", intelligence: "INT", wisdom: "WIS", charisma: "CHA" } as const;
@@ -20,14 +21,14 @@ function isTrained(character: RecordValue, skill: string) {
   return new RegExp(`trained(?:\\s+in)?\\s+${escaped}`, "i").test(String(character.skills || ""));
 }
 
-function basePlan(character: RecordValue, label: string, ability: Ability, target: number, reason: string, stakes: string): SagaCheckPlan {
+function basePlan(character: RecordValue, state: RecordValue, label: string, ability: Ability, target: number, reason: string, stakes: string): SagaCheckPlan {
   const level = Math.max(1, Number(character.level) || 1);
   return {
     needed: true,
     actor: "player",
     kind: "skill",
     label,
-    modifier: Math.floor(level / 2) + abilityModifier(character, ability) + (isTrained(character, label) ? 5 : 0),
+    modifier: sagaSkillModifier(character, state, label, ability),
     target,
     targetLabel: "DC",
     targetVisible: true,
@@ -42,7 +43,7 @@ function basePlan(character: RecordValue, label: string, ability: Ability, targe
 export function planSagaAction(action: string, character: RecordValue, state: RecordValue): SagaCheckPlan | null {
   const lower = positiveActionText(action).toLowerCase();
   if (!lower || /^\s*\[\[/.test(lower) || /^(?:i\s+)?(?:say|tell|ask|answer|wait|rest|sleep|read|remember|recall)\b/.test(lower)) return null;
-  const skill = (label: string, ability: Ability, target: number, reason: string, stakes: string) => basePlan(character, label, ability, target, reason, stakes);
+  const skill = (label: string, ability: Ability, target: number, reason: string, stakes: string) => basePlan(character, state, label, ability, target, reason, stakes);
   if (hasWord(lower, /\binitiative\b|\bdraw first\b|\breact first\b/)) {
     const plan = skill("Initiative", "dexterity", 15, "Determine acting order when timing is contested.", "The result establishes the player's place in the encounter order.");
     plan.kind = "initiative";
@@ -93,7 +94,7 @@ export function planSagaAction(action: string, character: RecordValue, state: Re
       actor: "player",
       kind: "attack",
       label: ranged ? "Ranged object attack" : "Melee object attack",
-      modifier: bab + abilityModifier(character, ranged ? "dexterity" : "strength"),
+      modifier: bab + abilityModifier(character, ranged ? "dexterity" : "strength") + sagaEquipmentAttackModifier(character),
       target: 5,
       targetLabel: "Object Reflex Defense",
       targetVisible: true,
@@ -115,7 +116,7 @@ export function planSagaAction(action: string, character: RecordValue, state: Re
       return plan;
     }
     const opponent = combat.combatants.find((entry) => entry.side === "opposition" && entry.hp > 0);
-    return { needed: true, actor: "player", kind: "attack", label: ranged ? "Ranged attack" : "Melee attack", modifier: bab + abilityModifier(character, ranged ? "dexterity" : "strength"), target: opponent?.reflex || 15, targetLabel: "Reflex Defense", targetVisible: false, reason: "Resolve one declared attack against the active target's Reflex Defense.", stakes: "Success hits and deals rolled damage; failure misses. The player retains control of any unspent actions.", provisional: !Number.isFinite(Number(character.baseAttackBonus)), damage: ranged ? { count: 3, sides: 6, modifier: 0, type: "energy" } : { count: 1, sides: 4, modifier: abilityModifier(character, "strength"), type: "kinetic" } };
+    return { needed: true, actor: "player", kind: "attack", label: ranged ? "Ranged attack" : "Melee attack", modifier: bab + abilityModifier(character, ranged ? "dexterity" : "strength") + sagaEquipmentAttackModifier(character), target: opponent?.reflex || 15, targetLabel: "Reflex Defense", targetVisible: false, reason: "Resolve one declared attack against the active target's Reflex Defense.", stakes: "Success hits and deals rolled damage; failure misses. The player retains control of any unspent actions.", provisional: !Number.isFinite(Number(character.baseAttackBonus)), damage: ranged ? { count: 3, sides: 6, modifier: 0, type: "energy" } : { count: 1, sides: 4, modifier: abilityModifier(character, "strength"), type: "kinetic" } };
   }
   const explicitStrengthTask = /^(?:i\s+)?(?:(?:try|attempt)\s+to\s+)?(?:break|lift|hold|force\s+open|shove|bend|push|pull)\b/.test(lower);
   const explicitEnduranceTask = /^(?:i\s+)?(?:(?:try|attempt)\s+to\s+)?(?:endure|resist|hold\s+my\s+breath|push\s+through\s+(?:the\s+)?(?:pain|fatigue|exhaustion))\b/.test(lower);

@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     const file = form.get("file");
     if (!(file instanceof File)) throw new Error("Choose a PDF, TXT, or Markdown file.");
     const extension = extname(file.name).toLowerCase();
-    if (![".pdf", ".txt", ".md"].includes(extension) || file.size > 120_000_000) throw new Error("Choose a PDF, TXT, or Markdown file under 120 MB.");
+    if (![".pdf", ".txt", ".md"].includes(extension) || file.size > 180_000_000) throw new Error("Choose a PDF, TXT, or Markdown file under 180 MB.");
     const authority = String(form.get("authority") || "setting");
     if (!["saga_core", "saga_errata", "saga_supplement", "setting"].includes(authority)) throw new Error("Invalid source authority.");
     const title = String(form.get("title") || basename(file.name, extension)).trim().slice(0, 160);

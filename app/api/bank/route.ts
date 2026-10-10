@@ -5,6 +5,7 @@ import { assertLocalRequest, readLocalObject } from "@/lib/local-http";
 import { applyBankTransfer, BankTransferError, type BankTransfer } from "@/lib/bank-transfer";
 import { hostedGet, hostedPersistenceEnabled, hydrateHostedSave, saveHostedResult } from "@/lib/hosted-bridge";
 import { campaignTarget, committedOperation, operationIdentity } from "@/lib/server-operation";
+import { assertAdvancementReady, AdvancementRequiredError, advancementErrorBody } from "@/lib/advancement-gate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +27,7 @@ export async function POST(request: Request) {
     if (hosted && current.revision !== hosted.revision) throw new BankTransferError("The account changed elsewhere. Reload before transferring.", 409);
     if (committedOperation(current.snapshot, "bankTransactions", identity)) return NextResponse.json({ snapshot: current.snapshot, revision: current.revision, updatedAt: current.updatedAt, replayed: true }, { headers: { "Cache-Control": "no-store" } });
     if (!current.snapshot || current.revision !== body.revision) throw new BankTransferError("The account changed. Reload before transferring.", 409);
+    assertAdvancementReady(current.snapshot.character);
     const snapshot = applyBankTransfer(current.snapshot, input);
     const history = Array.isArray(snapshot.gameState.bankTransactions) ? snapshot.gameState.bankTransactions : [];
     snapshot.gameState.bankTransactions = [...history, { transactionId: identity.id, requestFingerprint: identity.fingerprint, ...input,
@@ -37,6 +39,7 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({ snapshot, revision: saved.revision, updatedAt: saved.updatedAt }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
+    if (error instanceof AdvancementRequiredError) return NextResponse.json(advancementErrorBody(error), { status: error.status });
     const status = error && typeof error === "object" && "status" in error ? Number(error.status) : error instanceof Error && /sign in/i.test(error.message) ? 401 : 500;
     return NextResponse.json({ error: error instanceof Error ? error.message : "The transfer could not be confirmed." }, { status });
   }

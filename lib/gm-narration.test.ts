@@ -26,6 +26,7 @@ describe("authoritative Saga narration", () => {
     expect(() => assertNarrativeLedgerConsistency("You receive 500 credits.", {})).toThrow(/credit transfer/);
     expect(() => assertNarrativeLedgerConsistency("You receive 500 credits.", { credits: 500 })).not.toThrow();
     expect(() => assertNarrativeLedgerConsistency("Transaction complete. You hand over 1,500 credits and take the suit.", { credits: -1500, inventoryAdd: [{ name: "Suit", qty: 1 }] })).not.toThrow();
+    expect(() => assertNarrativeLedgerConsistency("The server nods. Your tab is cleared.", {})).toThrow(/payment/);
     expect(() => assertNarrativeLedgerConsistency("No payment occurs.\nPLAYER OPTIONS\nA. You pay 20 credits for a room.\nB. You acquire a suit.", {})).not.toThrow();
   });
   it("allows an exact no-roll merchant transaction but no unquoted windfall", () => {
@@ -126,6 +127,12 @@ describe("authoritative Saga narration", () => {
     expect(() => assertMovementSceneProgress(vague, "I follow the route", null, {}, "Transit route")).toThrow(/observable position/);
     expect(() => assertMovementSceneProgress(concrete, "I follow the route", null, {}, "Transit route")).not.toThrow();
     expect(() => assertMovementSceneProgress(vague, "I remain still", null, {}, "Transit route")).not.toThrow();
+  });
+
+  it("requires a named destination reached in narration to be saved in the location ledger", () => {
+    const arrived = "LOCATION\nOffice trailer interior\nSCENE\nYou leave the trailer and arrive at the travel documentation kiosk in the docking-bay concourse.\nGM ADJUDICATION\nOrdinary movement.\nGAMEPLAY RESULT\nYou reach the kiosk and stand before its clerk.\nSAGA CHECK\nNo check required.\nSTATE UPDATE\nNo persistent change.\nPLAYER OPTIONS\nA. Ask the clerk a question.\nB. Read the sign.\nYou may declare another action.";
+    expect(() => assertMovementSceneProgress(arrived, "I leave and seek the travel documentation office", null, {}, "Office trailer interior")).toThrow(/saving that destination/i);
+    expect(() => assertMovementSceneProgress(arrived, "I leave and seek the travel documentation office", null, { location: "Docking Bay 94 — travel documentation kiosk" }, "Office trailer interior")).not.toThrow();
   });
 
   it("stores the current narrated beat and advances route progress only through play", () => {

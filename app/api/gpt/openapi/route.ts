@@ -141,7 +141,7 @@ export async function GET(request: Request) {
         description: "Gameplay only. Never use this operation for save, load, HUD, sync, reconciliation, or OOC corrections. The server owns dice, Saga resolution, consequences, and persistence.",
         security: bearerSecurity,
         requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["revision", "action"], properties: { revision, action: { type: "string", minLength: 1, maxLength: 2000 }, turnId: { type: "string", minLength: 8, maxLength: 100, pattern: "^[a-zA-Z0-9_-]+$" } }, additionalProperties: false } } } },
-        responses: { "200": jsonResponse("Committed gameplay turn"), "400": { description: "Invalid action" }, "401": { description: "Unauthorized" }, "409": { description: "Revision conflict or replay" }, "422": { description: "Administrative command; use the indicated control action" } },
+        responses: { "200": jsonResponse("Committed gameplay turn"), "400": { description: "Invalid action" }, "401": { description: "Unauthorized" }, "409": { description: "Revision conflict, replay, or required character advancement" }, "422": { description: "Administrative command; use the indicated control action" } },
       },
     },
   };
@@ -150,8 +150,8 @@ export async function GET(request: Request) {
     openapi: "3.1.0",
     info: {
       title: "Galaxy of Consequence Custom GPT Controller",
-      version: "2.0.9",
-      description: "Authoritative GOC controller: state/HUD/checkpoints/reconciliation are separate from gameplay turns.",
+      version: "2.1.0",
+      description: "Authoritative GOC controller: Supabase state, HUD, equipment blocks, advancement, checkpoints, and gameplay turns share one revisioned campaign.",
     },
     servers: [{ url: controllerUrl }],
     paths,

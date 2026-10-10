@@ -59,6 +59,21 @@ describe("persistent conversational commerce", () => {
     }
   });
 
+  it("honors semantically confirmed polite acceptance without requiring a purchase keyword", () => {
+    const state = quotedSnapshot().gameState;
+    const id = currentTradeOffers(state)[0].id;
+    for (const action of ["Could I take both please? Here's the agreed payment.", "That arrangement works for me. Here are the credits."]) {
+      expect(planConversationTrade(action, state, "polite_purchase", id), action)
+        .toMatchObject({ status: "accepted", offer: { id, totalCredits: 1500 } });
+    }
+    expect(planConversationTrade("Could I take both please?", state, "availability_question")).toBeNull();
+    for (const action of ["I don't buy the suit and tunic", "I steal the suit and tunic", "I buy the suit if you lower the price"]) {
+      expect(planConversationTrade(action, state, "no_consent", id), action).toBeNull();
+    }
+    expect(planConversationTrade("I pay 10 credits for both", state, "counteroffer", id)).toMatchObject({ status: "unavailable" });
+    expect(planConversationTrade("That arrangement works for me", state, "unknown_offer", "offer:not-saved")).toBeNull();
+  });
+
   it("does not turn inquiries, inspection, theft, goals, negation, or player self-grants into spending", () => {
     for (const action of [
       "I need a robe, thick, black, and whatever you have that's armored", "Can I buy the suit and tunic?",

@@ -26,7 +26,7 @@ export default function SyndicatesPage() {
         <div>
           <p className="text-[10px] tracking-[0.2em] text-[#ff7a1a]">UNDERWORLD INTELLIGENCE</p>
           <h1 className="gc-display text-3xl font-bold text-[#f2f0ea] mt-2">SYNDICATES & POWER BLOCS</h1>
-          <p className="text-sm text-[#a9adb8] mt-2 max-w-3xl">A public-facing intelligence brief on criminal networks, chartered authorities, and contract alliances active across the galaxy in 155 ABY. Rumor is not proof; every approach creates obligations.</p>
+          <p className="text-sm text-[#a9adb8] mt-2 max-w-3xl">A public-facing intelligence brief on criminal networks, chartered authorities, and contract alliances active across the galaxy in 150 ABY. Rumor is not proof; every approach creates obligations.</p>
         </div>
         <div className="text-right text-xs text-[#a9adb8]"><span className="text-[#5c6370]">LIQUID CREDITS</span><br /><strong className="text-[#22e5c5]">{gameState.credits.toLocaleString()} cr</strong></div>
       </div>

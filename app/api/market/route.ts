@@ -5,6 +5,7 @@ import { assertLocalRequest, readLocalObject } from "@/lib/local-http";
 import { applyMarketTrade, MarketTradeError, type TradeInput } from "@/lib/market-trade";
 import { hostedGet, hostedPersistenceEnabled, hydrateHostedSave, saveHostedResult } from "@/lib/hosted-bridge";
 import { campaignTarget, committedOperation, operationIdentity } from "@/lib/server-operation";
+import { assertAdvancementReady, AdvancementRequiredError, advancementErrorBody } from "@/lib/advancement-gate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,6 +32,7 @@ export async function POST(request: Request) {
     if (hosted && current.revision !== hosted.revision) throw new MarketTradeError("The campaign changed elsewhere. Reload the market and try again.", 409);
     if (committedOperation(current.snapshot, "marketTransactions", identity)) return NextResponse.json({ snapshot: current.snapshot, revision: current.revision, updatedAt: current.updatedAt, replayed: true }, { headers: { "Cache-Control": "no-store" } });
     if (!current.snapshot || current.revision !== revision) throw new MarketTradeError("The campaign record changed. Reopen the market and try again.", 409);
+    assertAdvancementReady(current.snapshot.character);
     const snapshot = applyMarketTrade(current.snapshot, input);
     const history = Array.isArray(snapshot.gameState.marketTransactions) ? snapshot.gameState.marketTransactions : [];
     // Retain receipts: trimming them would allow an old request to charge again.
@@ -42,6 +44,7 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({ snapshot, revision: saved.revision, updatedAt: saved.updatedAt }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
+    if (error instanceof AdvancementRequiredError) return NextResponse.json(advancementErrorBody(error), { status: error.status });
     const status = error && typeof error === "object" && "status" in error ? Number(error.status) : error instanceof Error && /sign in/i.test(error.message) ? 401 : 500;
     return NextResponse.json({ error: error instanceof Error ? error.message : "The market transaction could not be completed." }, { status });
   }

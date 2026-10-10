@@ -55,6 +55,18 @@ describe("planSagaAction", () => {
     });
   });
   it("plans a Treat Injury check when the player uses a medpac", () => expect(planSagaAction("I use a medpac", dmir, {})).toMatchObject({ label: "Treat Injury", kind: "skill", target: 15 }));
+  it("uses recorded training, Skill Focus, level and condition in ordinary checks", () => {
+    const focused = { ...dmir, level: 2, trainedSkills: ["Mechanics"], featSelections: [{ id: "skill-focus-mechanics", featId: "skill-focus", skillId: "mechanics", name: "Skill Focus (Mechanics)" }] };
+    expect(planSagaAction("I bypass the lock", focused, { conditionTrack: 1 })).toMatchObject({ label: "Mechanics", modifier: 11 });
+  });
+  it("applies an equipped armor penalty until light-armor proficiency is recorded", () => {
+    const armored = { ...dmir, equipArmor: "Armored spacer's flight suit" };
+    expect(planSagaAction("I move cautiously past the guard", armored, {})).toMatchObject({ label: "Stealth", modifier: 0 });
+    expect(planSagaAction("I shoot the debris", armored, {})).toMatchObject({ kind: "attack", modifier: 0 });
+    const proficient = { ...armored, featSelections: [{ id: "armor-proficiency-light", name: "Armor Proficiency (light)" }] };
+    expect(planSagaAction("I move cautiously past the guard", proficient, {})).toMatchObject({ label: "Stealth", modifier: 2 });
+    expect(planSagaAction("I shoot the debris", proficient, {})).toMatchObject({ kind: "attack", modifier: 2 });
+  });
   it("does not turn backstory narration into a mechanical check", () => {
     const background = "My background: I was born on Coruscant. My father trained me when I was young, and my mother came from Hapes. I remember prison and the people who mentored me, but I am explaining history rather than attempting an action.";
     expect(planSagaAction(background, dmir, {})).toBeNull();
