@@ -67,6 +67,8 @@ The saved transcript may contain legacy playtest errors. Previous assistant pros
 
 The supplied roll outcome is binding. On FAILURE, the declared objective does not occur: no bypass, download, withdrawal, decisive discovery, hit, defeat, escape, acquisition, decryption, or actionable secret is gained. Failure must still move play forward through a concrete obstacle, exposed risk, elapsed time, changed position, NPC/world reaction, or newly visible scene boundary supported by the stakes. Never reset to the same generic corridor or answer only that nothing happens. On SUCCESS, grant only the declared objective within the established fiction—do not add unrelated treasure, evidence, contacts, access, or victories. Under SAGA CHECK include the exact line RESULT: SUCCESS or RESULT: FAILURE matching the supplied roll.
 
+TRANSACTION CONTINUITY: A confirmed trade receipt and the corresponding owned entitlement outrank an older open quote or a stale nested booking flag. A seller who already authenticated and acknowledged a payment cannot demand the identical fare again without a genuinely new, independently established reason. Never resurrect an obstacle that the prior confirmed turn resolved simply to delay the next movement. A fresh obstruction must have its own established cause, not be a paraphrase of the last refusal.
+
 Resolve only the attempted action. The player owns D'mir's intent, words, feelings, movement, purchases, attacks, and decisions. Never continue D'mir's action past what the player declared, choose dialogue for him, or tell the player what he should do. Common public commerce and ordinary travel can succeed when the ledger shows adequate funds and access; dangerous, quarantined, hidden Sith, or story-locked routes require earned access. Preserve chronology, injuries, resources, relationships, and faction motives.
 
 Create ordinary local places, NPCs, stock, services, prices and reactions as the GM when the player explores or asks. Record concrete leads and offers so later turns remember them. A public lodging enquiry is not an illicit transaction; visible scars or dark-side awareness do not reveal a criminal record to strangers. Do not assume every NPC knows the character's history or every district belongs to a faction from a sourcebook. Hidden fortunes, secret combinations, transfers, major NPC histories and relics require evidence and the appropriate resolution. Require a roll only for meaningful uncertainty, not visiting a known stall, following public directions, or asking a published price. A failed check must not reveal the actionable detail it was meant to find. If hostilities begin and initiative has not been established, stop at the onset of danger and resolve initiative before any attack. Do not resolve a multi-round fight or defeat multiple enemies in one response. One player attack roll can address one declared target only; initiative and each meaningful NPC turn must be resolved separately. Never narrate the player's unchosen dialogue, motives, attacks, victories, item-taking, future plans, or moral conclusions.
@@ -579,11 +581,56 @@ export function assertNarrativeLedgerConsistency(narration: string, delta: Recor
   }
 }
 
+/**
+ * Presentation-only repair. The model can put LOCATION after SCENE or use
+ * "LOCATION:" without changing what occurred. Reassemble unique section
+ * bodies in canonical order, inserting LOCATION only from the proposed
+ * location delta or the authoritative saved location. Never invent outcomes,
+ * rolls, offers, or ledger entries here. Semantic validators still run after.
+ */
+export function normalizeCampaignSections(
+  narration: string,
+  delta: Record<string, unknown> | null,
+  savedLocation: unknown,
+) {
+  const headings = ["LOCATION", "SCENE", "GM ADJUDICATION", "GAMEPLAY RESULT", "SAGA CHECK", "STATE UPDATE", "PLAYER OPTIONS"] as const;
+  const inlineLocation = narration.replace(
+    /^\s*(?:#{1,6}\s*)?LOCATION\s*:\s*(\S[^\r\n]*)\s*$/im,
+    (_, location: string) => `## LOCATION\n${location.trim()}`,
+  );
+  const pattern = /^(?:#{1,6}\s*)?(LOCATION|SCENE|GM ADJUDICATION|GAMEPLAY RESULT|SAGA CHECK|STATE UPDATE|PLAYER OPTIONS)\s*:?\s*$/gim;
+  const markers = [...inlineLocation.matchAll(pattern)];
+  if (!markers.length) return narration;
+  const sections = new Map<string, string>();
+  for (let index = 0; index < markers.length; index += 1) {
+    const match = markers[index];
+    const name = match[1].toUpperCase();
+    if (sections.has(name)) return narration; // Duplicate headings need a real rewrite.
+    const start = (match.index || 0) + match[0].length;
+    const end = index + 1 < markers.length ? markers[index + 1].index! : inlineLocation.length;
+    sections.set(name, inlineLocation.slice(start, end).trim());
+  }
+  // Don't silently discard arbitrary text preceding the first section.
+  if (inlineLocation.slice(0, markers[0].index || 0).trim()) return narration;
+  if (!sections.has("LOCATION")) {
+    const verifiedLocation = String(delta?.location || savedLocation || "").trim();
+    if (!verifiedLocation) return narration;
+    sections.set("LOCATION", verifiedLocation);
+  }
+  return headings.filter((heading) => sections.has(heading))
+    .map((heading) => `## ${heading}\n${sections.get(heading)}`)
+    .join("\n\n");
+}
+
 export function assertCampaignResponseStructure(narration: string) {
   const headings: Array<typeof SECTION_HEADINGS[number]> = ["LOCATION", "SCENE", "GM ADJUDICATION", "GAMEPLAY RESULT", "SAGA CHECK", "STATE UPDATE", "PLAYER OPTIONS"];
   let cursor = -1;
   for (const heading of headings) {
-    const match = new RegExp(`^(?:#{1,6}\\s*)?${heading}\\s*$`, "im").exec(narration);
+    const matches = [...narration.matchAll(new RegExp(`^(?:#{1,6}\\s*)?${heading}\\s*$`, "gim"))];
+    if (matches.length !== 1) {
+      throw new GmTurnError(`The GM response must contain exactly one ${heading} section. No outcome was saved; retry the turn.`, 502);
+    }
+    const match = matches[0];
     if (!match || match.index <= cursor) {
       throw new GmTurnError(`The GM response omitted or reordered the ${heading} section. No outcome was saved; retry the turn.`, 502);
     }
@@ -840,6 +887,22 @@ export function assertSceneRefreshDelta(delta: Record<string, unknown> | null) {
   }
 }
 
+/**
+ * Reject a repeated claim of nonpayment when the preceding committed
+ * narration authenticated that same payment. A new fee or evidence of fraud
+ * is not blocked by this narrow continuity check.
+ */
+export function assertSettledPaymentContinuity(narration: string, priorResult: string, action: string) {
+  if (!permitsLocationChange(action) || !priorResult) return;
+  const settled = /(?:receipt|payment|transaction|fare)[^.\n]{0,140}(?:acknowledg|validat|confirm|settled|accepted|secured)|(?:acknowledg|verified|confirmed)[^.\n]{0,120}(?:receipt|payment|fare)/i.test(priorResult);
+  if (!settled) return;
+  const currentBeat = [sectionBody(narration, "SCENE"), sectionBody(narration, "GAMEPLAY RESULT")].join("\n");
+  const rejectsSamePayment = /\b(?:haven['’]?t|hasn['’]?t|have not|has not|not yet)\s+paid\b|\b(?:no|can['’]?t find|cannot find|don['’]?t see|do not see)\s+(?:(?:a|the|your)\s+)?(?:credit\s+)?(?:transfer|payment)\b|\b(?:pay|payment)\s+(?:the\s+)?(?:same\s+)?(?:fare|deposit)\s+again\b/i.test(currentBeat);
+  if (rejectsSamePayment) {
+    throw new GmTurnError("The GM repeated a denial of payment that the preceding committed turn acknowledged. Rewrite this movement from the settled transaction; a new obstacle requires new evidence.", 502);
+  }
+}
+
 export function assertNarrativeFocus(narration: string, action: string) {
   const invokesXiii = /\bxiii\b/i.test(action);
   if (!invokesXiii && /\bxiii\b/i.test(narration)) {
@@ -980,6 +1043,10 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   const priorScene = currentSceneFrame(currentSnapshot)?.summary || "";
   const lastAuthored = (currentSnapshot.messages as Message[]).filter(message => message.role === "assistant" && message.provider !== "local-safe-fallback" && !message.fallbackReason).at(-1);
   const priorResult = lastAuthored ? sectionBody(lastAuthored.content, "GAMEPLAY RESULT") : "";
+  const lastConfirmedBeat = priorResult
+    ? `\nPREVIOUS CONFIRMED RESULT (history, not a new obstacle):\n${priorResult.slice(0, 1200)}\nA completed payment, release, agreement, or cleared obstruction remains completed unless the current authoritative ledger supplies new evidence.`
+    : "";
+
   const userMessage = action || "Describe the CURRENT saved scene, not the opening scene. Use the full seven-section response contract. LOCATION must repeat the authoritative saved location. SCENE must freshly describe my visible established appearance or gear, posture, immediate sensory setting, and spatial layout without claiming that I acted, felt a prescribed emotion, noticed a new clue, or gained anything. Under GM ADJUDICATION say this is a read-only scene view. Under GAMEPLAY RESULT say I remain at the saved moment. Under SAGA CHECK write: No check required. Under STATE UPDATE write: No persistent change. Give scene-specific PLAYER OPTIONS using confirmed capabilities. Do not advance time, move me, invent a discovery, or change mechanical state. Return STATE:{}.";
   const claims = authorityWarnings(action);
   const authorityInstruction = claims.length ? `\n\nPLAYER AUTHORITY WARNING: This declaration contains unverified ${claims.join(", ")}. Treat those clauses only as D'mir's belief or intended approach. They are not facts and cannot become true without support from current authoritative state plus a relevant successful resolution.` : "";
@@ -993,6 +1060,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
     : mode === "context" ? `The player supplied character background/context, not an in-world action. Acknowledge it briefly, do not roll, do not advance the scene, and do not invent additions. Do not output a STATE block.\n\nCURRENT CAMPAIGN STATE:\n${publicContext(currentSnapshot)}`
     : `${GM_SYSTEM}${rollInstruction}${combatInstruction}${authorityInstruction}${creatorInstruction}\n\nTURN CONTRACT: Suggestions must change with the current scene, visible interactables, injuries, carried equipment, trained skills and remaining combat actions. Use 2-4 A-D possible attempts, never a static menu, guaranteed outcome, secret clue or unearned Force technique. Only suggest objects already visible in this scene or recorded in state. LOCATION names the end-of-turn place and matches the ledger, not a stale district label. SCENE shows D'mir's established visible condition and the declared action meeting the immediate environment before mechanics. GM ADJUDICATION accepts the executable intent; an asserted destination is a goal, not a reason to refuse the attempt. GAMEPLAY RESULT must create a playable new beat even on failure. SAGA CHECK contains only server-owned dice or "No check required." Meditation and terminal interaction are not travel. Negated actions never occur. Travel reaches a concrete observable boundary, not an endless generic transit summary. PRIOR TURN OUTCOME messages omit old scene prose: use them only for continuity, never as a writing template. The saved scene summary identifies the present beat but its wording must not be copied.\n\nCURRENT AUTHORITATIVE CAMPAIGN STATE:\n${publicContext(currentSnapshot)}`;
   let response: Awaited<ReturnType<typeof invokeNvidia>> | null = null;
+  if (mode === "play") system += `\n\nCURRENT ACTION TO RESOLVE NOW: ${action}\n${lastConfirmedBeat}\nCURRENT ACTION PRIORITY: Follow this declaration, not any NPC demand from an earlier scene. When public movement is unopposed and access is established, resolve movement and record the new end location. When an action includes unpriced shopping or sales, present exact prices and offers rather than silently charging, granting items, or forcing an unrelated NPC confrontation; resolve the other independently executable substeps as far as the confirmed state permits. Never invent a second payment for an already receipted purchase.`;
   if (semantic) system += `\n\nINTERPRETED PLAYER INTENT (not an outcome): ${JSON.stringify(semantic)}\nResolve this intent, not a keyword trigger. The original declaration below remains the player's words and choices. Ordinary competent substeps are part of the attempt; never add a new player decision. Any check is already supplied by the referee; never invent another.`;
   if (forceConstraint) system += `\n\nSAGA CAPABILITY CONSTRAINT: ${forceConstraint}`;
   if (mode === "play") system += `\n\n${conversationTradeInstruction(trade)}\n${routineCommerce ? "ORDINARY INTERACTION: No check is required for a normal question or stock/price inquiry. Answer the actual question as the CURRENT interlocutor in the saved scene. A broad market location does not mean a clothing stall. Resolve short follow-ups against the last exchange, including lodging duration, privacy, meals and prices. Quote new terms before charging; do not invent procedural refusal without an established reason." : ""}\nSERIALIZATION: End with exactly one HTML STATE comment containing strict JSON, with double-quoted keys and string values. Multiple merchandise items use one inventoryAdd array, never duplicate keys. A no-change example is <!--STATE:{}-->. Record every concrete priced offer in tradeOfferAdd, including services as named entitlements tagged service with the agreed duration and amenities. Quotes grant nothing yet. LOCATION names the place at the END of this action and must match delta.location when declared travel changes it, or the saved location otherwise.`;
@@ -1001,14 +1069,14 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   let delta: Record<string, unknown> | null = null;
   let validationError: unknown = null;
   let fallbackReason: "provider" | "validation" | null = null;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
     const correction = attempt && validationError instanceof Error
-      ? { role: "user" as const, content: `[SERVER VALIDATION REJECTED THE PRIOR DRAFT: ${validationError.message}] Rewrite the same turn. Preserve the supplied roll exactly, use only authoritative state, follow all seven required sections in order, accept the declared action as an attempt, fail forward when necessary, and output one valid STATE block. Do not add a new action or reroll.` }
+      ? { role: "user" as const, content: `[SERVER VALIDATION REJECTED THE PRIOR DRAFT: ${validationError.message}] Rewrite the same turn from the CURRENT authoritative location. Address the player\'s latest action specifically. Do not replay the last NPC obstruction or undo any confirmed payment, release, purchase, or access. Preserve the supplied roll exactly, use only authoritative state, follow all seven required sections in order, accept the declared action as an attempt, fail forward when necessary, and output one valid STATE block. Do not add a new action or reroll.` }
       : null;
     try {
       response = await invokeNvidia({
         system,
-        timeout_ms: providerBudget(35_000),
+        timeout_ms: providerBudget(24_000),
         sourceQuery: action || String(currentSnapshot.gameState.location || "opening scene"),
         max_tokens: mode === "ooc" ? 768 : 2400,
         messages: [...history, { role: "user", content: userMessage }, ...(correction ? [correction] : [])],
@@ -1050,9 +1118,13 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
           parsed.delta as Record<string, unknown> | null,
         ),
       };
-      if (mode === "play") parsed = { ...parsed, clean: ensurePlayerOptions(normalizePlayerOptions(parsed.clean), currentSnapshot.gameState, currentSnapshot.character as Record<string, unknown>, action) };
+      if (mode === "play") {
+        parsed = { ...parsed, clean: ensurePlayerOptions(normalizePlayerOptions(parsed.clean), currentSnapshot.gameState, currentSnapshot.character as Record<string, unknown>, action) };
+        parsed = { ...parsed, clean: normalizeCampaignSections(parsed.clean, parsed.delta as Record<string, unknown> | null, currentSnapshot.gameState.location) };
+      }
       if (mode === "play") assertCampaignResponseStructure(parsed.clean);
       if (mode === "play") assertNarrativeFocus(parsed.clean, action);
+      if (mode === "play") assertSettledPaymentContinuity(parsed.clean, priorResult, action);
       if (mode === "play" && response.provider !== "local-safe-fallback") assertFreshScene(parsed.clean, priorScene, action, priorResult);
       assertMechanicalNarration(parsed.clean, roll);
       assertResolvedOutcome(parsed.clean, roll);
@@ -1091,6 +1163,12 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
     }
   }
   if (validationError) {
+    console.error("[api/gm] drafting exhausted", {
+      turnId: input.turnId,
+      revision: input.revision,
+      attempts: 3,
+      reason: validationError instanceof Error ? validationError.message : String(validationError),
+    });
     if (mode !== "play" || (!authoritativeResolution && trade?.status !== "accepted")) {
       // Nothing has resolved: never manufacture progress or replace the scene.
       throw new GmTurnError("The GM could not finish this response. Your action is preserved; the scene and campaign have not advanced. Retry the same action.", 503);
@@ -1101,6 +1179,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
     parsed = { ...parsed, clean: alignMechanicalResult(sanitizeGmNarration(parsed.clean), roll) };
     if (mode === "play") {
       parsed = { ...parsed, clean: ensurePlayerOptions(normalizePlayerOptions(parsed.clean), currentSnapshot.gameState, currentSnapshot.character as Record<string, unknown>, action) };
+      parsed = { ...parsed, clean: normalizeCampaignSections(parsed.clean, parsed.delta as Record<string, unknown> | null, currentSnapshot.gameState.location) };
       assertCampaignResponseStructure(parsed.clean);
       assertNarrativeFocus(parsed.clean, action);
     }
