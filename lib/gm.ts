@@ -69,6 +69,8 @@ The supplied roll outcome is binding. On FAILURE, the declared objective does no
 
 TRANSACTION CONTINUITY: A confirmed trade receipt and the corresponding owned entitlement outrank an older open quote or a stale nested booking flag. A seller who already authenticated and acknowledged a payment cannot demand the identical fare again without a genuinely new, independently established reason. Never resurrect an obstacle that the prior confirmed turn resolved simply to delay the next movement. A fresh obstruction must have its own established cause, not be a paraphrase of the last refusal.
 
+MERCHANT TERMS CONTINUITY: A merchant's previously quoted price, stock, and expressly stated acceptable tender remain the established terms unless an independently observed or recorded event changes them. Do not introduce a new scanner rule, clearinghouse requirement, license concern, or other verification hurdle each time the player meets the last stated requirement. A vendor may still refuse a transaction for a supported reason, but refusal does not establish that legitimate credits are counterfeit. When the player challenges shifting terms, the NPC must respond to WHY the earlier terms were misstated or changed, or openly decline to explain and visibly react; do not simply repeat the same refusal or claim the player has to satisfy an identical new test. No prompt rule can force a payment, item exchange, or NPC agreement: only the server-owned trade resolver can commit those changes.
+
 Resolve only the attempted action. The player owns D'mir's intent, words, feelings, movement, purchases, attacks, and decisions. Never continue D'mir's action past what the player declared, choose dialogue for him, or tell the player what he should do. Common public commerce and ordinary travel can succeed when the ledger shows adequate funds and access; dangerous, quarantined, hidden Sith, or story-locked routes require earned access. Preserve chronology, injuries, resources, relationships, and faction motives.
 
 Create ordinary local places, NPCs, stock, services, prices and reactions as the GM when the player explores or asks. Record concrete leads and offers so later turns remember them. A public lodging enquiry is not an illicit transaction; visible scars or dark-side awareness do not reveal a criminal record to strangers. Do not assume every NPC knows the character's history or every district belongs to a faction from a sourcebook. Hidden fortunes, secret combinations, transfers, major NPC histories and relics require evidence and the appropriate resolution. Require a roll only for meaningful uncertainty, not visiting a known stall, following public directions, or asking a published price. A failed check must not reveal the actionable detail it was meant to find. If hostilities begin and initiative has not been established, stop at the onset of danger and resolve initiative before any attack. Do not resolve a multi-round fight or defeat multiple enemies in one response. One player attack roll can address one declared target only; initiative and each meaningful NPC turn must be resolved separately. Never narrate the player's unchosen dialogue, motives, attacks, victories, item-taking, future plans, or moral conclusions.
@@ -935,6 +937,39 @@ export function assertSettledPaymentContinuity(narration: string, priorResult: s
   }
 }
 
+/**
+ * An objection to shifting retail-payment terms is a question about the
+ * seller's conduct, not another request to hear the same chip-clearing rule.
+ * The NPC may admit an error, explain an independently grounded change, or
+ * explicitly refuse to explain. None of those responses obliges a sale.
+ */
+export function isMerchantTermsChallenge(action: string) {
+  const text = positiveActionText(action).toLocaleLowerCase();
+  const merchant = /\b(?:merchant|vendor|seller|shopkeeper|stall|he|she|they)\b/.test(text);
+  const payment = /\b(?:payment|requirements?|conditions?|terms?|credits?|chips?|bank-issued|clearinghouse|policy|quoted|quote|offer|sale|price|verification)\b/.test(text);
+  const dispute = /\b(?:why|keep|keeps|changing|changed|introducing|introduced|new|previous|previously|earlier|already|originally|first|honor|refuse|refuses|refused|demanded|specifically|satisfy|satisfied)\b/.test(text);
+  return merchant && payment && dispute;
+}
+
+export function assertMerchantTermsContinuity(narration: string, priorResult: string, action: string) {
+  if (!priorResult || !isMerchantTermsChallenge(action)) return;
+  // Don't apply this check to an unrelated interlocutor or a stale scene.
+  if (!/\b(?:merchant|vendor|seller|stall|credits?|chips?|bank|clearinghouse|payment|sale|medpacs?)\b/i.test(priorResult)) return;
+  const result = sectionBody(narration, "GAMEPLAY RESULT");
+  if (!result) return; // The section-structure validator handles this.
+  if (sceneSimilarity(result, priorResult) >= 0.82) {
+    throw new GmTurnError("The merchant repeated the preceding answer rather than responding to the new challenge about payment terms. Rewrite the response; preserve all established conditions and do not force a purchase.", 502);
+  }
+  // A vendor may be evasive, but the scene must make that evasion explicit.
+  // Saying only that the chips lack a clearinghouse flag does not answer why
+  // the vendor earlier requested exactly those bank-issued chips.
+  const discussesPriorPromise = /\b(?:earlier|before|first|initially|originally|previously|previous|changed|change|misstated|mistake|misunderstood|forgot|omitted|left out|should have (?:told|said|mentioned|explained)|didn['’]?t (?:tell|say|mention|explain)|i (?:said|asked|told|quoted|promised)|we (?:said|asked|told|quoted|promised))\b/i.test(result);
+  const openlyDeclinesToExplain = /\b(?:refus(?:e[sd]?|ing) to (?:answer|explain)|declin(?:e[sd]?|ing) to (?:answer|explain)|won['’]?t (?:answer|explain|discuss)|will not (?:answer|explain|discuss)|not (?:going to|willing to) (?:answer|explain|discuss)|evad(?:es?|ed) (?:the|your) question|dodg(?:es?|ed) (?:the|your) question|no explanation|without (?:answering|explaining)|cuts off (?:the|your) question)\b/i.test(result);
+  if (!discussesPriorPromise && !openlyDeclinesToExplain) {
+    throw new GmTurnError("The player challenged changing merchant payment requirements, but the merchant only repeated the current verification rule. Address the earlier promise or explicitly decline to explain it; do not invent a new obstacle or guaranteed sale.", 502);
+  }
+}
+
 export function assertNarrativeFocus(narration: string, action: string) {
   const invokesXiii = /\bxiii\b/i.test(action);
   if (!invokesXiii && /\bxiii\b/i.test(narration)) {
@@ -1101,6 +1136,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
     : `${GM_SYSTEM}${rollInstruction}${combatInstruction}${authorityInstruction}${creatorInstruction}\n\nTURN CONTRACT: Suggestions must change with the current scene, visible interactables, injuries, carried equipment, trained skills and remaining combat actions. Use 2-4 A-D possible attempts, never a static menu, guaranteed outcome, secret clue or unearned Force technique. Only suggest objects already visible in this scene or recorded in state. LOCATION names the end-of-turn place and matches the ledger, not a stale district label. SCENE shows D'mir's established visible condition and the declared action meeting the immediate environment before mechanics. GM ADJUDICATION accepts the executable intent; an asserted destination is a goal, not a reason to refuse the attempt. GAMEPLAY RESULT must create a playable new beat even on failure. SAGA CHECK contains only server-owned dice or "No check required." Meditation and terminal interaction are not travel. Negated actions never occur. Travel reaches a concrete observable boundary, not an endless generic transit summary. PRIOR TURN OUTCOME messages omit old scene prose: use them only for continuity, never as a writing template. The saved scene summary identifies the present beat but its wording must not be copied.\n\nCURRENT AUTHORITATIVE CAMPAIGN STATE:\n${publicContext(currentSnapshot)}`;
   let response: Awaited<ReturnType<typeof invokeNvidia>> | null = null;
   if (mode === "play") system += `\n\nCURRENT ACTION TO RESOLVE NOW: ${action}\n${lastConfirmedBeat}\nCURRENT ACTION PRIORITY: Follow this declaration, not any NPC demand from an earlier scene. When public movement is unopposed and access is established, resolve movement and record the new end location. When an action includes unpriced shopping or sales, present exact prices and offers rather than silently charging, granting items, or forcing an unrelated NPC confrontation; resolve the other independently executable substeps as far as the confirmed state permits. Never invent a second payment for an already receipted purchase.`;
+  if (mode === "play" && isMerchantTermsChallenge(action)) system += `\n\nPAYMENT-TERMS DISPUTE: The player is challenging why the seller changed the previously stated payment conditions. The last confirmed merchant response is history, not fresh dialogue: ${priorResult.slice(0, 900)}. Have the merchant address the change in terms directly, acknowledging the earlier instruction and giving an established or plausible explanation, or explicitly declining to explain with a concrete world reaction. The merchant may remain uncooperative; do not force acceptance, reverse past turns, create a new payment verification obstacle without grounded evidence, or repeat the previous explanation verbatim. Any actual sale must pass the authoritative trade-and-ledger checks.`;
   if (mode === "play" && isFinancialWithdrawalAction(resolvedIntent)) system += `\n\nBANKING SAFETY: Withdrawing deposited credits as physical chips is an account-to-cash conversion, not a new reward or a change of location. Respect any confirmed terminal lockout. Do not narrate a completed cash-out unless the authorized state ledger can debit bankCredits and record corresponding physical credit chips atomically. If the current ledger schema cannot represent both, explain the operational limitation in the fiction without claiming chips were dispensed, money was lost, or a new security failure was established. Ordinary use of a functioning legitimate terminal does not automatically require a Use Computer check.`;
   if (semantic) system += `\n\nINTERPRETED PLAYER INTENT (not an outcome): ${JSON.stringify(semantic)}\nResolve this intent, not a keyword trigger. The original declaration below remains the player's words and choices. Ordinary competent substeps are part of the attempt; never add a new player decision. Any check is already supplied by the referee; never invent another.`;
   if (forceConstraint) system += `\n\nSAGA CAPABILITY CONSTRAINT: ${forceConstraint}`;
@@ -1169,6 +1205,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       if (mode === "play") assertCampaignResponseStructure(parsed.clean);
       if (mode === "play") assertNarrativeFocus(parsed.clean, action);
       if (mode === "play") assertSettledPaymentContinuity(parsed.clean, priorResult, action);
+       if (mode === "play") assertMerchantTermsContinuity(parsed.clean, priorResult, action);
       if (mode === "play" && response.provider !== "local-safe-fallback") assertFreshScene(parsed.clean, priorScene, action, priorResult);
       assertMechanicalNarration(parsed.clean, roll);
       assertResolvedOutcome(parsed.clean, roll);
