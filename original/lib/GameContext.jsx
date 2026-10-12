@@ -785,7 +785,10 @@ If this is the very first message of the session, open the scene in-character ba
         return false;
       }
       const result = await response.json();
-      if (!response.ok || !result.snapshot) throw Object.assign(new Error(result.error || "The Game Master turn failed. Its outcome is not confirmed."), { status: response.status });
+      if (!response.ok || !result.snapshot) throw Object.assign(
+        new Error(result.error || "The Game Master turn failed. Its outcome is not confirmed."),
+        { status: response.status, receipt: result.receipt || null },
+      );
       if (saveSession.current !== session) return false;
       const completed = normalizeSnapshot(result.snapshot);
       applySnapshot(completed);
@@ -811,7 +814,10 @@ If this is the very first message of the session, open the scene in-character ba
             setTurnError(recovered.message); return false;
           }
         } catch { /* Preserve the action and ID if the read also fails. */ }
-        const explanation = e.message || "The HoloNet connection failed.";
+        const receipt = e.receipt;
+        const explanation = receipt?.status === "failed" && receipt.gameplayAdvanced === false
+          ? `${e.message || "The HoloNet connection failed."} Your declaration is preserved and the campaign record did not advance. Retrying this scene is safe. Reference: ${receipt.turnId}, ${receipt.phase}.`
+          : e.message || "The HoloNet connection failed.";
         setTurnError(explanation);
       }
       return false;
