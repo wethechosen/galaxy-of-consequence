@@ -525,6 +525,27 @@ export function assertNarratedLocation(narration: string, delta: Record<string, 
   }
 }
 
+/**
+ * The LOCATION section is already required player-facing output. During
+ * ordinary declared travel, make that end point the ledger end point too.
+ * This is a normalization of one draft, not permission for undeclared travel:
+ * a failed movement check and non-movement actions remain unchanged.
+ */
+export function reconcileNarratedTravelLocation(
+  narration: string,
+  delta: Record<string, unknown> | null,
+  action: string,
+  roll: Record<string, unknown> | null,
+  currentLocation: unknown,
+  interpretedTravel = false,
+) {
+  if (!action || (!interpretedTravel && !permitsPhysicalMovement(action)) || roll?.outcome === "failure") return delta;
+  const named = sectionBody(narration, "LOCATION").replace(/\*+/g, "").replace(/^location\s*:\s*/i, "").trim();
+  const current = String(currentLocation || "").trim();
+  if (!named || named.length > 240 || named.toLocaleLowerCase() === current.toLocaleLowerCase()) return delta;
+  return { ...(delta || {}), location: named };
+}
+
 const ASSET_RANK: Record<string, number> = { suspected: 0, inaccessible: 1, confirmed: 2, controlled: 3 };
 
 export function assertMaterialAuthority(delta: Record<string, unknown> | null, action: string, roll: Record<string, unknown> | null, state: Record<string, unknown>, trade: ConversationTrade | null = null) {
@@ -1227,13 +1248,27 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       if (mode === "play") assertNarrativeFocus(parsed.clean, action);
       if (mode === "play") assertSettledPaymentContinuity(parsed.clean, priorResult, action);
        if (mode === "play") assertMerchantTermsContinuity(parsed.clean, priorResult, action);
-      if (mode === "play" && response.provider !== "local-safe-fallback") assertFreshScene(parsed.clean, priorScene, action, priorResult);
+      if (mode === "play" && response.provider !== "local-safe-fallback") {
+        try {
+          assertFreshScene(parsed.clean, priorScene, action, priorResult);
+        } catch (error) {
+          // Freshness is a quality guard, not campaign authority. Give the
+          // provider two rewrites, then accept the third safe, action-specific
+          // draft instead of disconnecting the player from an unchanged save.
+          if (attempt < 2) throw error;
+          console.warn("[api/gm] scene freshness degraded after rewrites", {
+            turnId: input.turnId,
+            reason: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
       assertMechanicalNarration(parsed.clean, roll);
       assertResolvedOutcome(parsed.clean, roll);
       delta = constrainFailedCheckDelta(parsed.delta as Record<string, unknown> | null, roll, resolvedIntent);
       delta = constrainExperienceAward(delta, roll);
       delta = reconcileConversationTradeDelta(delta, trade);
       delta = constrainReadOnlyGoodsInspectionDelta(delta, action, trade?.status === "accepted");
+      delta = reconcileNarratedTravelLocation(parsed.clean, delta, resolvedIntent, roll, currentSnapshot.gameState.location, semantic?.intent === "travel");
       if (input.statePolicy === "committed-trade" && delta) {
         delta = { ...delta, credits: 0, creditsCriminal: 0, inventoryAdd: [], inventoryRemove: [] };
       }

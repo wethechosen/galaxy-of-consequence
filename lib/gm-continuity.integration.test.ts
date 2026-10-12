@@ -120,6 +120,27 @@ function contextFrom(request: NvidiaRequest) {
 }
 
 describe('authoritative GM continuity and unavailable drafting', () => {
+  it('keeps gameplay connected when the third safe draft only repeats scene framing', async () => {
+    const { actor, db } = setup();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mockProvider(() => ({
+      provider: 'nvidia', model: 'freshness-recovery-test', finishReason: 'stop',
+      content: narration(
+        GUESTHOUSE_SCENE,
+        'The proprietor waits without changing anything.',
+      ),
+    }));
+
+    const result = await runGmTurn(actor, { turnId: 'freshness-recovery-01', revision: 1, action: QUESTION });
+    expect(result.revision).toBe(2);
+    expect(result.provider).toBe('nvidia');
+    expect(result.fallbackReason).toBeNull();
+    expect(result.snapshot.gameState.credits).toBe(5000);
+    expect(result.snapshot.gameState.turnEvents).toEqual([expect.objectContaining({ turnId: 'freshness-recovery-01' })]);
+    expect(readDatapad(actor, null, db).snapshot).toEqual(result.snapshot);
+    expect(provider).toHaveBeenCalledTimes(4); // Interpretation plus three rewritten drafts.
+  });
+
   it('repairs an empty ledger from the same monthly quote without rerolling or rewriting the scene', async () => {
     const { actor } = setup();
     const requests: NvidiaRequest[] = [];

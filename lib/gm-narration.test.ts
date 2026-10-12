@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attachRepairedLedger, appendTurnEvent, assertCampaignResponseStructure, assertFreshScene, assertMaterialAuthority, assertMechanicalNarration, assertMovementSceneProgress, assertNarrativeAuthority, assertNarrativeFocus, assertNarrativeLedgerConsistency, assertStoryDirectiveAuthority, authorityWarnings, constrainExperienceAward, constrainFailedCheckDelta, deriveExperienceAward, ensureStateUpdateSection, GM_SYSTEM, normalizePlayerOptions, normalizeTurnAction, safeMessages, sanitizeGmNarration, sceneSimilarity, withSceneFrame } from "./gm";
+import { attachRepairedLedger, appendTurnEvent, assertCampaignResponseStructure, assertFreshScene, assertMaterialAuthority, assertMechanicalNarration, assertMovementSceneProgress, assertNarrativeAuthority, assertNarrativeFocus, assertNarrativeLedgerConsistency, assertStoryDirectiveAuthority, authorityWarnings, constrainExperienceAward, constrainFailedCheckDelta, deriveExperienceAward, ensureStateUpdateSection, GM_SYSTEM, normalizePlayerOptions, normalizeTurnAction, reconcileNarratedTravelLocation, safeMessages, sanitizeGmNarration, sceneSimilarity, withSceneFrame } from "./gm";
 import { planConversationTrade, reconcileConversationTradeDelta } from "./conversation-trade";
 
 describe("authoritative Saga narration", () => {
@@ -137,6 +137,14 @@ describe("authoritative Saga narration", () => {
       .replace(/travel documentation kiosk in the docking-bay concourse/i, "District 12 spaceport")
       .replace(/reach the kiosk and stand before its clerk/i, "reach the spaceport and stop beneath its departure board");
     expect(() => assertMovementSceneProgress(distinctDestination, "I leave and head to the spaceport", null, {}, "Office trailer interior")).toThrow(/saving that destination/i);
+  });
+
+  it("normalizes declared successful travel to the narrated end location", () => {
+    const narration = "LOCATION\nCoruscant — Level 512, Unit 3-G\nSCENE\nD'mir reaches the residence.\nGAMEPLAY RESULT\nThe door is now in front of him.";
+    expect(reconcileNarratedTravelLocation(narration, {}, "I travel to Unit 3-G on Level 512", null, "Docking Bay 94", true))
+      .toEqual({ location: "Coruscant — Level 512, Unit 3-G" });
+    expect(reconcileNarratedTravelLocation(narration, {}, "I wait here", null, "Docking Bay 94", false)).toEqual({});
+    expect(reconcileNarratedTravelLocation(narration, {}, "I travel to Unit 3-G on Level 512", { outcome: "failure" }, "Docking Bay 94", true)).toEqual({});
   });
 
   it("stores the current narrated beat and advances route progress only through play", () => {
