@@ -3,12 +3,30 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const revision = { type: "integer", minimum: 0 };
 const responseSchema = {
   type: "object",
   properties: {
     ok: { type: "boolean" },
     revision: { type: "integer", minimum: 0 },
     message: { type: "string" },
+    receipt: {
+      type: "object",
+      description: "Authoritative transaction receipt. A committed receipt proves the turn is already saved; a failed receipt proves gameplay did not advance and identifies the exact retry phase.",
+      properties: {
+        turnId: { type: "string" },
+        baseRevision: revision,
+        status: { type: "string", enum: ["processing", "committed", "failed"] },
+        phase: { type: "string" },
+        draftAttempts: { type: "integer", minimum: 0 },
+        committedRevision: revision,
+        gameplayAdvanced: { type: "boolean" },
+        retriable: { type: "boolean" },
+        replayed: { type: "boolean" },
+        reason: { type: "string" },
+      },
+      additionalProperties: false,
+    },
   },
   additionalProperties: true,
 };
@@ -18,7 +36,6 @@ const jsonResponse = (description: string) => ({
   content: { "application/json": { schema: responseSchema } },
 });
 
-const revision = { type: "integer", minimum: 0 };
 const playerActions = {
   type: "object",
   properties: {
@@ -138,10 +155,10 @@ export async function GET(request: Request) {
       post: {
         operationId: "submitPlayerAction",
         summary: "Resolve exactly one in-world player action",
-        description: "Gameplay only. Never use this operation for save, load, HUD, sync, reconciliation, or OOC corrections. The server owns dice, Saga resolution, consequences, and persistence.",
+        description: "Gameplay only. Never use this operation for save, load, HUD, sync, reconciliation, or OOC corrections. The server owns dice, Saga resolution, consequences, and persistence. Keep the same turnId when retrying an interrupted request. A committed receipt proves the action is saved and must not be submitted as a new turn; a failed retriable receipt proves gameplay did not advance and may be retried with the same turnId.",
         security: bearerSecurity,
         requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["revision", "action"], properties: { revision, action: { type: "string", minLength: 1, maxLength: 2000 }, turnId: { type: "string", minLength: 8, maxLength: 100, pattern: "^[a-zA-Z0-9_-]+$" } }, additionalProperties: false } } } },
-        responses: { "200": jsonResponse("Committed gameplay turn"), "400": { description: "Invalid action" }, "401": { description: "Unauthorized" }, "409": { description: "Revision conflict, replay, or required character advancement" }, "422": { description: "Administrative command; use the indicated control action" } },
+        responses: { "200": jsonResponse("Committed or safely replayed gameplay turn with a transaction receipt"), "400": { description: "Invalid action" }, "401": { description: "Unauthorized" }, "409": { description: "Revision conflict, replay, or required character advancement" }, "422": { description: "Administrative command; use the indicated control action" }, "502": jsonResponse("Draft rejected before commit; receipt identifies the failed phase"), "503": jsonResponse("GM drafting exhausted before commit; receipt confirms a safe retry") },
       },
     },
   };
@@ -150,7 +167,7 @@ export async function GET(request: Request) {
     openapi: "3.1.0",
     info: {
       title: "Galaxy of Consequence Custom GPT Controller",
-      version: "2.1.0",
+      version: "2.1.1",
       description: "Authoritative GOC controller: Supabase state, HUD, equipment blocks, advancement, checkpoints, and gameplay turns share one revisioned campaign.",
     },
     servers: [{ url: controllerUrl }],
