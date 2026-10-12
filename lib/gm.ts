@@ -22,6 +22,7 @@ import { quotedCreditAmounts } from "./quoted-credits";
 import { normalizeModelLedgerJson } from "./model-ledger-json";
 import { itemStatBlock } from "@/original/lib/itemStats";
 import { constrainReadOnlyGoodsInspectionDelta, isReadOnlyGoodsInspection } from "./goods-inspection";
+import { advanceTurnLifecycle, beginTurnLifecycle, commitTurnLifecycle, failTurnLifecycle, type TurnLifecycleReceipt } from "./turn-lifecycle";
 
 type TurnInput = { accountId?: string; revision: number; action: string; turnId: string; openScene?: boolean; statePolicy?: "committed-trade" | null };
 type Message = { role: "user" | "assistant" | "roll"; content: string; [key: string]: unknown };
@@ -431,6 +432,7 @@ function turnStore() {
 }
 
 export class GmTurnError extends Error {
+  turnLifecycle?: TurnLifecycleReceipt;
   constructor(message: string, public status = 400) { super(message); }
 }
 
@@ -1051,6 +1053,11 @@ export function assertNarrativeAuthority(narration: string, claims: string[], ro
 export async function runGmTurn(actor: Account, input: TurnInput) {
   let phase = "load";
   let draftAttempt = 0;
+  const turnLifecycle = beginTurnLifecycle(input.turnId, input.revision);
+  const enterPhase = (next: string, attempts = draftAttempt) => {
+    phase = next;
+    advanceTurnLifecycle(turnLifecycle, next, attempts);
+  };
   try {
   const providerDeadline = Date.now() + 80_000;
   const providerBudget = (limit: number) => {
@@ -1077,7 +1084,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   const mode = classifyTurnMode(action);
   if (mode === "play" && action) assertAdvancementReady(currentSnapshot.character);
   const priorInterpretation = db.prepare("SELECT interpretation FROM gm_turn_interpretations WHERE account_id = ? AND turn_id = ?").get(accountId, input.turnId) as { interpretation: string } | undefined;
-  phase = "interpret-action";
+  enterPhase("interpret-action");
   const interpretation = priorInterpretation ? JSON.parse(priorInterpretation.interpretation) : mode === "play" && action ? await interpretSagaAction(action, currentSnapshot.character as Record<string, unknown>, { ...currentSnapshot.gameState, scene: currentSceneFrame(currentSnapshot), sceneMerchant: sceneMerchant(currentSnapshot), recentInteraction: safeMessages(currentSnapshot).slice(-4) }) : { semantic: null, fallbackReason: null };
   if (!priorInterpretation) db.prepare("INSERT OR IGNORE INTO gm_turn_interpretations VALUES (?, ?, ?)").run(accountId, input.turnId, JSON.stringify(interpretation));
   let semantic = interpretation.semantic;
@@ -1100,7 +1107,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
     }
     catch { /* Preserve the save when a historical quote cannot be verified. */ }
   }
-  phase = "plan-commerce";
+  enterPhase("plan-commerce");
   const trade = ordinaryTrade ? planConversationTrade(semantic?.acceptedOfferId ? action : resolvedIntent, currentSnapshot.gameState, input.turnId, semantic?.acceptedOfferId) : null;
   const routineCommerce = semantic ? !semantic.checkNeeded && ["commerce", "dialogue"].includes(semantic.intent) : isRoutineCommerce(action, currentSnapshot.gameState.location);
   const merchant = sceneMerchant(currentSnapshot);
@@ -1108,7 +1115,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   const encounter = activeCombat(currentSnapshot.gameState as Record<string, unknown>);
   const forceConstraint = forceCapabilityConstraint(semantic, currentSnapshot.character as Record<string, unknown>);
   const forcePowerId = declaredForcePower(resolvedIntent, semantic);
-  phase = "plan-saga";
+  enterPhase("plan-saga");
   let plan = mode === "play" && action && !trade && !routineCommerce
     ? forcePowerId && !forceConstraint
       ? buildForcePowerPlan(forcePowerId, currentSnapshot.character as Record<string, unknown>, currentSnapshot.gameState, encounter)
@@ -1120,7 +1127,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   if (plan?.kind === "attack" && battleStrike && battleStrike.expiresRound >= (encounter?.round || 0)) {
     plan = { ...plan, modifier: plan.modifier + battleStrike.attackBonus, damage: plan.damage ? { ...plan.damage, count: plan.damage.count + battleStrike.damageDice } : plan.damage };
   }
-  phase = "roll-saga";
+  enterPhase("roll-saga");
   const roll = existing?.roll ? JSON.parse(existing.roll) : plan ? rollSagaCheck(plan) : null;
   let combatResolution: CombatResolution | null = null;
   let forceResolution: ForcePowerResolution | null = null;
@@ -1150,7 +1157,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   }
   if (!existing) db.prepare("INSERT INTO gm_turn_attempts VALUES (?, ?, ?, ?, ?, 'pending', NULL, ?)").run(accountId, input.turnId, input.revision, action, roll ? JSON.stringify(roll) : null, new Date().toISOString());
 
-  phase = "prepare-draft";
+  enterPhase("prepare-draft");
   const history = safeMessages(currentSnapshot);
   const priorScene = currentSceneFrame(currentSnapshot)?.summary || "";
   const lastAuthored = (currentSnapshot.messages as Message[]).filter(message => message.role === "assistant" && message.provider !== "local-safe-fallback" && !message.fallbackReason).at(-1);
@@ -1186,7 +1193,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   let fallbackReason: "provider" | "validation" | null = null;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     draftAttempt = attempt + 1;
-    phase = "invoke-provider";
+    enterPhase("invoke-provider", draftAttempt);
     const inspectionMaterialFailure = isReadOnlyGoodsInspection(action) && validationError instanceof Error
       && /change money or possessions|item acquisition|payment|material/i.test(validationError.message);
     const correction = attempt && validationError instanceof Error
@@ -1211,7 +1218,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       continue;
     }
     try {
-      phase = "validate-draft";
+      enterPhase("validate-draft", draftAttempt);
       let candidate = response.content;
       try {
         parsed = parseEngineResponse(candidate, { requireState: mode === "play" });
@@ -1308,7 +1315,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       delta = {};
       validationError = null;
     } else {
-      phase = "drafting-exhausted";
+      enterPhase("drafting-exhausted", 3);
       console.error("[api/gm] drafting exhausted", {
         turnId: input.turnId,
         revision: input.revision,
@@ -1352,7 +1359,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
     }
   }
   if (!response || !parsed) throw new GmTurnError("The GM could not produce a valid authoritative response. No outcome was saved; retry the turn.", 502);
-  phase = "finalize-state";
+  enterPhase("finalize-state");
   let finalized = mode === "play"
     ? applyFinalizedTurn(currentSnapshot, input.turnId, action, roll, delta || {})
     : mode === "context" && isDmirPrimaryCampaign(actor, currentSnapshot.character as Record<string, unknown>)
@@ -1381,9 +1388,10 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   messages.push({ role: "assistant", content: parsed.clean, turnId: input.turnId, provider: response.provider, model: response.model, fallbackReason, fallbackDetail });
   const snapshot: DatapadSnapshot = { ...finalized, messages };
   if (mode === "play") snapshot.gameState = { ...snapshot.gameState, sceneMerchant: sceneMerchant(snapshot) };
-  phase = "persist";
+  enterPhase("persist");
   const persisted = saveAuthoritativeDatapad(actor, accountId, input.revision, snapshot);
-  const result = { snapshot, revision: persisted.revision, updatedAt: persisted.updatedAt, roll, narration: parsed.clean, provider: response.provider, model: response.model, fallbackReason, fallbackDetail };
+  const receipt = commitTurnLifecycle(turnLifecycle, persisted.revision, persisted.updatedAt);
+  const result = { snapshot, revision: persisted.revision, updatedAt: persisted.updatedAt, roll, narration: parsed.clean, provider: response.provider, model: response.model, fallbackReason, fallbackDetail, receipt };
   try {
     db.prepare("UPDATE gm_turn_attempts SET status = 'complete', result = ? WHERE account_id = ? AND turn_id = ?").run(JSON.stringify(result), accountId, input.turnId);
   } catch (error) {
@@ -1399,6 +1407,8 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   return result;
   } catch (error) {
     const fault = error as { message?: string; status?: number; name?: string; code?: string } | null;
+    const failedReceipt = failTurnLifecycle(turnLifecycle, phase, fault?.message || String(error), Number(fault?.status) || 500);
+    if (error && typeof error === "object") (error as { turnLifecycle?: TurnLifecycleReceipt }).turnLifecycle = failedReceipt;
     console.error("[api/gm] turn phase failure v2", {
       turnId: input.turnId,
       revision: input.revision,
