@@ -4,6 +4,7 @@ import { BookOpen, Eye, Home as HomeIcon, Shield, Sparkles } from "lucide-react"
 import { useGame } from "@/original/lib/GameContext";
 import { Shell, TopBar, GlassCard, EmptyNote, HudRow } from "@/original/components/GalaxyUI";
 import { hitPointDisplay } from "@/original/lib/hitPoints";
+import AssetLedgerPanel from "@/original/components/AssetLedgerPanel";
 import { HEROIC_CLASSES, TALENT_TREES, SAGA_ABILITY_OPTIONS, SAGA_LANGUAGE_OPTIONS, advancementChoiceContext, advancementFeatChoiceContext, availableFeatSkills, advancementRequirements, availableClassSkills, availableFeats, availableStartingFeats, availableTalents, foundationRequirements, progressionStatus, parseAbilityScores, SAGA_ADVANCEMENT_LIMITATIONS } from "@/original/lib/sagaAdvancement";
 import { FORCE_POWER_CATALOG } from "@/original/lib/sagaForcePowers";
 
@@ -210,6 +211,7 @@ export default function CharacterPage() {
           <p className="text-xs text-[#8b93a3] mb-4">Creator direction shapes future opportunities. Creating one grants nothing automatically; completing it through Saga gameplay awards and persists normal XP, rewards, and advancement.</p>
           {storyDirectives.length ? <div className="space-y-3">{storyDirectives.map((directive) => <div key={directive.id || directive.title} className="rounded-xl border border-[#a855f7]/20 bg-[#a855f7]/5 p-4"><div className="flex justify-between gap-3"><p className="text-sm text-[#f2f0ea]">{directive.title}</p><span className="text-[9px] tracking-widest uppercase text-[#c084fc]">{directive.status || "active"}</span></div>{directive.detail && <p className="text-xs text-[#a9adb8] mt-2">{directive.detail}</p>}</div>)}</div> : <p className="text-sm text-[#5c6370]">No creator-directed arc has been recorded through play yet.</p>}
         </GlassCard>
+        <AssetLedgerPanel gameState={gameState} />
         <GlassCard className="p-5 mt-4">
           <p className="text-[10px] tracking-[0.2em] text-[#ff7a1a] mb-3">KELVEK LEGACY & FINANCIAL CLAIMS</p>
           <p className="text-xs text-[#8b93a3] mb-4">Liquid credits remain separate. Suspected, inaccessible, and confirmed assets do not enter D'mir's spendable balance until control and transfer are established in play.</p>

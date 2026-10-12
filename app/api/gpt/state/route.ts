@@ -6,6 +6,7 @@ import { buildCampaignRecap, campaignTranscript, sameCampaignLocation } from "@/
 import { parseImmersiveMessage } from "@/original/lib/immersiveChat";
 import { advancementGate } from "@/original/lib/sagaAdvancement";
 import { itemStatBlock } from "@/original/lib/itemStats";
+import { buildAssetLedger } from "@/original/lib/assetLedger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,12 +18,15 @@ export async function GET(request: Request) {
     if (!saved || !saved.snapshot) return NextResponse.json({ error: "No campaign is initialized for the configured action account." }, { status: 409 });
     const snapshot = saved.snapshot;
     const state = snapshot.gameState;
+    const ledger = buildAssetLedger(state);
+    const { balances, holdings, purchases, transfers, valuationStatus } = ledger;
     const messages = Array.isArray(saved.snapshot.messages) ? saved.snapshot.messages : [];
     const recap = buildCampaignRecap(saved.snapshot);
     const lastConfirmed = [...campaignTranscript(messages).confirmed].reverse().find((message: Record<string, unknown>) =>
       message.role === "assistant" && sameCampaignLocation(parseImmersiveMessage(String(message.content || "")).location, state.location));
     return NextResponse.json({
       account: actorSummary(actor), revision: saved.revision,
+      assetLedger: { balances, holdings, purchases, transfers, valuationStatus },
       character: saved.snapshot.character,
       itemStatBlocks: [...(Array.isArray(state.inventory) ? state.inventory : []), ...(Array.isArray(state.properties) ? state.properties : []).map(item => ({ ...item, ownership: "property" })), ...(Array.isArray(state.ships) ? state.ships : []).map(item => ({ ...item, ownership: "vehicle" }))].map(item => ({ id: item.id, ...itemStatBlock(item, snapshot.character || {}, state) })),
       advancement: { ...advancementGate(saved.snapshot.character || {}), dossierUrl: "https://galaxy-local.vercel.app/character#advancement" },
