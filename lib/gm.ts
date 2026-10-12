@@ -21,6 +21,7 @@ import { recoverConfirmedTradeOffer } from "./trade-offer-recovery";
 import { quotedCreditAmounts } from "./quoted-credits";
 import { normalizeModelLedgerJson } from "./model-ledger-json";
 import { itemStatBlock } from "@/original/lib/itemStats";
+import { constrainReadOnlyGoodsInspectionDelta, isReadOnlyGoodsInspection } from "./goods-inspection";
 
 type TurnInput = { accountId?: string; revision: number; action: string; turnId: string; openScene?: boolean; statePolicy?: "committed-trade" | null };
 type Message = { role: "user" | "assistant" | "roll"; content: string; [key: string]: unknown };
@@ -452,6 +453,21 @@ function resolvedMechanicsNarration(snapshot: DatapadSnapshot, roll: Record<stri
       resolution?.experienceAward ? `XP: +${resolution.experienceAward}.` : "", result].filter(Boolean).join(" ");
   return { provider: "local-safe-fallback" as const, model: "resolved-saga-receipt", finishReason: "stop",
     content: `## LOCATION\n${String(snapshot.gameState.location || "Current location")}\n\n## SCENE\n${result}\n\n## GM ADJUDICATION\n${offer ? "You accepted the recorded terms. An affordable agreed-price exchange needs no check." : "The Saga referee resolves only your declared action."}\n\n## GAMEPLAY RESULT\n${result}\n\n## SAGA CHECK\n${check}\n\n## STATE UPDATE\n${changes}\n\n## PLAYER OPTIONS\n${options.map((option: string, index: number) => `${String.fromCharCode(65 + index)}. ${option}`).join("\n")}\nYou may declare another action.\n<!--STATE:${JSON.stringify(delta)}-->` };
+}
+
+/** A safe receipt when the model repeatedly mistakes an inspection for a
+ * purchase. It resolves the declared handling without changing ownership. */
+function resolvedGoodsInspectionNarration(snapshot: DatapadSnapshot, action: string) {
+  const target = /\b(medpacs?|med[- ]?packs?|armor|clothing|outfit|robe|coat|suit|weapon|gear|device|datapad|droid|vehicle|ship|item|merchandise)\b/i.exec(action)?.[1] || "merchandise";
+  const location = String(snapshot.gameState.location || "Current location");
+  const result = `You examine the ${target} where it is offered, turning it under the available light to read its visible condition, seal, label, and expiration markings. The inspection is completed without accepting an offer or transferring ownership. It remains with its current owner; your credits and possessions do not change.`;
+  const options = sceneDirections({ state: snapshot.gameState, character: snapshot.character || {}, scene: result });
+  return {
+    provider: "local-safe-fallback" as const,
+    model: "read-only-inspection-receipt",
+    finishReason: "stop",
+    content: `## LOCATION\n${location}\n\n## SCENE\nAt ${location}, you handle the ${target} only long enough to inspect its visible packaging and markings. The surrounding seller or display remains in place while the examination ends.\n\n## GM ADJUDICATION\nA visible merchandise inspection is ordinary interaction. It requires no Saga check and does not authorize payment, sale, consumption, equipping, or transfer of ownership.\n\n## GAMEPLAY RESULT\n${result}\n\n## SAGA CHECK\nNo check required.\n\n## STATE UPDATE\nNo credits, inventory, equipment, property, vehicles, or investments change.\n\n## PLAYER OPTIONS\n${options.map((option: string, index: number) => `${String.fromCharCode(65 + index)}. ${option}`).join("\n")}\nYou may declare another action.\n<!--STATE:{}-->`,
+  };
 }
 
 /** Removes UI retry wording before it reaches the authoritative action planner. */
@@ -1136,6 +1152,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
     : `${GM_SYSTEM}${rollInstruction}${combatInstruction}${authorityInstruction}${creatorInstruction}\n\nTURN CONTRACT: Suggestions must change with the current scene, visible interactables, injuries, carried equipment, trained skills and remaining combat actions. Use 2-4 A-D possible attempts, never a static menu, guaranteed outcome, secret clue or unearned Force technique. Only suggest objects already visible in this scene or recorded in state. LOCATION names the end-of-turn place and matches the ledger, not a stale district label. SCENE shows D'mir's established visible condition and the declared action meeting the immediate environment before mechanics. GM ADJUDICATION accepts the executable intent; an asserted destination is a goal, not a reason to refuse the attempt. GAMEPLAY RESULT must create a playable new beat even on failure. SAGA CHECK contains only server-owned dice or "No check required." Meditation and terminal interaction are not travel. Negated actions never occur. Travel reaches a concrete observable boundary, not an endless generic transit summary. PRIOR TURN OUTCOME messages omit old scene prose: use them only for continuity, never as a writing template. The saved scene summary identifies the present beat but its wording must not be copied.\n\nCURRENT AUTHORITATIVE CAMPAIGN STATE:\n${publicContext(currentSnapshot)}`;
   let response: Awaited<ReturnType<typeof invokeNvidia>> | null = null;
   if (mode === "play") system += `\n\nCURRENT ACTION TO RESOLVE NOW: ${action}\n${lastConfirmedBeat}\nCURRENT ACTION PRIORITY: Follow this declaration, not any NPC demand from an earlier scene. When public movement is unopposed and access is established, resolve movement and record the new end location. When an action includes unpriced shopping or sales, present exact prices and offers rather than silently charging, granting items, or forcing an unrelated NPC confrontation; resolve the other independently executable substeps as far as the confirmed state permits. Never invent a second payment for an already receipted purchase.`;
+  if (mode === "play" && isReadOnlyGoodsInspection(action)) system += `\n\nREAD-ONLY MERCHANDISE INSPECTION: Resolve the declared examination only. Describe visible condition, seals, labels, packaging, and expiration markings supported by the scene. Do not deduct or grant credits; do not add, remove, consume, sell, equip, or transfer an item; do not narrate a completed transaction. Temporary handling remains with the current owner. Use an empty material ledger unless an authoritative mechanic supplied above requires a non-material change.`;
   if (mode === "play" && isMerchantTermsChallenge(action)) system += `\n\nPAYMENT-TERMS DISPUTE: The player is challenging why the seller changed the previously stated payment conditions. The last confirmed merchant response is history, not fresh dialogue: ${priorResult.slice(0, 900)}. Have the merchant address the change in terms directly, acknowledging the earlier instruction and giving an established or plausible explanation, or explicitly declining to explain with a concrete world reaction. The merchant may remain uncooperative; do not force acceptance, reverse past turns, create a new payment verification obstacle without grounded evidence, or repeat the previous explanation verbatim. Any actual sale must pass the authoritative trade-and-ledger checks.`;
   if (mode === "play" && isFinancialWithdrawalAction(resolvedIntent)) system += `\n\nBANKING SAFETY: Withdrawing deposited credits as physical chips is an account-to-cash conversion, not a new reward or a change of location. Respect any confirmed terminal lockout. Do not narrate a completed cash-out unless the authorized state ledger can debit bankCredits and record corresponding physical credit chips atomically. If the current ledger schema cannot represent both, explain the operational limitation in the fiction without claiming chips were dispensed, money was lost, or a new security failure was established. Ordinary use of a functioning legitimate terminal does not automatically require a Use Computer check.`;
   if (semantic) system += `\n\nINTERPRETED PLAYER INTENT (not an outcome): ${JSON.stringify(semantic)}\nResolve this intent, not a keyword trigger. The original declaration below remains the player's words and choices. Ordinary competent substeps are part of the attempt; never add a new player decision. Any check is already supplied by the referee; never invent another.`;
@@ -1149,8 +1166,12 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     draftAttempt = attempt + 1;
     phase = "invoke-provider";
+    const inspectionMaterialFailure = isReadOnlyGoodsInspection(action) && validationError instanceof Error
+      && /change money or possessions|item acquisition|payment|material/i.test(validationError.message);
     const correction = attempt && validationError instanceof Error
-      ? { role: "user" as const, content: `[SERVER VALIDATION REJECTED THE PRIOR DRAFT: ${validationError.message}] Rewrite the same turn from the CURRENT authoritative location. Address the player\'s latest action specifically. Do not replay the last NPC obstruction or undo any confirmed payment, release, purchase, or access. Preserve the supplied roll exactly, use only authoritative state, follow all seven required sections in order, accept the declared action as an attempt, fail forward when necessary, and output one valid STATE block. Do not add a new action or reroll.` }
+      ? { role: "user" as const, content: inspectionMaterialFailure
+        ? `[SERVER VALIDATION REJECTED THE PRIOR DRAFT: UNAUTHORIZED MATERIAL CHANGE] The player's action is inspection only. Rewrite the same turn at the CURRENT authoritative location. Describe the visible examination, but do not deduct or grant credits, add or remove inventory, transfer ownership, consume or equip anything, or describe a completed transaction. Temporary handling is not acquisition. Use <!--STATE:{}--> unless a confirmed non-material scene field must change. Follow all seven required sections in order and do not add a new player action.`
+        : `[SERVER VALIDATION REJECTED THE PRIOR DRAFT: ${validationError.message}] Rewrite the same turn from the CURRENT authoritative location. Address the player\'s latest action specifically. Do not replay the last NPC obstruction or undo any confirmed payment, release, purchase, or access. Preserve the supplied roll exactly, use only authoritative state, follow all seven required sections in order, accept the declared action as an attempt, fail forward when necessary, and output one valid STATE block. Do not add a new action or reroll.` }
       : null;
     try {
       response = await invokeNvidia({
@@ -1212,6 +1233,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       delta = constrainFailedCheckDelta(parsed.delta as Record<string, unknown> | null, roll, resolvedIntent);
       delta = constrainExperienceAward(delta, roll);
       delta = reconcileConversationTradeDelta(delta, trade);
+      delta = constrainReadOnlyGoodsInspectionDelta(delta, action, trade?.status === "accepted");
       if (input.statePolicy === "committed-trade" && delta) {
         delta = { ...delta, credits: 0, creditsCriminal: 0, inventoryAdd: [], inventoryRemove: [] };
       }
@@ -1244,46 +1266,54 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
     }
   }
   if (validationError) {
-    phase = "drafting-exhausted";
-    console.error("[api/gm] drafting exhausted", {
-      turnId: input.turnId,
-      revision: input.revision,
-      attempts: 3,
-      reason: validationError instanceof Error ? validationError.message : String(validationError),
-    });
-    if (mode !== "play" || (!authoritativeResolution && trade?.status !== "accepted")) {
-      // Nothing has resolved: never manufacture progress or replace the scene.
-      throw new GmTurnError("The GM could not finish this response. Your action is preserved; the scene and campaign have not advanced. Retry the same action.", 503);
-    }
-    fallbackReason = "validation";
-    response = resolvedMechanicsNarration(currentSnapshot, roll, authoritativeResolution, trade);
-    parsed = parseEngineResponse(response.content, { requireState: mode === "play" });
-    parsed = { ...parsed, clean: alignMechanicalResult(sanitizeGmNarration(parsed.clean), roll) };
-    if (mode === "play") {
-      parsed = { ...parsed, clean: ensurePlayerOptions(normalizePlayerOptions(parsed.clean), currentSnapshot.gameState, currentSnapshot.character as Record<string, unknown>, action) };
-      parsed = { ...parsed, clean: normalizeCampaignSections(parsed.clean, parsed.delta as Record<string, unknown> | null, currentSnapshot.gameState.location) };
-      assertCampaignResponseStructure(parsed.clean);
-      assertNarrativeFocus(parsed.clean, action);
-    }
-    assertMechanicalNarration(parsed.clean, roll);
-    delta = constrainFailedCheckDelta(parsed.delta as Record<string, unknown> | null, roll, resolvedIntent);
-    delta = constrainExperienceAward(delta, roll);
-    delta = reconcileConversationTradeDelta(delta, trade);
-    if (input.statePolicy === "committed-trade" && delta) delta = { ...delta, credits: 0, creditsCriminal: 0, inventoryAdd: [], inventoryRemove: [] };
-    assertLocationIntent(delta, resolvedIntent, currentSnapshot.gameState.location, semantic?.intent === "travel");
-    assertMaterialAuthority(delta, action, roll, currentSnapshot.gameState as Record<string, unknown>, trade);
-    assertStoryDirectiveAuthority(delta, actor, currentSnapshot.character as Record<string, unknown>);
-    assertNarrativeLedgerConsistency(parsed.clean, delta, resolvedIntent);
-    assertNarrativeAuthority(parsed.clean, claims, roll, currentSnapshot.character as Record<string, unknown>, resolvedIntent);
-    if (mode === "play") {
-      const experienceAward = trade || routineCommerce ? 0 : deriveExperienceAward(delta, roll, currentSnapshot.gameState as Record<string, unknown>, currentSnapshot.character as Record<string, unknown>);
-      delta = {
-        ...(delta || {}),
-        health: Number(delta?.health || 0) + Number(combatResolution?.playerHealthDelta || 0),
-        conditionTrack: Number(delta?.conditionTrack || 0) + Number(combatResolution?.playerConditionDelta || 0),
-        darkSideScore: Number(delta?.darkSideScore || 0) + Number(forceResolution?.stateDelta?.darkSideScoreDelta || 0),
-        experienceAward: Math.max(experienceAward, Number(combatResolution?.experienceAward || 0), Number(forceResolution?.experienceAward || 0)),
-      };
+    if (mode === "play" && isReadOnlyGoodsInspection(action)) {
+      fallbackReason = "validation";
+      response = resolvedGoodsInspectionNarration(currentSnapshot, action);
+      parsed = parseEngineResponse(response.content, { requireState: true });
+      delta = {};
+      validationError = null;
+    } else {
+      phase = "drafting-exhausted";
+      console.error("[api/gm] drafting exhausted", {
+        turnId: input.turnId,
+        revision: input.revision,
+        attempts: 3,
+        reason: validationError instanceof Error ? validationError.message : String(validationError),
+      });
+      if (mode !== "play" || (!authoritativeResolution && trade?.status !== "accepted")) {
+        // Nothing has resolved: never manufacture progress or replace the scene.
+        throw new GmTurnError("The GM could not finish this response. Your action is preserved; the scene and campaign have not advanced. Retry the same action.", 503);
+      }
+      fallbackReason = "validation";
+      response = resolvedMechanicsNarration(currentSnapshot, roll, authoritativeResolution, trade);
+      parsed = parseEngineResponse(response.content, { requireState: mode === "play" });
+      parsed = { ...parsed, clean: alignMechanicalResult(sanitizeGmNarration(parsed.clean), roll) };
+      if (mode === "play") {
+        parsed = { ...parsed, clean: ensurePlayerOptions(normalizePlayerOptions(parsed.clean), currentSnapshot.gameState, currentSnapshot.character as Record<string, unknown>, action) };
+        parsed = { ...parsed, clean: normalizeCampaignSections(parsed.clean, parsed.delta as Record<string, unknown> | null, currentSnapshot.gameState.location) };
+        assertCampaignResponseStructure(parsed.clean);
+        assertNarrativeFocus(parsed.clean, action);
+      }
+      assertMechanicalNarration(parsed.clean, roll);
+      delta = constrainFailedCheckDelta(parsed.delta as Record<string, unknown> | null, roll, resolvedIntent);
+      delta = constrainExperienceAward(delta, roll);
+      delta = reconcileConversationTradeDelta(delta, trade);
+      if (input.statePolicy === "committed-trade" && delta) delta = { ...delta, credits: 0, creditsCriminal: 0, inventoryAdd: [], inventoryRemove: [] };
+      assertLocationIntent(delta, resolvedIntent, currentSnapshot.gameState.location, semantic?.intent === "travel");
+      assertMaterialAuthority(delta, action, roll, currentSnapshot.gameState as Record<string, unknown>, trade);
+      assertStoryDirectiveAuthority(delta, actor, currentSnapshot.character as Record<string, unknown>);
+      assertNarrativeLedgerConsistency(parsed.clean, delta, resolvedIntent);
+      assertNarrativeAuthority(parsed.clean, claims, roll, currentSnapshot.character as Record<string, unknown>, resolvedIntent);
+      if (mode === "play") {
+        const experienceAward = trade || routineCommerce ? 0 : deriveExperienceAward(delta, roll, currentSnapshot.gameState as Record<string, unknown>, currentSnapshot.character as Record<string, unknown>);
+        delta = {
+          ...(delta || {}),
+          health: Number(delta?.health || 0) + Number(combatResolution?.playerHealthDelta || 0),
+          conditionTrack: Number(delta?.conditionTrack || 0) + Number(combatResolution?.playerConditionDelta || 0),
+          darkSideScore: Number(delta?.darkSideScore || 0) + Number(forceResolution?.stateDelta?.darkSideScoreDelta || 0),
+          experienceAward: Math.max(experienceAward, Number(combatResolution?.experienceAward || 0), Number(forceResolution?.experienceAward || 0)),
+        };
+      }
     }
   }
   if (!response || !parsed) throw new GmTurnError("The GM could not produce a valid authoritative response. No outcome was saved; retry the turn.", 502);

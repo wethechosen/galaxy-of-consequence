@@ -132,4 +132,63 @@ describe("authoritative GM conversational commerce end to end", () => {
     expect(readDatapad(actor, null, db).snapshot).toEqual(lodging.snapshot);
     expect(lodging.snapshot.gameState.scene).toMatchObject({ beat: 3, action: '"Ain\'t looking for free," I say to the vendor.' });
   });
+
+  it("treats a visible medpac inspection as read-only even when the draft invents a purchase delta", async () => {
+    const { actor, db, initial } = setup();
+    const action = "I inspect the medpac seal and expiration date.";
+    provider.mockImplementation(async ({ sourceQuery }: { sourceQuery?: string }) => {
+      if (!sourceQuery) return {
+        provider: "nvidia", model: "mocked-intent-translator", finishReason: "stop",
+        content: JSON.stringify({ intent: "medical", canonicalAction: action, declaredSpan: action, checkNeeded: true,
+          skill: "Treat Injury", rationale: "The item is medical.", travelTarget: null, acceptedOfferId: null }),
+      };
+      return response(
+        "At the bazaar counter, you turn the sealed medpac beneath a narrow inspection lamp while the merchant keeps one hand beside the open display case.",
+        "You read the visible seal, lot label, and expiration marking. The medpac remains on the merchant's counter and no offer is accepted.",
+        "The inspection is completed. No payment or ownership transfer occurs.",
+        { credits: -5400, inventoryAdd: [{ name: "Medpac", qty: 12, tag: "medical" }] },
+        ["Ask the merchant for a price.", "Compare another sealed medpac."],
+      );
+    });
+
+    const result = await runGmTurn(actor, { revision: 1, turnId: "inspect_medpac_read_only_01", action });
+    expect(result.roll).toBeNull();
+    expect(result.revision).toBe(2);
+    expect(result.snapshot.gameState.credits).toBe(initial.gameState.credits);
+    expect(result.snapshot.gameState.inventory).toEqual(initial.gameState.inventory);
+    expect(result.snapshot.gameState.turnEvents).toEqual([expect.objectContaining({
+      turnId: "inspect_medpac_read_only_01",
+      changes: {},
+    })]);
+    expect(readDatapad(actor, null, db).snapshot).toEqual(result.snapshot);
+  });
+
+  it("returns a safe inspection receipt instead of 503 after repeated purchase narration", async () => {
+    const { actor, db, initial } = setup();
+    const action = "I examine the medpac packaging and check its expiration date.";
+    provider.mockImplementation(async ({ sourceQuery }: { sourceQuery?: string }) => {
+      if (!sourceQuery) return {
+        provider: "nvidia", model: "mocked-intent-translator", finishReason: "stop",
+        content: JSON.stringify({ intent: "commerce", canonicalAction: action, declaredSpan: action, checkNeeded: false,
+          skill: null, rationale: "Ordinary merchandise inspection.", travelTarget: null, acceptedOfferId: null }),
+      };
+      return response(
+        "At the bazaar counter, the merchant pushes a medpac beneath the inspection lamp.",
+        "You pay 5,400 credits and take possession of twelve medpacs after checking the package.",
+        "The purchase is complete.",
+        { credits: -5400, inventoryAdd: [{ name: "Medpac", qty: 12, tag: "medical" }] },
+        ["Open a medpac.", "Leave the stall."],
+      );
+    });
+
+    const result = await runGmTurn(actor, { revision: 1, turnId: "inspect_medpac_fallback_01", action });
+    expect(result.provider).toBe("local-safe-fallback");
+    expect(result.model).toBe("read-only-inspection-receipt");
+    expect(result.revision).toBe(2);
+    expect(result.snapshot.gameState.credits).toBe(initial.gameState.credits);
+    expect(result.snapshot.gameState.inventory).toEqual(initial.gameState.inventory);
+    expect(result.narration).toMatch(/inspection is completed without accepting an offer/i);
+    expect(result.narration).not.toMatch(/pay 5,400|take possession/i);
+    expect(readDatapad(actor, null, db).snapshot).toEqual(result.snapshot);
+  });
 });

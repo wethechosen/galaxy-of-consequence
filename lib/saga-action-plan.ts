@@ -4,6 +4,7 @@ import { planSagaAction } from "./saga-planner";
 import type { SagaCheckPlan } from "./saga-dice";
 import { forcePowerKnown } from "../original/lib/sagaForcePowers";
 import { sagaSkillModifier } from "./saga-character";
+import { isReadOnlyGoodsInspection } from "./goods-inspection";
 
 type Ledger = Record<string, unknown>;
 export const SAGA_ACTION_INTENTS = ["dialogue", "commerce", "travel", "search", "manipulate", "social", "medical", "force", "attack", "physical", "rest", "wait", "goal", "other"] as const;
@@ -87,6 +88,18 @@ function contextualReply(action: string, state: Ledger): SagaSemanticAction | nu
 }
 
 function normalizeRoutineProcedure(semantic: SagaSemanticAction, action: string): SagaSemanticAction {
+  if (isReadOnlyGoodsInspection(action)) {
+    return {
+      ...semantic,
+      intent: "commerce",
+      canonicalAction: positiveActionText(action),
+      checkNeeded: false,
+      skill: null,
+      rationale: "Reading visible merchandise condition, seals, labels, or expiration markings is an ordinary inspection and does not transfer ownership.",
+      travelTarget: null,
+      acceptedOfferId: null,
+    };
+  }
   const legitimateForm = /\b(?:complete|fill(?:\s+out)?|submit|sign)\b[^.]{0,100}\b(?:application|form|paperwork)\b/i.test(action)
     && /\b(?:legitimate|truthful|accurate|personal information|required biometrics?)\b/i.test(action)
     && !/\b(?:forge|forged|false|fake|lie|deceive|alter|hack|bypass)\b/i.test(action);

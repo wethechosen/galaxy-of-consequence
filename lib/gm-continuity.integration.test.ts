@@ -166,7 +166,7 @@ describe('authoritative GM continuity and unavailable drafting', () => {
     expect(db.prepare('SELECT status, result FROM gm_turn_attempts WHERE account_id = ? AND turn_id = ?').get(actor.id, input.turnId))
       .toMatchObject({ status: 'pending', result: null });
     const callsBeforeRetry = provider.mock.calls.length;
-    expect(callsBeforeRetry).toBe(3); // One interpretation, two unavailable drafts.
+    expect(callsBeforeRetry).toBe(4); // One interpretation, three unavailable drafts.
 
     mockProvider(() => monthlyReply());
     const completed = await runGmTurn(actor, input);
