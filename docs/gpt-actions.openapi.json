@@ -1,33 +1,86 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Galaxy of Consequence Controller Actions",
-    "version": "1.2.0",
-    "description": "Authoritative GOC controller. Gameplay turns, HUD reads, checkpoint saves, checkpoint loads, and OOC reconciliation are separate operations. Administrative operations never roll, narrate, generate initiative, award XP, or advance combat."
+    "title": "Galaxy of Consequence Custom GPT Controller",
+    "version": "2.2.0",
+    "description": "Authoritative GOC controller: Neon state, HUD, equipment blocks, advancement, checkpoints, and gameplay turns share one revisioned campaign."
   },
   "servers": [
     {
       "url": "https://galaxy-local.vercel.app"
     }
   ],
-  "security": [
-    {
-      "bearerAuth": []
-    }
-  ],
   "paths": {
-    "/api/gpt/state": {
+    "/api/gpt/ping": {
       "get": {
-        "operationId": "getCampaignState",
-        "summary": "Read authoritative campaign state",
-        "description": "Read the latest persisted campaign state and revision. Call before a gameplay turn, load, or reconciliation. Never advances gameplay.",
+        "operationId": "pingCampaignService",
+        "summary": "Verify the campaign controller is reachable",
+        "description": "Public, read-only health check. Returns no campaign or account data and never advances gameplay.",
+        "security": [],
         "responses": {
           "200": {
-            "description": "Authoritative state",
+            "description": "Controller is reachable",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "receipt": {
+                      "type": "object",
+                      "description": "Authoritative transaction receipt. A committed receipt proves the turn is already saved; a failed receipt proves gameplay did not advance and identifies the exact retry phase.",
+                      "properties": {
+                        "turnId": {
+                          "type": "string"
+                        },
+                        "baseRevision": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "processing",
+                            "committed",
+                            "failed"
+                          ]
+                        },
+                        "phase": {
+                          "type": "string"
+                        },
+                        "draftAttempts": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "committedRevision": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "gameplayAdvanced": {
+                          "type": "boolean"
+                        },
+                        "retriable": {
+                          "type": "boolean"
+                        },
+                        "replayed": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
                   "additionalProperties": true
                 }
               }
@@ -36,19 +89,747 @@
         }
       }
     },
-    "/api/gpt/turn": {
+    "/api/gpt/state": {
+      "get": {
+        "operationId": "getCampaignState",
+        "summary": "Load authoritative campaign state",
+        "description": "Call before gameplay. Returns the current Neon-backed revision, character, HUD, world state, and last narration.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current campaign state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "receipt": {
+                      "type": "object",
+                      "description": "Authoritative transaction receipt. A committed receipt proves the turn is already saved; a failed receipt proves gameplay did not advance and identifies the exact retry phase.",
+                      "properties": {
+                        "turnId": {
+                          "type": "string"
+                        },
+                        "baseRevision": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "processing",
+                            "committed",
+                            "failed"
+                          ]
+                        },
+                        "phase": {
+                          "type": "string"
+                        },
+                        "draftAttempts": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "committedRevision": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "gameplayAdvanced": {
+                          "type": "boolean"
+                        },
+                        "retriable": {
+                          "type": "boolean"
+                        },
+                        "replayed": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "409": {
+            "description": "No campaign initialized"
+          }
+        }
+      }
+    },
+    "/api/gpt/hud": {
+      "get": {
+        "operationId": "getCampaignHUD",
+        "summary": "Read the authoritative web-app HUD",
+        "description": "Read-only. Never advances gameplay or rolls dice.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current HUD",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "receipt": {
+                      "type": "object",
+                      "description": "Authoritative transaction receipt. A committed receipt proves the turn is already saved; a failed receipt proves gameplay did not advance and identifies the exact retry phase.",
+                      "properties": {
+                        "turnId": {
+                          "type": "string"
+                        },
+                        "baseRevision": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "processing",
+                            "committed",
+                            "failed"
+                          ]
+                        },
+                        "phase": {
+                          "type": "string"
+                        },
+                        "draftAttempts": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "committedRevision": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "gameplayAdvanced": {
+                          "type": "boolean"
+                        },
+                        "retriable": {
+                          "type": "boolean"
+                        },
+                        "replayed": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/gpt/save": {
       "post": {
-        "operationId": "submitPlayerAction",
-        "summary": "Resolve one in-world player action",
-        "description": "GAMEPLAY ONLY. Use only for an in-world action by D'mir. NEVER use for save, load, checkpoint, HUD, sync, reconciliation, correction, OOC, admin, or state-edit requests. The controller rejects those requests before gameplay resolution. A successful turn persists to Neon Postgres so the web app and GPT share the same state.",
+        "operationId": "saveCheckpoint",
+        "summary": "Create an exact campaign checkpoint",
+        "description": "Administrative save only. No narration, roll, initiative, or gameplay mutation.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "maxLength": 120
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Checkpoint created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "receipt": {
+                      "type": "object",
+                      "description": "Authoritative transaction receipt. A committed receipt proves the turn is already saved; a failed receipt proves gameplay did not advance and identifies the exact retry phase.",
+                      "properties": {
+                        "turnId": {
+                          "type": "string"
+                        },
+                        "baseRevision": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "processing",
+                            "committed",
+                            "failed"
+                          ]
+                        },
+                        "phase": {
+                          "type": "string"
+                        },
+                        "draftAttempts": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "committedRevision": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "gameplayAdvanced": {
+                          "type": "boolean"
+                        },
+                        "retriable": {
+                          "type": "boolean"
+                        },
+                        "replayed": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/gpt/checkpoints": {
+      "get": {
+        "operationId": "listCheckpoints",
+        "summary": "List campaign checkpoints",
+        "description": "Read-only checkpoint listing.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Checkpoint list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "receipt": {
+                      "type": "object",
+                      "description": "Authoritative transaction receipt. A committed receipt proves the turn is already saved; a failed receipt proves gameplay did not advance and identifies the exact retry phase.",
+                      "properties": {
+                        "turnId": {
+                          "type": "string"
+                        },
+                        "baseRevision": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "processing",
+                            "committed",
+                            "failed"
+                          ]
+                        },
+                        "phase": {
+                          "type": "string"
+                        },
+                        "draftAttempts": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "committedRevision": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "gameplayAdvanced": {
+                          "type": "boolean"
+                        },
+                        "retriable": {
+                          "type": "boolean"
+                        },
+                        "replayed": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/gpt/load": {
+      "post": {
+        "operationId": "loadCheckpoint",
+        "summary": "Restore an exact campaign checkpoint",
+        "description": "Administrative restore only. Does not resolve gameplay.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "additionalProperties": false,
-                "required": ["revision", "action", "turnId"],
+                "required": [
+                  "checkpointId",
+                  "expectedRevision"
+                ],
+                "properties": {
+                  "checkpointId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "expectedRevision": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Checkpoint restored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "receipt": {
+                      "type": "object",
+                      "description": "Authoritative transaction receipt. A committed receipt proves the turn is already saved; a failed receipt proves gameplay did not advance and identifies the exact retry phase.",
+                      "properties": {
+                        "turnId": {
+                          "type": "string"
+                        },
+                        "baseRevision": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "processing",
+                            "committed",
+                            "failed"
+                          ]
+                        },
+                        "phase": {
+                          "type": "string"
+                        },
+                        "draftAttempts": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "committedRevision": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "gameplayAdvanced": {
+                          "type": "boolean"
+                        },
+                        "retriable": {
+                          "type": "boolean"
+                        },
+                        "replayed": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "409": {
+            "description": "Revision conflict"
+          }
+        }
+      }
+    },
+    "/api/gpt/reconcile": {
+      "post": {
+        "operationId": "reconcileCampaignState",
+        "summary": "Apply an explicit OOC state correction",
+        "description": "Administrative correction only. Never narrates, rolls, creates initiative, or advances combat. The response is intentionally compact and never returns the full campaign snapshot.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "expectedRevision",
+                  "patch"
+                ],
+                "properties": {
+                  "expectedRevision": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "patch": {
+                    "type": "object",
+                    "properties": {
+                      "level": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "experience": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "health": {
+                        "type": "integer"
+                      },
+                      "credits": {
+                        "type": "integer"
+                      },
+                      "creditsCriminal": {
+                        "type": "integer"
+                      },
+                      "location": {
+                        "type": "string"
+                      },
+                      "conditionTrack": {
+                        "type": "integer"
+                      },
+                      "campaignTimeMinutes": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "inventory": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "qty": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "tag": {
+                              "type": "string"
+                            }
+                          },
+                          "additionalProperties": true
+                        }
+                      },
+                      "objectives": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "title": {
+                              "type": "string"
+                            },
+                            "detail": {
+                              "type": "string"
+                            },
+                            "status": {
+                              "type": "string"
+                            }
+                          },
+                          "additionalProperties": true
+                        }
+                      },
+                      "combat": {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "string"
+                          },
+                          "round": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "activeSide": {
+                            "type": "string"
+                          },
+                          "playerActions": {
+                            "type": "object",
+                            "properties": {
+                              "standard": {
+                                "type": "integer"
+                              },
+                              "move": {
+                                "type": "integer"
+                              },
+                              "swift": {
+                                "type": "integer"
+                              },
+                              "reaction": {
+                                "type": "integer"
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          "combatants": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "side": {
+                                  "type": "string"
+                                },
+                                "hp": {
+                                  "type": "integer"
+                                },
+                                "maxHp": {
+                                  "type": "integer"
+                                },
+                                "conditionTrack": {
+                                  "type": "integer"
+                                }
+                              },
+                              "additionalProperties": true
+                            }
+                          }
+                        },
+                        "additionalProperties": true
+                      },
+                      "lastNarration": {
+                        "type": "string",
+                        "maxLength": 12000
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 200
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "State reconciled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "receipt": {
+                      "type": "object",
+                      "description": "Authoritative transaction receipt. A committed receipt proves the turn is already saved; a failed receipt proves gameplay did not advance and identifies the exact retry phase.",
+                      "properties": {
+                        "turnId": {
+                          "type": "string"
+                        },
+                        "baseRevision": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "processing",
+                            "committed",
+                            "failed"
+                          ]
+                        },
+                        "phase": {
+                          "type": "string"
+                        },
+                        "draftAttempts": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "committedRevision": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "gameplayAdvanced": {
+                          "type": "boolean"
+                        },
+                        "retriable": {
+                          "type": "boolean"
+                        },
+                        "replayed": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid patch"
+          },
+          "409": {
+            "description": "Revision conflict"
+          }
+        }
+      }
+    },
+    "/api/gpt/turn": {
+      "post": {
+        "operationId": "submitPlayerAction",
+        "summary": "Resolve exactly one in-world player action",
+        "description": "Gameplay only; not save, load, HUD or OOC corrections. The server owns Saga dice and persistence. Retry interrupted requests with the same turnId. A committed receipt means saved: never submit as a new turn. A failed retriable receipt means no advancement.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "revision",
+                  "action"
+                ],
                 "properties": {
                   "revision": {
                     "type": "integer",
@@ -57,233 +838,258 @@
                   "action": {
                     "type": "string",
                     "minLength": 1,
-                    "description": "One in-world player action only."
+                    "maxLength": 2000
                   },
                   "turnId": {
                     "type": "string",
                     "minLength": 8,
-                    "description": "Unique idempotency key. Reuse only to retry the exact same turn."
+                    "maxLength": 100,
+                    "pattern": "^[a-zA-Z0-9_-]+$"
                   }
-                }
+                },
+                "additionalProperties": false
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Resolved and persisted turn",
+            "description": "Committed or safely replayed gameplay turn with a transaction receipt",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "receipt": {
+                      "type": "object",
+                      "description": "Authoritative transaction receipt. A committed receipt proves the turn is already saved; a failed receipt proves gameplay did not advance and identifies the exact retry phase.",
+                      "properties": {
+                        "turnId": {
+                          "type": "string"
+                        },
+                        "baseRevision": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "processing",
+                            "committed",
+                            "failed"
+                          ]
+                        },
+                        "phase": {
+                          "type": "string"
+                        },
+                        "draftAttempts": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "committedRevision": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "gameplayAdvanced": {
+                          "type": "boolean"
+                        },
+                        "retriable": {
+                          "type": "boolean"
+                        },
+                        "replayed": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
                   "additionalProperties": true
                 }
               }
             }
           },
+          "400": {
+            "description": "Invalid action"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
           "409": {
-            "description": "Revision conflict or replay"
+            "description": "Revision conflict, replay, or required character advancement"
           },
           "422": {
-            "description": "Administrative request was routed to gameplay; use the returned useOperation instead"
-          }
-        }
-      }
-    },
-    "/api/gpt/hud": {
-      "get": {
-        "operationId": "getCampaignHUD",
-        "summary": "Read authoritative web-app HUD",
-        "description": "Read character and player-facing hub data including HP, credits, location, inventory, condition track, combat, objectives, relationships, properties, investments, travel access, and revision. Read-only.",
-        "responses": {
-          "200": {
-            "description": "HUD state",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/gpt/save": {
-      "post": {
-        "operationId": "saveCheckpoint",
-        "summary": "Save exact campaign checkpoint",
-        "description": "Use when the user says save, save game, create checkpoint, or preserve current state. Copies the current authoritative snapshot exactly. MUST NOT roll, generate initiative, narrate, advance combat, award XP, change inventory, or change any gameplay value.",
-        "requestBody": {
-          "required": false,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                  "label": {
-                    "type": "string",
-                    "maxLength": 120
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Exact checkpoint saved",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/gpt/checkpoints": {
-      "get": {
-        "operationId": "listCheckpoints",
-        "summary": "List saved checkpoints",
-        "description": "List recent exact checkpoints. Read-only and never advances gameplay.",
-        "responses": {
-          "200": {
-            "description": "Checkpoint list",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/gpt/load": {
-      "post": {
-        "operationId": "loadCheckpoint",
-        "summary": "Restore exact checkpoint",
-        "description": "Use only when the user explicitly asks to load or restore a checkpoint. Restores the selected snapshot exactly and increments persistence revision once. MUST NOT roll, generate initiative, narrate, advance combat, award XP, or infer extra changes. Call getCampaignState immediately before and pass its revision.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": ["checkpointId", "expectedRevision"],
-                "properties": {
-                  "checkpointId": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "expectedRevision": {
-                    "type": "integer",
-                    "minimum": 0
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Checkpoint restored exactly",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true
-                }
-              }
-            }
+            "description": "Administrative command; use the indicated control action"
           },
-          "409": {
-            "description": "Revision conflict; reread state before retrying"
-          }
-        }
-      }
-    },
-    "/api/gpt/reconcile": {
-      "post": {
-        "operationId": "reconcileCampaignState",
-        "summary": "Apply explicit OOC state correction",
-        "description": "Administrative state correction only. Use for explicit user-directed HP, XP, credits, location, inventory, combat, or condition-track corrections. Apply ONLY supplied fields. Never invent missing values. MUST NOT roll, generate initiative, narrate, award XP, or infer consequences. Call getCampaignState immediately before and pass its revision.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": ["expectedRevision", "patch"],
-                "properties": {
-                  "expectedRevision": {
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "reason": {
-                    "type": "string",
-                    "maxLength": 200
-                  },
-                  "patch": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "minProperties": 1,
-                    "properties": {
-                      "level": { "type": "integer", "minimum": 1 },
-                      "experience": { "type": "integer", "minimum": 0 },
-                      "health": { "type": "integer" },
-                      "credits": { "type": "number" },
-                      "location": { "type": "string" },
-                      "conditionTrack": { "type": "integer" },
-                      "inventory": {
-                        "type": "array",
-                        "items": {}
+          "502": {
+            "description": "Draft rejected before commit; receipt identifies the failed phase",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "receipt": {
+                      "type": "object",
+                      "description": "Authoritative transaction receipt. A committed receipt proves the turn is already saved; a failed receipt proves gameplay did not advance and identifies the exact retry phase.",
+                      "properties": {
+                        "turnId": {
+                          "type": "string"
+                        },
+                        "baseRevision": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "processing",
+                            "committed",
+                            "failed"
+                          ]
+                        },
+                        "phase": {
+                          "type": "string"
+                        },
+                        "draftAttempts": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "committedRevision": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "gameplayAdvanced": {
+                          "type": "boolean"
+                        },
+                        "retriable": {
+                          "type": "boolean"
+                        },
+                        "replayed": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
                       },
-                      "combat": {
-                        "type": "object",
-                        "additionalProperties": true
-                      }
+                      "additionalProperties": false
                     }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OOC correction persisted without gameplay advancement",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
+                  },
                   "additionalProperties": true
                 }
               }
             }
           },
-          "409": {
-            "description": "Revision conflict; reread state before retrying"
+          "503": {
+            "description": "GM drafting exhausted before commit; receipt confirms a safe retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "receipt": {
+                      "type": "object",
+                      "description": "Authoritative transaction receipt. A committed receipt proves the turn is already saved; a failed receipt proves gameplay did not advance and identifies the exact retry phase.",
+                      "properties": {
+                        "turnId": {
+                          "type": "string"
+                        },
+                        "baseRevision": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "processing",
+                            "committed",
+                            "failed"
+                          ]
+                        },
+                        "phase": {
+                          "type": "string"
+                        },
+                        "draftAttempts": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "committedRevision": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "gameplayAdvanced": {
+                          "type": "boolean"
+                        },
+                        "retriable": {
+                          "type": "boolean"
+                        },
+                        "replayed": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
           }
         }
       }
     }
   },
   "components": {
+    "schemas": {
+      "ParserAnchor": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
     "securitySchemes": {
       "bearerAuth": {
         "type": "http",
-        "scheme": "bearer"
+        "scheme": "bearer",
+        "bearerFormat": "GOC GPT action key"
       }
     }
   }
