@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { listAccounts } from "./accounts";
+import { listAccounts, type Account } from "./accounts";
 
 export class GptActionError extends Error {
   constructor(message: string, public status = 401) { super(message); }
