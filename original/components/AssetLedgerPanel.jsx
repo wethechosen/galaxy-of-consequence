@@ -19,7 +19,7 @@ export default function AssetLedgerPanel({ gameState }) {
           ["SPENDABLE", ledger.balances.spendable],
           ["DEPOSITED", ledger.balances.deposited],
           ["TOTAL GALACTIC FUNDS", ledger.balances.totalGalactic],
-          ["UNDERWORLD · SEPARATE", ledger.balances.underworld],
+          ["PHYSICAL CHIPS · SEPARATE", ledger.balances.underworld],
         ].map(([name, value]) => (
           <div className="rounded-xl border border-white/10 p-3 bg-white/[.025]" key={name}>
             <p className="text-[9px] tracking-widest text-[#8b93a3]">{name}</p>
@@ -27,7 +27,7 @@ export default function AssetLedgerPanel({ gameState }) {
           </div>
         ))}
       </div>
-      <p className="text-xs text-[#8b93a3] mt-3">Deposits are included once in total galactic funds. Underworld credits are not converted or combined.</p>
+      <p className="text-xs text-[#8b93a3] mt-3">Deposits are included once in electronic funds. Physical galactic credit chips are shown separately; the inventory chip record represents the same cash, not additional funds.</p>
 
       <section className="mt-5" aria-label="Recorded asset holdings">
         <h3 className="text-[10px] tracking-widest text-[#22e5c5] mb-2">HOLDINGS & ACCESS · {ledger.holdings.length} ENTRIES</h3>

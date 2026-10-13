@@ -158,7 +158,7 @@ function LiveHudStrip({ gameState, character }) {
         <Wallet size={13} style={{ color: "var(--econ)" }} />                <span className="text-[#e7e5df]">{gameState.credits.toLocaleString()} galactic credits</span>
       </div>
       <div className={`flex items-center gap-1.5 rounded-lg px-2 py-1 ${critFlash ? "gc-flash" : ""}`}>
-        <Skull size={13} style={{ color: "var(--force-dark)" }} />        <span className="text-[#e7e5df]">{gameState.creditsCriminal.toLocaleString()} underworld credits</span>
+        <Wallet size={13} style={{ color: "var(--econ)" }} />        <span className="text-[#e7e5df]">{gameState.creditsCriminal.toLocaleString()} physical credits</span>
       </div>
       <div className={`flex items-center gap-1.5 rounded-lg px-2 py-1 ${locFlash ? "gc-flash" : ""}`}>
         <MapPin size={13} style={{ color: "var(--sig)" }} /><span className="text-[#e7e5df]">{gameState.location}</span>
@@ -344,7 +344,7 @@ function HudView() {
       <div className="space-y-2 mb-2"><HudRow label="Hit Points" value={hitPointDisplay(character, gameState).label} /></div>
       <div className="grid grid-cols-2 gap-3 mb-2">
         <StatCard icon={Wallet} label="Standard Credits" value={`${gameState.credits.toLocaleString()} cr`} color="var(--econ)" />
-        <StatCard icon={Skull} label="Underworld Credits" value={`${gameState.creditsCriminal.toLocaleString()} cr`} color="var(--force-dark)" />
+        <StatCard icon={Wallet} label="Physical Credits" value={`${gameState.creditsCriminal.toLocaleString()} cr`} color="var(--econ)" />
       </div>
 
       <p className="text-[10px] tracking-[0.2em] mt-6 mb-3" style={{ color: "var(--sig)" }}>FACTION REPUTATION</p>

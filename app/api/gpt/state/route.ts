@@ -41,7 +41,8 @@ export async function GET(request: Request) {
       },
       world: {
         location: state.location, health: state.health, conditionTrack: state.conditionTrack,
-        credits: state.credits, bankCredits: state.bankCredits || 0, creditsCriminal: state.creditsCriminal, inventory: state.inventory,
+        credits: state.credits, bankCredits: state.bankCredits || 0, physicalCredits: state.creditsCriminal || 0, creditsCriminal: state.creditsCriminal, inventory: state.inventory,
+        currencyNote: "creditsCriminal is the legacy physical-chip balance, not underworld funds; inventory chips are not additional cash.",
         properties: state.properties, ships: state.ships, investments: state.investments,
         tradeOffers: state.tradeOffers, tradeReceipts: state.tradeReceipts,
         objectives: state.objectives, discoveries: state.discoveries, milestones: state.milestones,

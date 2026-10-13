@@ -185,7 +185,7 @@ export default function CharacterPage() {
           <GlassCard className="p-5">
             <p className="text-[10px] tracking-[0.2em] text-[#ff7a1a] mb-3">LIVE CAMPAIGN LEDGER</p>
             <HudRow label="Standard Credits" value={`${Number(gameState.credits || 0).toLocaleString()} cr`} />
-            <HudRow label="Underworld Credits" value={`${Number(gameState.creditsCriminal || 0).toLocaleString()} cr`} />
+            <HudRow label="Physical Credits" value={`${Number(gameState.creditsCriminal || 0).toLocaleString()} cr`} />
             <HudRow label="Experience" value={`${Number(character.experience || 0).toLocaleString()} XP`} />
             <HudRow label="Next Level" value={nextLevelXp == null ? "Maximum level" : `${nextLevelXp.toLocaleString()} XP`} />
             <div className="mt-4"><p className="text-[9px] tracking-[0.18em] text-[#8b93a3] mb-2">CURRENT INVENTORY</p>{inventory.length ? <ul className="space-y-1 text-sm text-[#d7d4cc]">{inventory.map((item) => <li key={item.id || item.name}>{item.name} ×{item.qty}</li>)}</ul> : <p className="text-sm text-[#5c6370]">No carried items recorded.</p>}</div>
