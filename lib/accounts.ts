@@ -25,7 +25,7 @@ export function accountStore(db = database ??= openStorage()) {
 }
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 const safeAccount = (row: Account): Account => ({ id: row.id, username: row.username, displayName: row.displayName, role: row.role });
-export function needsSetup(db = accountStore()) { if (hostedAuthEnabled()) return false; return !db.prepare("SELECT id FROM accounts LIMIT 1").get(); }
+export function needsSetup(db?: DatabaseSync) { if (hostedAuthEnabled()) return false; return !(db ?? accountStore()).prepare("SELECT id FROM accounts LIMIT 1").get(); }
 export function createAccount(username: string, password: string, displayName: string, role: Account["role"], db = accountStore()) {
   if (hostedAuthEnabled()) throw new Error("Hosted registration is disabled.");
   username = username.trim().toLowerCase(); displayName = displayName.trim();
@@ -61,8 +61,9 @@ export function authenticate(username: string, password: string, db = accountSto
   db.prepare("DELETE FROM login_attempts WHERE name = ?").run(name);
   return safeAccount(row);
 }
-export function startSession(account: Account, db = accountStore(), now = Date.now()) {
+export function startSession(account: Account, db?: DatabaseSync, now = Date.now()) {
   if (hostedAuthEnabled()) return hostedStartSession(account, now);
+  db ??= accountStore();
   const token = randomBytes(32).toString("hex");
   db.prepare("DELETE FROM sessions WHERE expires <= ?").run(now);
   db.prepare("INSERT INTO sessions VALUES (?, ?, ?)").run(digest(token), account.id, now + sessionLength);
@@ -71,15 +72,17 @@ export function startSession(account: Account, db = accountStore(), now = Date.n
 export function requestToken(request: Request) {
   return request.headers.get("cookie")?.split(";").map(item => item.trim()).find(item => item.startsWith(`${SESSION_COOKIE}=`))?.slice(SESSION_COOKIE.length + 1) ?? "";
 }
-export function sessionAccount(token: string, db = accountStore(), now = Date.now()): Account | null {
+export function sessionAccount(token: string, db?: DatabaseSync, now = Date.now()): Account | null {
   if (hostedAuthEnabled()) return hostedSessionAccount(token, now) as Account | null;
   if (!/^[a-f0-9]{64}$/.test(token)) return null;
+  db ??= accountStore();
   const row = db.prepare("SELECT a.id, a.username, a.displayName, a.role FROM accounts a JOIN sessions s ON a.id = s.accountId WHERE s.token = ? AND s.expires > ?").get(digest(token), now) as Account | undefined;
   return row ? safeAccount(row) : null;
 }
-export function refreshSession(token: string, db = accountStore(), now = Date.now()) {
+export function refreshSession(token: string, db?: DatabaseSync, now = Date.now()) {
   if (hostedAuthEnabled()) return Boolean(hostedSessionAccount(token, now));
   if (!/^[a-f0-9]{64}$/.test(token)) return false;
+  db ??= accountStore();
   const result = db.prepare("UPDATE sessions SET expires = ? WHERE token = ? AND expires > ?")
     .run(now + sessionLength, digest(token), now);
   return Boolean(result.changes);
@@ -90,8 +93,8 @@ export function requireAccount(request: Request, admin = false) {
   if (admin && account.role !== "admin") throw new Error("Administrator access required.");
   return account;
 }
-export function endSession(token: string, db = accountStore()) { if (hostedAuthEnabled()) return; db.prepare("DELETE FROM sessions WHERE token = ?").run(digest(token)); }
-export function listAccounts(db = accountStore()) { if (hostedAuthEnabled()) return hostedListAccounts() as Account[]; return db.prepare("SELECT id, username, displayName, role FROM accounts ORDER BY username").all() as Account[]; }
+export function endSession(token: string, db?: DatabaseSync) { if (hostedAuthEnabled()) return; (db ?? accountStore()).prepare("DELETE FROM sessions WHERE token = ?").run(digest(token)); }
+export function listAccounts(db?: DatabaseSync) { if (hostedAuthEnabled()) return hostedListAccounts() as Account[]; return (db ?? accountStore()).prepare("SELECT id, username, displayName, role FROM accounts ORDER BY username").all() as Account[]; }
 export function updateProfile(id: string, displayName: string, db = accountStore()) {
   if (!displayName.trim() || displayName.length > 80) throw new Error("Display name must be 1–80 characters.");
   db.prepare("UPDATE accounts SET displayName = ? WHERE id = ?").run(displayName.trim(), id);

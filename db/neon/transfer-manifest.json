@@ -1,0 +1,40 @@
+{
+  "sourceSchema": "private",
+  "tables": [
+    {
+      "name": "goc_web_accounts",
+      "columns": ["id", "username", "display_name", "role", "salt", "password_hash", "updated_at"],
+      "orderBy": "id"
+    },
+    {
+      "name": "goc_datapad_saves",
+      "columns": ["account_username", "account_id", "revision", "snapshot", "updated_at", "created_at"],
+      "orderBy": "account_username"
+    },
+    {
+      "name": "goc_datapad_save_backups",
+      "columns": ["backup_id", "account_username", "account_id", "revision", "snapshot", "source_updated_at", "source_created_at", "reason", "backed_up_at"],
+      "orderBy": "backup_id"
+    },
+    {
+      "name": "goc_datapad_configs",
+      "columns": ["account_id", "revision", "config", "updated_at", "created_at"],
+      "orderBy": "account_id"
+    },
+    {
+      "name": "goc_checkpoints",
+      "columns": ["checkpoint_id", "account_id", "account_username", "label", "source_revision", "snapshot", "created_at"],
+      "orderBy": "checkpoint_id"
+    },
+    {
+      "name": "goc_rag_documents",
+      "columns": ["document_id", "title", "authority", "namespace", "source_hash", "pages", "indexed_pages", "ocr_pages", "metadata", "created_at", "updated_at"],
+      "orderBy": "document_id"
+    },
+    {
+      "name": "goc_rag_chunks",
+      "columns": ["document_id", "page", "chunk_index", "content", "extraction", "reviewed", "token_count", "metadata", "created_at", "updated_at"],
+      "orderBy": "document_id, page, chunk_index"
+    }
+  ]
+}

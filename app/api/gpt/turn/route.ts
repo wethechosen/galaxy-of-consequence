@@ -113,10 +113,13 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof AdvancementRequiredError) return NextResponse.json(advancementErrorBody(error), { status: error.status });
     console.error("[gpt/turn] failure", error);
-    const status = error instanceof GptActionError || error instanceof GmTurnError ? error.status : 500;
+    const rawStatus = (error as { status?: unknown })?.status;
+    const status = typeof rawStatus === "number" && rawStatus >= 400 && rawStatus < 600 ? rawStatus : 500;
+    const currentRevision = (error as { currentRevision?: unknown })?.currentRevision;
     const receipt = turnLifecycleFromError(error);
     return NextResponse.json({
       error: error instanceof Error ? error.message : "Custom GPT turn failed. No outcome was applied.",
+      ...(typeof currentRevision === "number" ? { revision: currentRevision } : {}),
       ...(receipt ? { receipt } : {}),
     }, { status });
   }

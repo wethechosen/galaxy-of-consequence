@@ -50,7 +50,6 @@
   "exclude": [
     "node_modules",
     "vendor",
-    ".venv-nvidia-rag",
-    "supabase/functions"
+    ".venv-nvidia-rag"
   ]
 }

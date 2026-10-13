@@ -7,7 +7,7 @@
   },
   "servers": [
     {
-      "url": "https://gqznpnxnbfqvzijxjmtm.supabase.co/functions/v1/goc-gpt-controller"
+      "url": "https://galaxy-local.vercel.app"
     }
   ],
   "security": [
@@ -40,7 +40,7 @@
       "post": {
         "operationId": "submitPlayerAction",
         "summary": "Resolve one in-world player action",
-        "description": "GAMEPLAY ONLY. Use only for an in-world action by D'mir. NEVER use for save, load, checkpoint, HUD, sync, reconciliation, correction, OOC, admin, or state-edit requests. The controller rejects those requests before gameplay resolution. A successful turn persists to Supabase so the web app and GPT share the same state.",
+        "description": "GAMEPLAY ONLY. Use only for an in-world action by D'mir. NEVER use for save, load, checkpoint, HUD, sync, reconciliation, correction, OOC, admin, or state-edit requests. The controller rejects those requests before gameplay resolution. A successful turn persists to Neon Postgres so the web app and GPT share the same state.",
         "requestBody": {
           "required": true,
           "content": {

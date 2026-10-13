@@ -12,6 +12,7 @@ export async function GET(request: Request) {
 
   try {
     const saved = await bridgeGet(controllerAccountId());
+    if (!saved.snapshot) throw Object.assign(new Error("Campaign save not found."), { status: 404 });
     const character = saved.snapshot?.character || {};
     const state = saved.snapshot?.gameState || {};
     const result = { revision: saved.revision, character, hud: {

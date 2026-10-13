@@ -21,7 +21,7 @@ function formatCloudGrounding(hits: RagHit[]) {
     const content = String(hit.content || "").replace(/\s+/g, " ").trim().slice(0, 3500);
     return `[${title}, ${page}; ${authority}; ${extraction}; ${review}]\n${content}`;
   });
-  return `CLOUD SOURCEBOOK PASSAGES — retrieved from the owner's private Supabase RAG library. Saga Core has rules precedence. Only reviewed rules passages should support an exact mechanic; unreviewed or non-Saga material is context, tone, or a lead. Paraphrase and do not quote long passages.\n\n${passages.join("\n\n")}`;
+  return `CLOUD SOURCEBOOK PASSAGES — retrieved from the owner's private Neon RAG library. Saga Core has rules precedence. Only reviewed rules passages should support an exact mechanic; unreviewed or non-Saga material is context, tone, or a lead. Paraphrase and do not quote long passages.\n\n${passages.join("\n\n")}`;
 }
 
 export async function runtimeSourceGrounding(query: string) {

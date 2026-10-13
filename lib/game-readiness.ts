@@ -5,5 +5,5 @@ export const LIVE_AI_ENABLED = Boolean(process.env.NVIDIA_API_KEY);
 export function gameplayReadiness() {
   return { ready: GAMEPLAY_IMPLEMENTED, playtestReady: GAMEPLAY_IMPLEMENTED && LIVE_AI_ENABLED, productionReady: false,
     liveAi: LIVE_AI_ENABLED, abilityMethod: "point_buy",
-    blockers: ["Complete encounter/condition-track automation", "Bridge local accounts to the production Supabase identity model", "Deployment secrets and hosted end-to-end verification"] };
+    blockers: ["Complete encounter/condition-track automation", "Deployment secrets and Neon-hosted end-to-end verification"] };
 }

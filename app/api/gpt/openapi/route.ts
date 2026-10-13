@@ -98,7 +98,7 @@ export async function GET(request: Request) {
       get: {
         operationId: "getCampaignState",
         summary: "Load authoritative campaign state",
-        description: "Call before gameplay. Returns the current Supabase-backed revision, character, HUD, world state, and last narration.",
+        description: "Call before gameplay. Returns the current Neon-backed revision, character, HUD, world state, and last narration.",
         security: bearerSecurity,
         responses: { "200": jsonResponse("Current campaign state"), "401": { description: "Unauthorized" }, "409": { description: "No campaign initialized" } },
       },
@@ -167,8 +167,8 @@ export async function GET(request: Request) {
     openapi: "3.1.0",
     info: {
       title: "Galaxy of Consequence Custom GPT Controller",
-      version: "2.1.1",
-      description: "Authoritative GOC controller: Supabase state, HUD, equipment blocks, advancement, checkpoints, and gameplay turns share one revisioned campaign.",
+      version: "2.2.0",
+      description: "Authoritative GOC controller: Neon state, HUD, equipment blocks, advancement, checkpoints, and gameplay turns share one revisioned campaign.",
     },
     servers: [{ url: controllerUrl }],
     paths,

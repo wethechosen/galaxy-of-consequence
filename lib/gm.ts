@@ -1395,7 +1395,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   try {
     db.prepare("UPDATE gm_turn_attempts SET status = 'complete', result = ? WHERE account_id = ? AND turn_id = ?").run(JSON.stringify(result), accountId, input.turnId);
   } catch (error) {
-    // The Supabase save already committed. Do not turn a successful gameplay
+    // The authoritative save already committed. Do not turn a successful gameplay
     // transaction into a misleading 503 just because the local result cache
     // failed. The committed turn event still prevents duplicate state changes.
     console.error("[api/gm] local result cache failed after commit v2", {

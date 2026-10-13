@@ -1,6 +1,6 @@
 # Custom GPT Action bridge
 
-The bridge is intentionally separate from the browser-only `/api/gm` route. Both call the same `runGmTurn` authority, Saga dice, combat resolver, XP rules, inventory/economy rules, and idempotent turn ledger. With the hosted bridge configured, both hydrate the current Supabase campaign into a transient local cache and commit the resulting snapshot back through the same revision-checked Supabase bridge. SQLite is not the durable save on Vercel.
+The controller is separate from the browser-only `/api/gm` route. Both call the same `runGmTurn` authority, Saga dice, combat resolver, XP rules, inventory/economy rules, and idempotent turn ledger. Both hydrate the current Neon campaign into a transient local cache and commit the resulting snapshot back to Neon with a revision check. SQLite is not the durable save on Vercel.
 
 Configure these server-side secrets; never put them in GPT instructions or client JavaScript:
 
