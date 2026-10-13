@@ -23,6 +23,7 @@ import { normalizeModelLedgerJson } from "./model-ledger-json";
 import { itemStatBlock } from "@/original/lib/itemStats";
 import { constrainReadOnlyGoodsInspectionDelta, isReadOnlyGoodsInspection } from "./goods-inspection";
 import { advanceTurnLifecycle, beginTurnLifecycle, commitTurnLifecycle, failTurnLifecycle, type TurnLifecycleReceipt } from "./turn-lifecycle";
+import { pendingTransitArrival, transitArrivalFailure } from "./transit-progression";
 
 type TurnInput = { accountId?: string; revision: number; action: string; turnId: string; openScene?: boolean; statePolicy?: "committed-trade" | null };
 type Message = { role: "user" | "assistant" | "roll"; content: string; [key: string]: unknown };
@@ -1082,6 +1083,9 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   if (existing && existing.base_revision !== input.revision) throw new GmTurnError("The campaign changed after this turn began. Submit the action again as a new turn or reload the saved game.", 409);
 
   const mode = classifyTurnMode(action);
+  const transitArrival = mode === "play"
+    ? pendingTransitArrival(currentSnapshot.gameState as Record<string, unknown>, action)
+    : null;
   if (mode === "play" && action) assertAdvancementReady(currentSnapshot.character);
   const priorInterpretation = db.prepare("SELECT interpretation FROM gm_turn_interpretations WHERE account_id = ? AND turn_id = ?").get(accountId, input.turnId) as { interpretation: string } | undefined;
   enterPhase("interpret-action");
@@ -1185,6 +1189,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   if (mode === "play" && isFinancialWithdrawalAction(resolvedIntent)) system += `\n\nBANKING SAFETY: Withdrawing deposited credits as physical chips is an account-to-cash conversion, not a new reward or a change of location. Respect any confirmed terminal lockout. Do not narrate a completed cash-out unless the authorized state ledger can debit bankCredits and record corresponding physical credit chips atomically. If the current ledger schema cannot represent both, explain the operational limitation in the fiction without claiming chips were dispensed, money was lost, or a new security failure was established. Ordinary use of a functioning legitimate terminal does not automatically require a Use Computer check.`;
   if (semantic) system += `\n\nINTERPRETED PLAYER INTENT (not an outcome): ${JSON.stringify(semantic)}\nResolve this intent, not a keyword trigger. The original declaration below remains the player's words and choices. Ordinary competent substeps are part of the attempt; never add a new player decision. Any check is already supplied by the referee; never invent another.`;
   if (forceConstraint) system += `\n\nSAGA CAPABILITY CONSTRAINT: ${forceConstraint}`;
+  if (transitArrival) system += `\n\nCONFIRMED TRANSPORT TRANSIT — ARRIVAL REQUEST: The saved scene establishes that D'mir is aboard a freighter already underway in hyperspace; the objective "${transitArrival.objectiveTitle}" identifies the destination. The older saved Coruscant dock location is a departure-state persistence defect, NOT proof the ship never left. The player has expressly chosen to wait until arrival. Resolve this existing flight to ${transitArrival.destination} NOW, without requiring another order, recharging passage, repeating Jax's prior conversation, or inventing a skill check. Narrate the actual hyperspace exit and arrival/approach, use an end-of-turn LOCATION beginning "${transitArrival.destination}", and emit the exact same location plus a positive, plausible timeAdvanceMinutes in the hidden STATE ledger. Complete the "${transitArrival.objectiveTitle}" objective. No unrelated credits, equipment, or XP awards. A repeated in-flight scene is NOT a resolved result and will be rejected without consuming the turn.`;
   if (mode === "play") system += `\n\n${conversationTradeInstruction(trade)}\n${routineCommerce ? "ORDINARY INTERACTION: No check is required for a normal question or stock/price inquiry. Answer the actual question as the CURRENT interlocutor in the saved scene. A broad market location does not mean a clothing stall. Resolve short follow-ups against the last exchange, including lodging duration, privacy, meals and prices. Quote new terms before charging; do not invent procedural refusal without an established reason." : ""}\nSERIALIZATION: End with exactly one HTML STATE comment containing strict JSON, with double-quoted keys and string values. Multiple merchandise items use one inventoryAdd array, never duplicate keys. A no-change example is <!--STATE:{}-->. Record every concrete priced offer in tradeOfferAdd, including services as named entitlements tagged service with the agreed duration and amenities. Quotes grant nothing yet. LOCATION names the place at the END of this action and must match delta.location when declared travel changes it, or the saved location otherwise.`;
   if (mode === "play") system += `\n${LEASE_LEDGER_INSTRUCTION}\n${QUOTE_COMPONENT_INSTRUCTION}`;
   let parsed: ReturnType<typeof parseEngineResponse> | null = null;
@@ -1275,12 +1280,18 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       delta = constrainExperienceAward(delta, roll);
       delta = reconcileConversationTradeDelta(delta, trade);
       delta = constrainReadOnlyGoodsInspectionDelta(delta, action, trade?.status === "accepted");
-      delta = reconcileNarratedTravelLocation(parsed.clean, delta, resolvedIntent, roll, currentSnapshot.gameState.location, semantic?.intent === "travel");
+      delta = reconcileNarratedTravelLocation(parsed.clean, delta, resolvedIntent, roll, currentSnapshot.gameState.location, semantic?.intent === "travel" || Boolean(transitArrival));
       if (input.statePolicy === "committed-trade" && delta) {
         delta = { ...delta, credits: 0, creditsCriminal: 0, inventoryAdd: [], inventoryRemove: [] };
       }
       if (!action && input.openScene) { assertSceneRefreshDelta(delta); delta = {}; }
-      assertLocationIntent(delta, resolvedIntent, currentSnapshot.gameState.location, semantic?.intent === "travel");
+      if (transitArrival) {
+        const arrivalError = transitArrivalFailure(transitArrival, sectionBody(parsed.clean, "GAMEPLAY RESULT"), delta);
+        if (arrivalError) throw new GmTurnError(`${arrivalError} Rewrite the same transport turn with arrival, location, and elapsed campaign time.`, 502);
+        const completed = Array.isArray(delta?.objectiveComplete) ? delta.objectiveComplete.map(String) : [];
+        delta = { ...(delta || {}), objectiveComplete: [...new Set([...completed, transitArrival.objectiveTitle])] };
+      }
+      assertLocationIntent(delta, resolvedIntent, currentSnapshot.gameState.location, semantic?.intent === "travel" || Boolean(transitArrival));
       if (mode === "play") assertNarratedLocation(parsed.clean, delta, currentSnapshot.gameState.location);
       if (mode === "play") assertMovementSceneProgress(parsed.clean, resolvedIntent, roll, delta, currentSnapshot.gameState.location);
       assertMaterialAuthority(delta, action, roll, currentSnapshot.gameState as Record<string, unknown>, trade);
@@ -1288,7 +1299,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       assertNarrativeLedgerConsistency(parsed.clean, delta, resolvedIntent);
       assertNarrativeAuthority(parsed.clean, claims, roll, currentSnapshot.character as Record<string, unknown>, resolvedIntent);
       if (mode === "play") {
-        const experienceAward = trade || routineCommerce ? 0 : deriveExperienceAward(delta, roll, currentSnapshot.gameState as Record<string, unknown>, currentSnapshot.character as Record<string, unknown>);
+        const experienceAward = trade || routineCommerce || Boolean(transitArrival) ? 0 : deriveExperienceAward(delta, roll, currentSnapshot.gameState as Record<string, unknown>, currentSnapshot.character as Record<string, unknown>);
         delta = {
           ...(delta || {}),
           health: Number(delta?.health || 0) + Number(combatResolution?.playerHealthDelta || 0),
@@ -1347,7 +1358,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       assertNarrativeLedgerConsistency(parsed.clean, delta, resolvedIntent);
       assertNarrativeAuthority(parsed.clean, claims, roll, currentSnapshot.character as Record<string, unknown>, resolvedIntent);
       if (mode === "play") {
-        const experienceAward = trade || routineCommerce ? 0 : deriveExperienceAward(delta, roll, currentSnapshot.gameState as Record<string, unknown>, currentSnapshot.character as Record<string, unknown>);
+        const experienceAward = trade || routineCommerce || Boolean(transitArrival) ? 0 : deriveExperienceAward(delta, roll, currentSnapshot.gameState as Record<string, unknown>, currentSnapshot.character as Record<string, unknown>);
         delta = {
           ...(delta || {}),
           health: Number(delta?.health || 0) + Number(combatResolution?.playerHealthDelta || 0),
