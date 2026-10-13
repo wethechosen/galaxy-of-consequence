@@ -1,6 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { accountStore, listAccounts, type Account } from "./accounts";
-import { hostedPersistenceEnabled } from "./hosted-bridge";
+import { listAccounts } from "./accounts";
 
 export class GptActionError extends Error {
   constructor(message: string, public status = 401) { super(message); }
@@ -21,11 +20,7 @@ export function authenticateGptAction(request: Request) {
   if (!supplied || !timingSafeEqual(left, right)) throw new GptActionError("Custom GPT action authentication failed.", 401);
   const username = process.env.GOC_GPT_ACCOUNT_USERNAME?.trim().toLowerCase();
   if (!username) throw new GptActionError("The Custom GPT action account is not configured on this server.", 503);
-  const actor = listAccounts(accountStore()).find((account) => account.username === username);
-  if (!actor && hostedPersistenceEnabled()) {
-    const role: Account["role"] = username.startsWith("gm") ? "admin" : "player";
-    return { id: process.env.GOC_GPT_ACCOUNT_ID || "bc822f06-3f84-48dd-9468-3151cf3485f9", username, displayName: username.startsWith("dmir") ? "D'mir Holloran" : "GM Operator", role };
-  }
+  const actor = listAccounts().find((account) => account.username === username);
   if (!actor) throw new GptActionError("The configured Custom GPT action account does not exist.", 503);
   return actor;
 }
