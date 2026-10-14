@@ -865,7 +865,7 @@ export function assertMovementSceneProgress(
   const result = sectionBody(narration, "GAMEPLAY RESULT");
   // Kiosks, counters and stalls are local waypoints within the saved concourse.
   // Still require a delta for travel to a distinct place such as a new port or ship.
-  const completedNamedPlace = /\b(?:you\s+(?:arrive(?:\s+at)?|reach|enter|exit|leave)|(?:and\s+)?arrive\s+(?:at|in)|reach\s+(?:the|a))\b[^.!?\n]{0,100}\b(?:apartment|residence|home|docking bay|spaceport|district|city|planet|ship|shuttle|transport)\b/i.test(`${scene}\n${result}`);
+  const completedNamedPlace = /\byou\s+(?:arrive(?:\s+at)?|reach|enter|exit|leave|[^.!?\n]{0,100}\band\s+(?:arrive\s+(?:at|in)|reach))\b[^.!?\n]{0,100}\b(?:apartment|residence|home|docking bay|spaceport|district|city|planet|ship|shuttle|transport)\b/i.test(`${scene}\n${result}`);
   if (completedNamedPlace) {
     throw new GmTurnError("The GM completed travel to a named place without saving that destination. Rewrite the same turn with the exact end location in the ledger.", 502);
   }
