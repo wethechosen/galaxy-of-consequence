@@ -24,9 +24,15 @@ import { itemStatBlock } from "@/original/lib/itemStats";
 import { constrainReadOnlyGoodsInspectionDelta, isReadOnlyGoodsInspection } from "./goods-inspection";
 import { advanceTurnLifecycle, beginTurnLifecycle, commitTurnLifecycle, failTurnLifecycle, type TurnLifecycleReceipt } from "./turn-lifecycle";
 import { pendingTransitArrival, transitArrivalFailure } from "./transit-progression";
+import { reconcileFulfilledObjectives } from "./objective-reconciliation";
 
 type TurnInput = { accountId?: string; revision: number; action: string; turnId: string; openScene?: boolean; statePolicy?: "committed-trade" | null };
 type Message = { role: "user" | "assistant" | "roll"; content: string; [key: string]: unknown };
+
+function isAuthoritativeLocalReceipt(message: Message | undefined) {
+  return message?.provider === "local-safe-fallback"
+    && ["resolved-saga-receipt", "commercial-progress-receipt"].includes(String(message.model || ""));
+}
 
 function deterministicTurnRoller(turnId: string, lane: string) {
   let index = 0;
@@ -69,6 +75,12 @@ Every understandable declaration is an attempted action, not a request for permi
 The saved transcript may contain legacy playtest errors. Previous assistant prose is continuity context only when the same fact is supported by the authoritative character/world state or by the player-established campaign direction below. Unsupported passwords, victories, transfers, items, evidence, injuries, locations, and NPC revelations from older narration are not canon and must not be repeated as fact.
 
 The supplied roll outcome is binding. On FAILURE, the declared objective does not occur: no bypass, download, withdrawal, decisive discovery, hit, defeat, escape, acquisition, decryption, or actionable secret is gained. Failure must still move play forward through a concrete obstacle, exposed risk, elapsed time, changed position, NPC/world reaction, or newly visible scene boundary supported by the stakes. Never reset to the same generic corridor or answer only that nothing happens. On SUCCESS, grant only the declared objective within the established fiction—do not add unrelated treasure, evidence, contacts, access, or victories. Under SAGA CHECK include the exact line RESULT: SUCCESS or RESULT: FAILURE matching the supplied roll.
+
+SUCCESSFUL SOCIAL CHECKS: A successful Persuasion, Deception, or Gather Information check cannot end with no lead, no agreement, no concession, no useful information, or no persistent change when the declared stake sought one. Record the concrete result in the ledger as a contact, discovery, relationship change, offer, objective, location, or other appropriate persistent consequence. A natural 20 is not broader than the declared stake, but a successful total still receives that stake. Do not let an interruption erase a resolved success.
+
+COMMERCIAL REALISM: Passenger charters, ship brokers, crew contracts, and service retainers are ordinary galactic commerce. Passenger travel can have a passenger manifest and clearance without cargo. A specific NPC may refuse a risky client, especially after a failed check, but one refusal does not prove that every pilot, broker, or yard will refuse. A substantial credible offer must produce proportionate interest, an exact counteroffer, a concrete referral, or a supported personal refusal; never call it worthless or insufficient without stating actionable terms. Quotes and proposed terms go in tradeOfferAdd and never charge the player until accepted by the authoritative trade resolver.
+
+NO CIRCULAR REFERRALS: Never direct D'mir to the place he is already standing or repeat the same dock, tier, office, NPC refusal, or generic menu as progress. Following directions reaches a more specific named boundary and updates LOCATION, or the response identifies a distinct person, desk, bay, time, price, or requirement that creates a new playable beat.
 
 TRANSACTION CONTINUITY: A confirmed trade receipt and the corresponding owned entitlement outrank an older open quote or a stale nested booking flag. A seller who already authenticated and acknowledged a payment cannot demand the identical fare again without a genuinely new, independently established reason. Never resurrect an obstacle that the prior confirmed turn resolved simply to delay the next movement. A fresh obstruction must have its own established cause, not be a paraphrase of the last refusal.
 
@@ -157,7 +169,7 @@ function rollMessage(roll: Record<string, unknown>) {
 }
 
 function publicContext(snapshot: DatapadSnapshot) {
-  const state = snapshot.gameState;
+  const state = reconcileFulfilledObjectives(snapshot.gameState);
   const scene = currentSceneFrame(snapshot);
   const recentTurns = (Array.isArray(state.turnEvents) ? state.turnEvents as Array<Record<string, unknown>> : [])
     .slice(-8)
@@ -215,7 +227,7 @@ export function safeMessages(snapshot: DatapadSnapshot): NvidiaMessage[] {
       continue;
     }
     if (message.role !== "assistant" || !pendingUser) continue;
-    const isFallback = message.provider === "local-safe-fallback" || message.fallbackReason;
+    const isFallback = !isAuthoritativeLocalReceipt(message) && (message.provider === "local-safe-fallback" || message.fallbackReason);
     if (!isFallback && !isRepeatedSceneTemplate(message.content)) {
       const adjudication = sectionBody(message.content, "GM ADJUDICATION") || sectionBody(message.content, "GM RESOLUTION");
       const gameplay = sectionBody(message.content, "GAMEPLAY RESULT");
@@ -279,7 +291,7 @@ export function constrainFailedCheckDelta(delta: Record<string, unknown> | null,
   }
   // A failed request for a discount does not erase the seller's ordinary
   // stock/price offer. A quote is neither an acquired item nor a reward.
-  if (/bargain|discount|negotiate|haggle|vendor|merchant/i.test(action) && Array.isArray(delta.tradeOfferAdd)) safe.tradeOfferAdd = delta.tradeOfferAdd;
+  if (/bargain|discount|negotiate|haggle|vendor|merchant|offer|pay|pilot|captain|charter|passage|hire|employ/i.test(action) && Array.isArray(delta.tradeOfferAdd)) safe.tradeOfferAdd = delta.tradeOfferAdd;
   if (Array.isArray(delta.storyDirectiveAdd)) {
     const directions = delta.storyDirectiveAdd.filter((entry) => entry && typeof entry === "object"
       && String((entry as Record<string, unknown>).status || "active").trim().toLocaleLowerCase() !== "completed");
@@ -473,6 +485,54 @@ function resolvedGoodsInspectionNarration(snapshot: DatapadSnapshot, action: str
   };
 }
 
+function isCommercialTravelProgressAction(action: string) {
+  return /\b(?:pilot|captain|charter|passage|passenger|shipyard|ship broker|ship sales|buy (?:a |the )?ship|vessel|transport)\b/i.test(action)
+    && /\b(?:find|hire|recruit|work|ask|referr|point|direction|offer|pay|buy|travel|take (?:me|us))\b/i.test(action);
+}
+
+/** Deterministic recovery for the narrow commercial-travel loop. It honors a
+ * server roll, records success, and never spends credits or grants a ship. */
+function resolvedCommercialProgressNarration(snapshot: DatapadSnapshot, action: string, roll: Record<string, unknown> | null) {
+  const location = String(snapshot.gameState.location || "Current location");
+  const succeeded = roll?.outcome === "success";
+  const failed = roll?.outcome === "failure";
+  const amountMatch = /\b([\d,]{4,})\s*(?:credits?|cr)\b/i.exec(action);
+  const amount = amountMatch ? Number(amountMatch[1].replace(/,/g, "")) : 0;
+  const contactName = "Sera Noll";
+  const seeksShip = /\b(?:buy|purchase)\b[^.]{0,50}\b(?:ship|vessel)\b|\bship sales\b/i.test(action);
+  const delta: Record<string, unknown> = succeeded ? {
+    contactAdd: [{ name: contactName, role: seeksShip ? "independent ship broker" : "independent charter pilot", location }],
+    discoveryAdd: [{ title: seeksShip ? "Independent vessel broker at the Level C registry" : "Independent charter pilot at Bay 7", detail: seeksShip
+      ? `${contactName} is available at the public Level C registry to discuss listed vessels and inspection terms.`
+      : `${contactName} is willing to discuss a lawful passenger charter and continuing pilot work; route, schedule, and final terms remain to be agreed.` }],
+    ...(amount > 0 && !seeksShip ? { tradeOfferAdd: [{ sellerName: contactName, items: [{ name: "Private pilot retainer deposit", qty: 1, tag: "service" }], totalCredits: amount }] } : {}),
+  } : !failed ? {
+    discoveryAdd: [{ title: "Level C public charter and vessel registry", detail: "The staffed registry matches passengers with licensed charter crews and lists vessels offered for inspection; its service counter is marked beside the main Level C concourse." }],
+  } : {};
+  const result = succeeded
+    ? seeksShip
+      ? `${contactName}, an independent broker working the public registry, answers the inquiry and agrees to show you the currently listed vessels and their inspection terms. No ship is purchased and no credits change hands.`
+      : `${contactName}, an off-duty independent pilot, answers the request and agrees in principle to discuss the passenger route and continuing work.${amount > 0 ? ` She treats the offered ${amount.toLocaleString()}-credit retainer as serious proposed terms; it is recorded for your confirmation, not charged.` : " Route, schedule, risk, and pay still require a contract."}`
+    : failed
+      ? `The approached pilot declines this attempt after the failed exchange, but the refusal is personal rather than an industry-wide bar. A staffed public charter registry and vessel desk remains visibly available on the Level C concourse; no credits change hands.`
+      : `The posted Level C registry directs ordinary passengers and buyers to a staffed service counter beside the main concourse. It handles lawful passenger manifests, charter crews, and vessel inspection appointments without requiring cargo. No purchase, contract, or payment occurs.`;
+  const options = seeksShip
+    ? ["Ask Sera Noll for the listed vessel prices and inspection conditions.", "Ask which ships can legally depart Taris soon.", "Review the public registry before negotiating."]
+    : succeeded
+      ? ["Ask Sera Noll to state the route, schedule, and full contract price.", "Clarify the CSA and Coruscant passenger-manifest requirements.", amount > 0 ? `Accept or revise the recorded ${amount.toLocaleString()}-credit retainer terms.` : "Ask what retainer and operating costs she requires."]
+      : ["Approach the staffed charter registry.", "Read the posted charter requirements and rates.", "Seek a different independent captain through the registry."];
+  const check = roll ? `${rollMessage(roll)}\nRESULT: ${String(roll.outcome).toUpperCase()}` : "No check required.";
+  const stateUpdate = succeeded
+    ? `${contactName} is recorded as an interested ${seeksShip ? "ship broker" : "charter pilot"}.${amount > 0 && !seeksShip ? ` Her proposed ${amount.toLocaleString()}-credit retainer is recorded; it is not paid.` : ""}`
+    : !failed ? "The public Level C charter and vessel registry is recorded as a concrete lead." : "No persistent change.";
+  return {
+    provider: "local-safe-fallback" as const,
+    model: "commercial-progress-receipt",
+    finishReason: "stop",
+    content: `## LOCATION\n${location}\n\n## SCENE\nAt ${location}, the shipyard's public registry signage separates passenger charters, crew contracts, and vessel sales from the repair-bay traffic.\n\n## GM ADJUDICATION\n${roll ? "The server-owned Saga result controls this social attempt. A success earns only the declared commercial opening; a failure preserves the refusal without making ordinary passenger commerce impossible." : "This is an ordinary request for public commercial information and needs no Saga check."}\n\n## GAMEPLAY RESULT\n${result}\n\n## SAGA CHECK\n${check}\n\n## STATE UPDATE\n${stateUpdate}\n\n## PLAYER OPTIONS\n${options.map((option, index) => `${String.fromCharCode(65 + index)}. ${option}`).join("\n")}\nYou may declare another action.\n<!--STATE:${JSON.stringify(delta)}-->`,
+  };
+}
+
 /** Removes UI retry wording before it reaches the authoritative action planner. */
 export function normalizeTurnAction(value: string) {
   return String(value || "")
@@ -512,11 +572,59 @@ export function alignMechanicalResult(narration: string, roll: Record<string, un
   return narration.replace(/^((?:##\s*)?SAGA CHECK\s*)$/im, `$1\n${expected}`);
 }
 
-export function assertResolvedOutcome(narration: string, roll: Record<string, unknown> | null) {
+function hasPersistentTurnProgress(delta: Record<string, unknown> | null | undefined) {
+  if (!delta) return false;
+  const fields = ["contactAdd", "discoveryAdd", "relationshipUpdate", "tradeOfferAdd", "objectiveAdd", "objectiveComplete", "decisionAdd", "milestoneAdd", "storyDirectiveAdd", "location", "note", "timeAdvanceMinutes"];
+  return fields.some((field) => Object.prototype.hasOwnProperty.call(delta, field)
+    && delta[field] !== "" && delta[field] !== 0 && (!Array.isArray(delta[field]) || (delta[field] as unknown[]).length > 0));
+}
+
+const noProgressResult = /\b(?:no (?:new |useful |concrete )?(?:information|lead|progress|agreement|concession|referral|commitment)|without (?:a |any )?(?:lead|commitment|agreement|progress)|no closer to|environment remains unchanged|figure it out yourself|leav(?:e|ing) you without a lead)\b/i;
+
+export function assertResolvedOutcome(narration: string, roll: Record<string, unknown> | null, delta?: Record<string, unknown> | null, action = "") {
   if (roll?.outcome !== "success" || !["Persuasion", "Deception", "Gather Information"].includes(String(roll.label))) return;
   const result = sectionBody(narration, "GAMEPLAY RESULT");
-  if (/\b(?:no (?:concession|progress|trust|advantage|agreement|information|lead) (?:is |was |has been )?(?:made|granted|extended|gained|obtained|given)|(?:your|the) (?:deception|persuasion|attempt|request) (?:fails|is rejected|has no effect)|(?:sees?|saw) through (?:your|the) (?:lie|deception)|(?:roll|check) (?:is|was) invalid)\b/i.test(result)) {
+  if (noProgressResult.test(result) || /\b(?:(?:your|the) (?:deception|persuasion|attempt|request) (?:fails|is rejected|has no effect)|(?:sees?|saw) through (?:your|the) (?:lie|deception)|(?:roll|check) (?:is|was) invalid)\b/i.test(result)) {
     throw new GmTurnError("The social check succeeded, but the draft denied its stated objective. Rewrite the concrete success without granting unrelated benefits.", 502);
+  }
+  const soughtDurableResult = /\b(?:find|locate|recruit|hire|employ|work for me|lead|referr|information|direction|agreement|commitment|contact|pilot|captain|broker)\b/i.test(action);
+  if (soughtDurableResult && !hasPersistentTurnProgress(delta)) {
+    throw new GmTurnError("The social check succeeded, but its concrete lead or agreement was omitted from persistent state. Record the earned contact, discovery, relationship, offer, objective, or location and retry the same turn.", 502);
+  }
+}
+
+export function assertNoProgressLoop(
+  narration: string,
+  action: string,
+  delta: Record<string, unknown> | null,
+  currentLocation: unknown,
+  priorResult = "",
+) {
+  const result = sectionBody(narration, "GAMEPLAY RESULT");
+  if (!hasPersistentTurnProgress(delta) && noProgressResult.test(result) && noProgressResult.test(priorResult)) {
+    throw new GmTurnError("The draft repeated the prior no-progress refusal. Resolve a different concrete beat, counteroffer, referral, obstacle, or scene boundary instead of looping the player.", 502);
+  }
+  const followsDirections = /\b(?:follow\b[^.]{0,80}\b(?:directions?|instructions?|route)|go to|head to|return to|leave for|take me to)\b/i.test(action);
+  const named = sectionBody(narration, "LOCATION").replace(/\*+/g, "").replace(/^location\s*:\s*/i, "").trim();
+  const unchanged = named && normalizedKey(named) === normalizedKey(currentLocation) && !delta?.location;
+  if (followsDirections && unchanged) {
+    throw new GmTurnError("The player followed directions, but the draft returned them to the same saved location. Name and save a more specific destination or resolve a distinct boundary at the present location.", 502);
+  }
+}
+
+export function assertCommercialCredibility(narration: string, action: string, delta: Record<string, unknown> | null) {
+  if (!/\b(?:pilot|captain|charter|passage|passenger|ship|vessel|travel|transport)\b/i.test(action)) return;
+  const result = sectionBody(narration, "GAMEPLAY RESULT");
+  if (/\bno cargo\b[^.\n]{0,100}\b(?:no manifest|no clearance|no paper trail)\b/i.test(result)) {
+    throw new GmTurnError("The draft incorrectly treated passenger travel as impossible without cargo. Use passenger manifests and ordinary charter rules; preserve any real risk as terms, price, or a personal refusal.", 502);
+  }
+  const offered = [...action.matchAll(/\b([\d,]{4,})\s*(?:credits?|cr)\b/gi)].map((match) => Number(match[1].replace(/,/g, ""))).filter(Number.isSafeInteger);
+  const substantial = Math.max(0, ...offered) >= 10_000;
+  const callsOfferInsufficient = /\b(?:insufficient|not enough|too little|higher compensation|doesn['’]?t cover|wouldn['’]?t cover)\b/i.test(result);
+  const hasCounteroffer = quotedCreditAmounts(result).some((amount) => !offered.includes(amount))
+    || Array.isArray(delta?.tradeOfferAdd) && delta.tradeOfferAdd.length > 0;
+  if (substantial && callsOfferInsufficient && !hasCounteroffer) {
+    throw new GmTurnError("The draft dismissed a substantial service offer without actionable terms. The NPC may refuse for supported personal risk, or state and record an exact counteroffer or concrete referral.", 502);
   }
 }
 
@@ -891,7 +999,7 @@ function latestAssistantScene(snapshot: DatapadSnapshot) {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (message?.role !== "assistant" || typeof message.content !== "string") continue;
-    if (message.provider === "local-safe-fallback" || message.fallbackReason || isRepeatedSceneTemplate(message.content)) continue;
+    if (!isAuthoritativeLocalReceipt(message) && (message.provider === "local-safe-fallback" || message.fallbackReason) || isRepeatedSceneTemplate(message.content)) continue;
     const location = sectionBody(message.content, "LOCATION").trim();
     if (location && location !== String(snapshot.gameState.location || "")) continue;
     const scene = extractSceneNarration(message.content);
@@ -907,7 +1015,7 @@ function currentSceneFrame(snapshot: DatapadSnapshot) {
     : null;
   const messages = Array.isArray(snapshot.messages) ? snapshot.messages as Message[] : [];
   const latest = messages.filter(message => message.role === "assistant").at(-1);
-  const polluted = latest?.provider === "local-safe-fallback" || latest?.fallbackReason
+  const polluted = !isAuthoritativeLocalReceipt(latest) && (latest?.provider === "local-safe-fallback" || latest?.fallbackReason)
     || isRepeatedSceneTemplate(String(stored?.summary || ""));
   const summary = String((!polluted && stored?.summary) || latestAssistantScene(snapshot)).slice(0, 2800);
   if (!summary) return null;
@@ -1164,7 +1272,8 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   enterPhase("prepare-draft");
   const history = safeMessages(currentSnapshot);
   const priorScene = currentSceneFrame(currentSnapshot)?.summary || "";
-  const lastAuthored = (currentSnapshot.messages as Message[]).filter(message => message.role === "assistant" && message.provider !== "local-safe-fallback" && !message.fallbackReason).at(-1);
+  const lastAuthored = (currentSnapshot.messages as Message[]).filter(message => message.role === "assistant"
+    && (isAuthoritativeLocalReceipt(message) || message.provider !== "local-safe-fallback" && !message.fallbackReason)).at(-1);
   const priorResult = lastAuthored ? sectionBody(lastAuthored.content, "GAMEPLAY RESULT") : "";
   const lastConfirmedBeat = priorResult
     ? `\nPREVIOUS CONFIRMED RESULT (history, not a new obstacle):\n${priorResult.slice(0, 1200)}\nA completed payment, release, agreement, or cleared obstruction remains completed unless the current authoritative ledger supplies new evidence.`
@@ -1275,7 +1384,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
         }
       }
       assertMechanicalNarration(parsed.clean, roll);
-      assertResolvedOutcome(parsed.clean, roll);
+      assertResolvedOutcome(parsed.clean, roll, parsed.delta as Record<string, unknown> | null, resolvedIntent);
       delta = constrainFailedCheckDelta(parsed.delta as Record<string, unknown> | null, roll, resolvedIntent);
       delta = constrainExperienceAward(delta, roll);
       delta = reconcileConversationTradeDelta(delta, trade);
@@ -1294,6 +1403,8 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       assertLocationIntent(delta, resolvedIntent, currentSnapshot.gameState.location, semantic?.intent === "travel" || Boolean(transitArrival));
       if (mode === "play") assertNarratedLocation(parsed.clean, delta, currentSnapshot.gameState.location);
       if (mode === "play") assertMovementSceneProgress(parsed.clean, resolvedIntent, roll, delta, currentSnapshot.gameState.location);
+      if (mode === "play") assertNoProgressLoop(parsed.clean, resolvedIntent, delta, currentSnapshot.gameState.location, priorResult);
+      if (mode === "play") assertCommercialCredibility(parsed.clean, resolvedIntent, delta);
       assertMaterialAuthority(delta, action, roll, currentSnapshot.gameState as Record<string, unknown>, trade);
       assertStoryDirectiveAuthority(delta, actor, currentSnapshot.character as Record<string, unknown>);
       assertNarrativeLedgerConsistency(parsed.clean, delta, resolvedIntent);
@@ -1324,6 +1435,25 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       response = resolvedGoodsInspectionNarration(currentSnapshot, action);
       parsed = parseEngineResponse(response.content, { requireState: true });
       delta = {};
+      validationError = null;
+    } else if (mode === "play" && isCommercialTravelProgressAction(resolvedIntent)) {
+      fallbackReason = "validation";
+      response = resolvedCommercialProgressNarration(currentSnapshot, resolvedIntent, roll);
+      parsed = parseEngineResponse(response.content, { requireState: true });
+      parsed = { ...parsed, clean: ensurePlayerOptions(normalizePlayerOptions(parsed.clean), currentSnapshot.gameState, currentSnapshot.character as Record<string, unknown>, action) };
+      parsed = { ...parsed, clean: normalizeCampaignSections(parsed.clean, parsed.delta as Record<string, unknown> | null, currentSnapshot.gameState.location) };
+      assertCampaignResponseStructure(parsed.clean);
+      assertNarrativeFocus(parsed.clean, action);
+      assertMechanicalNarration(parsed.clean, roll);
+      assertResolvedOutcome(parsed.clean, roll, parsed.delta as Record<string, unknown> | null, resolvedIntent);
+      delta = constrainFailedCheckDelta(parsed.delta as Record<string, unknown> | null, roll, resolvedIntent);
+      delta = constrainExperienceAward(delta, roll);
+      assertNoProgressLoop(parsed.clean, resolvedIntent, delta, currentSnapshot.gameState.location, priorResult);
+      assertCommercialCredibility(parsed.clean, resolvedIntent, delta);
+      assertMaterialAuthority(delta, action, roll, currentSnapshot.gameState as Record<string, unknown>, null);
+      assertNarrativeLedgerConsistency(parsed.clean, delta, resolvedIntent);
+      const experienceAward = routineCommerce ? 0 : deriveExperienceAward(delta, roll, currentSnapshot.gameState as Record<string, unknown>, currentSnapshot.character as Record<string, unknown>);
+      delta = { ...(delta || {}), experienceAward };
       validationError = null;
     } else {
       enterPhase("drafting-exhausted", 3);
@@ -1378,6 +1508,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       : currentSnapshot;
   if (mode === "play") {
     finalized = { ...finalized, gameState: commitConversationTradeState(finalized.gameState, delta, trade, input.turnId) };
+    finalized = { ...finalized, gameState: reconcileFulfilledObjectives(finalized.gameState) };
     // Derive seller continuity from this finalized scene, not the prior vendor.
   }
   if (mode === "play" && combatResolution) {
