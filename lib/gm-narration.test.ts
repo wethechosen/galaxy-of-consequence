@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attachRepairedLedger, appendTurnEvent, assertCampaignResponseStructure, assertCommercialCredibility, assertFreshScene, assertMaterialAuthority, assertMechanicalNarration, assertMovementSceneProgress, assertNarrativeAuthority, assertNarrativeFocus, assertNarrativeLedgerConsistency, assertNoProgressLoop, assertResolvedOutcome, assertStoryDirectiveAuthority, authorityWarnings, constrainExperienceAward, constrainFailedCheckDelta, deriveExperienceAward, ensureStateUpdateSection, GM_SYSTEM, normalizePlayerOptions, normalizeTurnAction, reconcileNarratedTravelLocation, safeMessages, sanitizeGmNarration, sceneSimilarity, withSceneFrame } from "./gm";
+import { attachRepairedLedger, appendTurnEvent, assertActionConstraints, assertCampaignResponseStructure, assertCommercialCredibility, assertFreshScene, assertMaterialAuthority, assertMechanicalNarration, assertMovementSceneProgress, assertNarrativeAuthority, assertNarrativeFocus, assertNarrativeLedgerConsistency, assertNoProgressLoop, assertResolvedOutcome, assertStoryDirectiveAuthority, authorityWarnings, constrainExperienceAward, constrainFailedCheckDelta, deriveExperienceAward, ensureStateUpdateSection, GM_SYSTEM, normalizePlayerOptions, normalizeTurnAction, reconcileNarratedTravelLocation, safeMessages, sanitizeGmNarration, sceneSimilarity, withSceneFrame } from "./gm";
 import { planConversationTrade, reconcileConversationTradeDelta } from "./conversation-trade";
 
 describe("authoritative Saga narration", () => {
@@ -18,6 +18,17 @@ describe("authoritative Saga narration", () => {
     expect(() => assertNoProgressLoop(loop, "I ask another clerk", {}, "Taris — Shipyards, Level C", prior)).toThrow(/repeated/);
     expect(() => assertNoProgressLoop(loop, "I follow her instructions to the ships for sale", {}, "Taris — Shipyards, Level C", "A clerk gives directions.")).toThrow(/same saved location/);
     expect(() => assertNoProgressLoop(loop.replace("Level C", "Level C — public charter registry"), "I follow her instructions to the ships for sale", { location: "Taris — Shipyards, Level C — public charter registry" }, "Taris — Shipyards, Level C", prior)).not.toThrow();
+  });
+
+  it("honors an explicit request for someone other than the previously named contact", () => {
+    const action = "Ask the waitress whether she knows any captains other than Jax who are currently accepting private passengers.";
+    const prior = "The waitress says independent runs are rare and advises asking Jax at Docking Bay 94 because he handles quiet contracts.";
+    const repeated = "## GAMEPLAY RESULT\nThe waitress says independent runs are rare and advises arranging discreet passage through Jax at Docking Bay 94 because he handles quiet contracts.";
+    expect(() => assertActionConstraints(repeated, action)).toThrow(/explicitly excluded/i);
+    expect(() => assertNoProgressLoop(repeated, action, {}, "Taris — Market District (inside the cantina)", prior)).toThrow(/different person/i);
+    const distinct = "## GAMEPLAY RESULT\nShe does not know a second captain by name, but identifies the staffed public charter registry on the local docking concourse as a separate current lead.";
+    expect(() => assertActionConstraints(distinct, action)).not.toThrow();
+    expect(() => assertNoProgressLoop(distinct, action, { discoveryAdd: [{ title: "Local public charter registry" }] }, "Taris — Market District (inside the cantina)", prior)).not.toThrow();
   });
 
   it("preserves personal refusals but rejects false passenger rules and unactionable dismissal of a large offer", () => {
@@ -161,6 +172,12 @@ describe("authoritative Saga narration", () => {
       .replace(/travel documentation kiosk in the docking-bay concourse/i, "District 12 spaceport")
       .replace(/reach the kiosk and stand before its clerk/i, "reach the spaceport and stop beneath its departure board");
     expect(() => assertMovementSceneProgress(distinctDestination, "I leave and head to the spaceport", null, {}, "Office trailer interior")).toThrow(/saving that destination/i);
+  });
+
+  it("rejects the live stale-dock replay when the heading and ledger remain in the Taris cantina", () => {
+    const stale = "LOCATION\nTaris — Market District (inside the cantina)\nSCENE\nYou leave the bar and head through the market toward the docks.\nGM ADJUDICATION\nRoutine travel.\nGAMEPLAY RESULT\nYou arrive at Docking Bay 94's Level B slip 14. The YT-1300 remains moored and Jax waits beside its airlock.\nSAGA CHECK\nNo check required.\nSTATE UPDATE\nNo persistent change.\nPLAYER OPTIONS\nA. Speak to Jax.\nB. Inspect the ship.\nYou may declare another action.";
+    expect(() => assertMovementSceneProgress(stale, "I head back to the docks and seek Jax out", null, {}, "Taris — Market District (inside the cantina)"))
+      .toThrow(/saving that destination/i);
   });
 
   it("normalizes declared successful travel to the narrated end location", () => {

@@ -80,6 +80,8 @@ SUCCESSFUL SOCIAL CHECKS: A successful Persuasion, Deception, or Gather Informat
 
 COMMERCIAL REALISM: Passenger charters, ship brokers, crew contracts, and service retainers are ordinary galactic commerce. Passenger travel can have a passenger manifest and clearance without cargo. A specific NPC may refuse a risky client, especially after a failed check, but one refusal does not prove that every pilot, broker, or yard will refuse. A substantial credible offer must produce proportionate interest, an exact counteroffer, a concrete referral, or a supported personal refusal; never call it worthless or insufficient without stating actionable terms. Quotes and proposed terms go in tradeOfferAdd and never charge the player until accepted by the authoritative trade resolver.
 
+ACTION CONTRASTS: Words such as "other than," "except," "besides," "another," and "someone else" are binding parts of the current declaration. Do not answer by sending the player back to the excluded NPC, place, product, or approach. If the requested alternative is not personally known, give that direct answer once and identify a distinct public process or actionable next lead when one is established by the current setting.
+
 NO CIRCULAR REFERRALS: Never direct D'mir to the place he is already standing or repeat the same dock, tier, office, NPC refusal, or generic menu as progress. Following directions reaches a more specific named boundary and updates LOCATION, or the response identifies a distinct person, desk, bay, time, price, or requirement that creates a new playable beat.
 
 TRANSACTION CONTINUITY: A confirmed trade receipt and the corresponding owned entitlement outrank an older open quote or a stale nested booking flag. A seller who already authenticated and acknowledged a payment cannot demand the identical fare again without a genuinely new, independently established reason. Never resurrect an obstacle that the prior confirmed turn resolved simply to delay the next movement. A fresh obstruction must have its own established cause, not be a paraphrase of the last refusal.
@@ -486,8 +488,21 @@ function resolvedGoodsInspectionNarration(snapshot: DatapadSnapshot, action: str
 }
 
 function isCommercialTravelProgressAction(action: string) {
-  return /\b(?:pilot|captain|charter|passage|passenger|shipyard|ship broker|ship sales|buy (?:a |the )?ship|vessel|transport)\b/i.test(action)
+  return /\b(?:pilots?|captains?|charters?|passage|passengers?|shipyards?|ship brokers?|ship sales|buy (?:a |the )?ship|vessels?|transport)\b/i.test(action)
     && /\b(?:find|hire|recruit|work|ask|referr|point|direction|offer|pay|buy|travel|take (?:me|us))\b/i.test(action);
+}
+
+function asksForAlternative(action: string) {
+  return /\b(?:other than|except|besides|but not|another|different|someone else|anyone else|somewhere else)\b/i.test(action);
+}
+
+function explicitlyExcludedNames(action: string) {
+  const names = new Set<string>();
+  for (const match of action.matchAll(/\b(?:other than|except|besides|but not)\s+([\p{L}][\p{L}'’.-]*)/giu)) {
+    const name = match[1]?.trim();
+    if (name) names.add(name);
+  }
+  return [...names];
 }
 
 /** Deterministic recovery for the narrow commercial-travel loop. It honors a
@@ -507,15 +522,18 @@ function resolvedCommercialProgressNarration(snapshot: DatapadSnapshot, action: 
       : `${contactName} is willing to discuss a lawful passenger charter and continuing pilot work; route, schedule, and final terms remain to be agreed.` }],
     ...(amount > 0 && !seeksShip ? { tradeOfferAdd: [{ sellerName: contactName, items: [{ name: "Private pilot retainer deposit", qty: 1, tag: "service" }], totalCredits: amount }] } : {}),
   } : !failed ? {
-    discoveryAdd: [{ title: "Level C public charter and vessel registry", detail: "The staffed registry matches passengers with licensed charter crews and lists vessels offered for inspection; its service counter is marked beside the main Level C concourse." }],
+    discoveryAdd: [{ title: "Local public charter and vessel registry", detail: "The staffed registry on the local docking concourse matches passengers with licensed charter crews and lists vessels offered for inspection." }],
   } : {};
+  const alternative = asksForAlternative(action);
   const result = succeeded
     ? seeksShip
       ? `${contactName}, an independent broker working the public registry, answers the inquiry and agrees to show you the currently listed vessels and their inspection terms. No ship is purchased and no credits change hands.`
       : `${contactName}, an off-duty independent pilot, answers the request and agrees in principle to discuss the passenger route and continuing work.${amount > 0 ? ` She treats the offered ${amount.toLocaleString()}-credit retainer as serious proposed terms; it is recorded for your confirmation, not charged.` : " Route, schedule, risk, and pay still require a contract."}`
     : failed
       ? `The approached pilot declines this attempt after the failed exchange, but the refusal is personal rather than an industry-wide bar. A staffed public charter registry and vessel desk remains visibly available on the Level C concourse; no credits change hands.`
-      : `The posted Level C registry directs ordinary passengers and buyers to a staffed service counter beside the main concourse. It handles lawful passenger manifests, charter crews, and vessel inspection appointments without requiring cargo. No purchase, contract, or payment occurs.`;
+      : alternative
+        ? `The inquiry does not send you back to the excluded contact. No second individual captain is confirmed here, but a distinct lead is established: the staffed public charter registry on the local docking concourse matches passengers with licensed crews and posts current availability. No purchase, contract, or payment occurs.`
+        : `The posted public registry directs ordinary passengers and buyers to a staffed service counter on the local docking concourse. It handles lawful passenger manifests, charter crews, and vessel inspection appointments without requiring cargo. No purchase, contract, or payment occurs.`;
   const options = seeksShip
     ? ["Ask Sera Noll for the listed vessel prices and inspection conditions.", "Ask which ships can legally depart Taris soon.", "Review the public registry before negotiating."]
     : succeeded
@@ -524,12 +542,12 @@ function resolvedCommercialProgressNarration(snapshot: DatapadSnapshot, action: 
   const check = roll ? `${rollMessage(roll)}\nRESULT: ${String(roll.outcome).toUpperCase()}` : "No check required.";
   const stateUpdate = succeeded
     ? `${contactName} is recorded as an interested ${seeksShip ? "ship broker" : "charter pilot"}.${amount > 0 && !seeksShip ? ` Her proposed ${amount.toLocaleString()}-credit retainer is recorded; it is not paid.` : ""}`
-    : !failed ? "The public Level C charter and vessel registry is recorded as a concrete lead." : "No persistent change.";
+    : !failed ? "The local public charter and vessel registry is recorded as a concrete lead." : "No persistent change.";
   return {
     provider: "local-safe-fallback" as const,
     model: "commercial-progress-receipt",
     finishReason: "stop",
-    content: `## LOCATION\n${location}\n\n## SCENE\nAt ${location}, the shipyard's public registry signage separates passenger charters, crew contracts, and vessel sales from the repair-bay traffic.\n\n## GM ADJUDICATION\n${roll ? "The server-owned Saga result controls this social attempt. A success earns only the declared commercial opening; a failure preserves the refusal without making ordinary passenger commerce impossible." : "This is an ordinary request for public commercial information and needs no Saga check."}\n\n## GAMEPLAY RESULT\n${result}\n\n## SAGA CHECK\n${check}\n\n## STATE UPDATE\n${stateUpdate}\n\n## PLAYER OPTIONS\n${options.map((option, index) => `${String.fromCharCode(65 + index)}. ${option}`).join("\n")}\nYou may declare another action.\n<!--STATE:${JSON.stringify(delta)}-->`,
+    content: `## LOCATION\n${location}\n\n## SCENE\nAt ${location}, the inquiry turns to lawful passenger charters and currently available crews. The exchange stays at the saved location while the practical next route is identified.\n\n## GM ADJUDICATION\n${roll ? "The server-owned Saga result controls this social attempt. A success earns only the declared commercial opening; a failure preserves the refusal without making ordinary passenger commerce impossible." : "This is an ordinary request for public commercial information and needs no Saga check."}\n\n## GAMEPLAY RESULT\n${result}\n\n## SAGA CHECK\n${check}\n\n## STATE UPDATE\n${stateUpdate}\n\n## PLAYER OPTIONS\n${options.map((option, index) => `${String.fromCharCode(65 + index)}. ${option}`).join("\n")}\nYou may declare another action.\n<!--STATE:${JSON.stringify(delta)}-->`,
   };
 }
 
@@ -601,6 +619,10 @@ export function assertNoProgressLoop(
   priorResult = "",
 ) {
   const result = sectionBody(narration, "GAMEPLAY RESULT");
+  if (!hasPersistentTurnProgress(delta) && asksForAlternative(action) && priorResult
+    && sceneSimilarity(result, priorResult) >= 0.55) {
+    throw new GmTurnError("The player asked for a different person, place, or approach, but the draft repeated the preceding answer. Resolve the contrast directly and record a distinct lead when one is established.", 502);
+  }
   if (!hasPersistentTurnProgress(delta) && noProgressResult.test(result) && noProgressResult.test(priorResult)) {
     throw new GmTurnError("The draft repeated the prior no-progress refusal. Resolve a different concrete beat, counteroffer, referral, obstacle, or scene boundary instead of looping the player.", 502);
   }
@@ -609,6 +631,20 @@ export function assertNoProgressLoop(
   const unchanged = named && normalizedKey(named) === normalizedKey(currentLocation) && !delta?.location;
   if (followsDirections && unchanged) {
     throw new GmTurnError("The player followed directions, but the draft returned them to the same saved location. Name and save a more specific destination or resolve a distinct boundary at the present location.", 502);
+  }
+}
+
+/** Keep an explicit exclusion in the player's latest action authoritative. */
+export function assertActionConstraints(narration: string, action: string) {
+  const excluded = explicitlyExcludedNames(action);
+  if (!excluded.length) return;
+  const result = sectionBody(narration, "GAMEPLAY RESULT");
+  for (const name of excluded) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const directsBack = new RegExp(`(?:better|should|must|need|advis(?:e[sd]?|ing)|direct(?:s|ed|ing)?|send(?:s|ing)?|refer(?:s|red|ring)?|ask|seek|find|contact|visit|return|head|go|arrange(?:d)?\\s+through)[^.\\n]{0,120}\\b${escaped}\\b|\\b${escaped}\\b[^.\\n]{0,100}\\b(?:handles?|awaits?|is the (?:only|best)|can arrange)\\b`, "i").test(result);
+    if (directsBack) {
+      throw new GmTurnError(`The draft sent the player back to ${name}, even though the current action explicitly excluded that contact. Answer the requested contrast or provide a distinct lead.`, 502);
+    }
   }
 }
 
@@ -1290,7 +1326,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   const combatInstruction = authoritativeResolution ? `\n\nAUTHORITATIVE MECHANICS UPDATE:\n${JSON.stringify({ summary: authoritativeResolution.summary, combat: authoritativeResolution.combat || null, additionalRolls: authoritativeResolution.rolls, playerHealthDelta: authoritativeResolution.playerHealthDelta, playerConditionDelta: authoritativeResolution.playerConditionDelta, experienceAward: authoritativeResolution.experienceAward, stateDelta: authoritativeResolution.stateDelta || {} })}\nThis update is server-owned. Narrate it exactly without inventing another attack, damage roll, movement, action, victory, Force effect, or reward. An opening attack declaration starts initiative only; it does not also resolve the attack. Reflect remaining player actions and stop for the player's next declaration.` : "";
   let system = mode === "ooc" ? `You are the campaign Game Master. Answer the player's out-of-character rules or character-status question concisely from authoritative saved state. Distinguish confirmed state from rumors or prior narrative claims. Do not advance time, narrate a new scene, change state, or output a STATE block.\n\nCURRENT CAMPAIGN STATE:\n${publicContext(currentSnapshot)}`
     : mode === "context" ? `The player supplied character background/context, not an in-world action. Acknowledge it briefly, do not roll, do not advance the scene, and do not invent additions. Do not output a STATE block.\n\nCURRENT CAMPAIGN STATE:\n${publicContext(currentSnapshot)}`
-    : `${GM_SYSTEM}${rollInstruction}${combatInstruction}${authorityInstruction}${creatorInstruction}\n\nTURN CONTRACT: Suggestions must change with the current scene, visible interactables, injuries, carried equipment, trained skills and remaining combat actions. Use 2-4 A-D possible attempts, never a static menu, guaranteed outcome, secret clue or unearned Force technique. Only suggest objects already visible in this scene or recorded in state. LOCATION names the end-of-turn place and matches the ledger, not a stale district label. SCENE shows D'mir's established visible condition and the declared action meeting the immediate environment before mechanics. GM ADJUDICATION accepts the executable intent; an asserted destination is a goal, not a reason to refuse the attempt. GAMEPLAY RESULT must create a playable new beat even on failure. SAGA CHECK contains only server-owned dice or "No check required." Meditation and terminal interaction are not travel. Negated actions never occur. Travel reaches a concrete observable boundary, not an endless generic transit summary. PRIOR TURN OUTCOME messages omit old scene prose: use them only for continuity, never as a writing template. The saved scene summary identifies the present beat but its wording must not be copied.\n\nCURRENT AUTHORITATIVE CAMPAIGN STATE:\n${publicContext(currentSnapshot)}`;
+    : `${GM_SYSTEM}${rollInstruction}${combatInstruction}${authorityInstruction}${creatorInstruction}\n\nTURN CONTRACT: Suggestions must change with the current scene, visible interactables, injuries, carried equipment, trained skills and remaining combat actions. Use 2-4 A-D possible attempts, never a static menu, guaranteed outcome, secret clue or unearned Force technique. Only suggest objects already visible in this scene or recorded in state. LOCATION names the end-of-turn place and matches the ledger, not a stale district label. SCENE shows D'mir's established visible condition and the declared action meeting the immediate environment before mechanics. GM ADJUDICATION accepts the executable intent; an asserted destination is a goal, not a reason to refuse the attempt. GAMEPLAY RESULT must create a playable new beat even on failure. SAGA CHECK contains only server-owned dice or "No check required." Meditation and terminal interaction are not travel. Negated actions never occur. Travel reaches a concrete observable boundary, not an endless generic transit summary. Historical NPCs and locations in old receipts are not present at the CURRENT planet or location unless authoritative state places them there; never replay an old dock, ship, or contact as the destination of generic movement. PRIOR TURN OUTCOME messages omit old scene prose: use them only for continuity, never as a writing template. The saved scene summary identifies the present beat but its wording must not be copied.\n\nCURRENT AUTHORITATIVE CAMPAIGN STATE:\n${publicContext(currentSnapshot)}`;
   let response: Awaited<ReturnType<typeof invokeNvidia>> | null = null;
   if (mode === "play") system += `\n\nCURRENT ACTION TO RESOLVE NOW: ${action}\n${lastConfirmedBeat}\nCURRENT ACTION PRIORITY: Follow this declaration, not any NPC demand from an earlier scene. When public movement is unopposed and access is established, resolve movement and record the new end location. When an action includes unpriced shopping or sales, present exact prices and offers rather than silently charging, granting items, or forcing an unrelated NPC confrontation; resolve the other independently executable substeps as far as the confirmed state permits. Never invent a second payment for an already receipted purchase.`;
   if (mode === "play" && isReadOnlyGoodsInspection(action)) system += `\n\nREAD-ONLY MERCHANDISE INSPECTION: Resolve the declared examination only. Describe visible condition, seals, labels, packaging, and expiration markings supported by the scene. Do not deduct or grant credits; do not add, remove, consume, sell, equip, or transfer an item; do not narrate a completed transaction. Temporary handling remains with the current owner. Use an empty material ledger unless an authoritative mechanic supplied above requires a non-material change.`;
@@ -1367,6 +1403,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       }
       if (mode === "play") assertCampaignResponseStructure(parsed.clean);
       if (mode === "play") assertNarrativeFocus(parsed.clean, action);
+      if (mode === "play") assertActionConstraints(parsed.clean, resolvedIntent);
       if (mode === "play") assertSettledPaymentContinuity(parsed.clean, priorResult, action);
        if (mode === "play") assertMerchantTermsContinuity(parsed.clean, priorResult, action);
       if (mode === "play" && response.provider !== "local-safe-fallback") {
@@ -1444,6 +1481,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       parsed = { ...parsed, clean: normalizeCampaignSections(parsed.clean, parsed.delta as Record<string, unknown> | null, currentSnapshot.gameState.location) };
       assertCampaignResponseStructure(parsed.clean);
       assertNarrativeFocus(parsed.clean, action);
+      assertActionConstraints(parsed.clean, resolvedIntent);
       assertMechanicalNarration(parsed.clean, roll);
       assertResolvedOutcome(parsed.clean, roll, parsed.delta as Record<string, unknown> | null, resolvedIntent);
       delta = constrainFailedCheckDelta(parsed.delta as Record<string, unknown> | null, roll, resolvedIntent);

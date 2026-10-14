@@ -66,4 +66,41 @@ describe("commercial gameplay progress recovery", () => {
     expect(await runGmTurn(actor, { revision: 1, turnId: "pilot-recovery-01", action })).toEqual(result);
     expect(readDatapad(actor, null, database).revision).toBe(2);
   });
+
+  it("replaces three repeated Jax referrals with one persistent alternative lead at the saved location", async () => {
+    database = accounts.accountStore(openStorage(":memory:"));
+    vi.spyOn(accounts, "accountStore").mockReturnValue(database);
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const actor: Account = { id: "dmir-alternative-test", username: "dmir@galaxy.local", displayName: "D'mir", role: "player" };
+    database.prepare("INSERT INTO accounts VALUES (?, ?, ?, ?, '', '')").run(actor.id, actor.username, actor.displayName, actor.role);
+    const location = "Taris — Market District (inside the cantina)";
+    saveAuthoritativeDatapad(actor, null, 0, {
+      character: { name: "D'mir Holloran", level: 2, experience: 2550, sagaStats: "STR 12 | DEX 14 | CON 10 | INT 12 | WIS 10 | CHA 12", trainedSkills: [], feats: "Adept Negotiator" },
+      gameState: { location, credits: 628_650_006, creditsCriminal: 50_000, inventory: [], objectives: [], contacts: [], discoveries: [], turnEvents: [] },
+      messages: [{ role: "assistant", provider: "nvidia", content: `## LOCATION\n${location}\n## SCENE\nThe waitress stands across the cantina bar.\n## GAMEPLAY RESULT\nThe waitress says independent runs are rare and advises asking Jax at Docking Bay 94 because he handles quiet contracts.` }],
+      comms: [], settings: {},
+    }, database);
+
+    const action = "Ask the waitress whether she knows any captains other than Jax who are currently accepting private passengers.";
+    provider.mockImplementation(async (request: { sourceQuery?: string }) => {
+      if (!request.sourceQuery) return { provider: "nvidia", model: "intent", finishReason: "stop", content: JSON.stringify({
+        intent: "dialogue", canonicalAction: action, declaredSpan: action, checkNeeded: false, skill: null,
+        rationale: "A routine request for public information.", travelTarget: null, acceptedOfferId: null,
+      }) };
+      return { provider: "nvidia", model: "broken", finishReason: "stop", content: `## LOCATION\n${location}\n\n## SCENE\nThe waitress pauses across the bar while pilots talk beneath flickering panels and glasses clink near the service hatch. She wipes the counter, then gives the same measured answer.\n\n## GM ADJUDICATION\nThis routine public inquiry needs no check.\n\n## GAMEPLAY RESULT\nThe waitress advises arranging discreet passage through Jax at Docking Bay 94 because he handles quiet contracts. No alternative captain is identified.\n\n## SAGA CHECK\nNo check required.\n\n## STATE UPDATE\nNo persistent change.\n\n## PLAYER OPTIONS\nA. Ask Jax about passage.\nB. Leave the cantina.\nYou may declare another action.\n<!--STATE:{}-->` };
+    });
+
+    const result = await runGmTurn(actor, { revision: 1, turnId: "alternative-captain-recovery-01", action });
+    expect(result.revision).toBe(2);
+    expect(result.provider).toBe("local-safe-fallback");
+    expect(result.model).toBe("commercial-progress-receipt");
+    expect(result.snapshot.gameState.location).toBe(location);
+    expect(result.narration).not.toMatch(/shipyard's public registry signage/i);
+    expect(result.narration).not.toMatch(/through Jax|ask Jax|return to Jax/i);
+    expect(result.snapshot.gameState.discoveries).toEqual([expect.objectContaining({ title: "Local public charter and vessel registry" })]);
+    expect(result.snapshot.gameState.credits).toBe(628_650_006);
+    expect(provider).toHaveBeenCalledTimes(4);
+    expect(await runGmTurn(actor, { revision: 1, turnId: "alternative-captain-recovery-01", action })).toEqual(result);
+  });
 });
