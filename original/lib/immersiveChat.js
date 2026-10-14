@@ -44,7 +44,7 @@ export function summarizeStateUpdate(value = "") {
     numberLabel(state.health, "Vitality", "Vitality"),
     conditionLabel(state.conditionTrack),
     numberLabel(state.credits, "Credits", "Credits"),
-    numberLabel(state.creditsCriminal, "Underworld credits", "Underworld credits"),
+    numberLabel(state.creditsCriminal, "Physical credits", "Physical credits"),
     numberLabel(state.experienceAward, "Experience", "Experience"),
     numberLabel(state.forcePoints, "Force Points", "Force Points"),
     numberLabel(state.destinyPoints, "Destiny Points", "Destiny Points"),

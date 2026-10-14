@@ -107,16 +107,17 @@ const GALACTIC_NEWS_EVENTS = [
   },
 ];
 
-function getWorldEvent(place, gameState) {
+export function getWorldEvent(place, gameState, feedIndex = 0) {
   const publicEvent = (gameState?.publicNews || [])
-    .filter((event) => event.location && place.name.toLowerCase().includes(event.location.toLowerCase()))
-    .slice(-1)[0];
+    .filter((event) => event.location && (event.location.toLowerCase().includes(place.name.toLowerCase()) || place.name.toLowerCase().includes(event.location.toLowerCase())))
+    .slice().reverse()[feedIndex];
   if (publicEvent) {
     return {
       id: publicEvent.id,
       location: publicEvent.location,
       headline: publicEvent.headline,
-      facts: `${publicEvent.facts} Source: ${publicEvent.source}.`,
+      facts: `${publicEvent.facts} Source: ${publicEvent.source || "Campaign public record"}.`,
+      status: "SAVED PUBLIC DISPATCH",
       angle: {
         holonet: "Officials have issued no further statement beyond the confirmed public record.",
         coruscant: "Political and security offices are disputing what the incident means for local authority.",
@@ -125,9 +126,16 @@ function getWorldEvent(place, gameState) {
     };
   }
   const matches = GALACTIC_NEWS_EVENTS.filter((event) => place.name.toLowerCase().includes(event.location.toLowerCase()));
-  const pool = matches.length ? matches : GALACTIC_NEWS_EVENTS;
-  const day = Math.floor(Date.now() / 86400000);
-  return pool[day % pool.length];
+  // Never recycle an unrelated planet's headline as local news or manufacture
+  // new events from the real-world clock. Only campaign records are current.
+  const event = matches[feedIndex];
+  return event ? { ...event, status: "ARCHIVED REGIONAL BRIEF" } : {
+    location: place.name,
+    headline: `${place.name.toUpperCase()} — NO NEW VERIFIED DISPATCH`,
+    facts: `No additional public report for ${place.name}${place.region ? ` (${place.region})` : ""} is recorded in this campaign.`,
+    angle: { holonet: "The sanctioned wire has no new statement.", coruscant: "The Core-world desk has no further attributed coverage.", galactic: "The regional wire has no verified local update." },
+    status: "AWAITING PUBLIC REPORT",
+  };
 }
 
 function buildNewsFeeds(gameState) {
@@ -137,10 +145,9 @@ function buildNewsFeeds(gameState) {
     npcs: ["local contacts"],
     mysteries: ["The local situation has not yet entered the campaign archive."],
   };
-  const event = getWorldEvent(place, gameState);
-
-  return NEWS_FEEDS.map((feed) => {
-    return { ...feed, location: event.location, headline: event.headline, copy: `${event.facts} ${event.angle[feed.id]}` };
+  return NEWS_FEEDS.map((feed, index) => {
+    const event = getWorldEvent(place, gameState, index);
+    return { ...feed, status: event.status, location: event.location, headline: event.headline, copy: `${event.facts} ${event.angle[feed.id]}` };
   });
 }
 
@@ -153,7 +160,7 @@ export default function Home() {
     <Shell>
       <TopBar character={character} gameState={gameState} />
       <main className="gc-page-scroll flex-1 min-h-0 overflow-y-auto p-6 max-w-3xl mx-auto w-full">
-        <p className="text-[10px] tracking-[0.3em] mb-3" style={{ color: "var(--sig)" }}>HOLONET NEWS // CORUSCANT DESK // 150 ABY</p>
+        <p className="text-[10px] tracking-[0.3em] mb-3" style={{ color: "var(--sig)" }}>HOLONET NEWS // {gameState.location || "LOCATION UNESTABLISHED"} // 150 ABY</p>
         <h1 className="gc-display text-3xl md:text-4xl font-bold mb-4 text-[#f2f0ea]">
           THE GALAXY IS MOVING.
         </h1>
@@ -188,7 +195,7 @@ export default function Home() {
               <p className="text-[10px] tracking-[0.25em] text-[#ff7a1a]">CURRENT AFFAIRS // 150 ABY</p>
               <p className="text-xs text-[#8b93a3] mt-1">Three windows on the same galaxy. None of them sees the whole truth.</p>
             </div>
-            <span className="text-[10px] tracking-widest text-[#5c6370]"><Clock3 size={12} className="inline mr-1" />LIVE TRANSMISSION</span>
+            <span className="text-[10px] tracking-widest text-[#5c6370]"><Clock3 size={12} className="inline mr-1" />CAMPAIGN PUBLIC RECORD</span>
           </div>
           <div className="grid gap-4 lg:grid-cols-3">
             {newsFeeds.map((feed) => {
@@ -202,7 +209,7 @@ export default function Home() {
                   <p className="text-[10px] leading-relaxed text-[#8b93a3] mb-4">{feed.bias}</p>
                   <h2 className="text-sm font-semibold leading-snug text-[#f2f0ea]">{feed.headline}</h2>
                   <p className="text-xs leading-relaxed text-[#a9adb8] mt-3">{feed.copy}</p>
-                  <p className="text-[10px] text-[#5c6370] mt-4 pt-3 border-t border-white/10">PUBLIC REPORT // {feed.location}</p>
+                  <p className="text-[10px] text-[#5c6370] mt-4 pt-3 border-t border-white/10">{feed.status} // {feed.location}</p>
                 </GlassCard>
               );
             })}
