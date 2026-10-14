@@ -22,7 +22,7 @@ import { quotedCreditAmounts } from "./quoted-credits";
 import { normalizeModelLedgerJson } from "./model-ledger-json";
 import { itemStatBlock } from "@/original/lib/itemStats";
 import { constrainReadOnlyGoodsInspectionDelta, isReadOnlyGoodsInspection } from "./goods-inspection";
-import { advanceTurnLifecycle, beginTurnLifecycle, commitTurnLifecycle, failTurnLifecycle, type TurnLifecycleReceipt } from "./turn-lifecycle";
+import { advanceTurnLifecycle, beginTurnLifecycle, commitTurnLifecycle, failTurnLifecycle, recordDraftFailure, type TurnLifecycleReceipt } from "./turn-lifecycle";
 import { pendingTransitArrival, transitArrivalFailure } from "./transit-progression";
 
 type TurnInput = { accountId?: string; revision: number; action: string; turnId: string; openScene?: boolean; statePolicy?: "committed-trade" | null };
@@ -865,7 +865,7 @@ export function assertMovementSceneProgress(
   const result = sectionBody(narration, "GAMEPLAY RESULT");
   // Kiosks, counters and stalls are local waypoints within the saved concourse.
   // Still require a delta for travel to a distinct place such as a new port or ship.
-  const completedNamedPlace = /\byou\s+(?:arrive(?:\s+at)?|reach|enter|exit|leave)\b[^.!?\n]{0,100}\b(?:apartment|residence|home|docking bay|spaceport|district|city|planet|ship|shuttle|transport)\b/i.test(`${scene}\n${result}`);
+  const completedNamedPlace = /\b(?:you\s+(?:arrive(?:\s+at)?|reach|enter|exit|leave)|(?:and\s+)?arrive\s+(?:at|in)|reach\s+(?:the|a))\b[^.!?\n]{0,100}\b(?:apartment|residence|home|docking bay|spaceport|district|city|planet|ship|shuttle|transport)\b/i.test(`${scene}\n${result}`);
   if (completedNamedPlace) {
     throw new GmTurnError("The GM completed travel to a named place without saving that destination. Rewrite the same turn with the exact end location in the ledger.", 502);
   }
@@ -1219,6 +1219,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       if (!(error instanceof NvidiaProviderError)) throw error;
       fallbackReason = "provider";
       console.warn("[api/gm] drafting failed", { turnId: input.turnId, attempt: attempt + 1, status: error.status, message: error.message });
+      recordDraftFailure(turnLifecycle, attempt + 1, "provider", error);
       validationError = error;
       // An outage is not an in-world event. Keep the action and roll for retry.
       continue;
@@ -1314,6 +1315,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       break;
     } catch (error) {
       console.warn("[api/gm] draft validation failed", { turnId: input.turnId, attempt: attempt + 1, reason: error instanceof Error ? error.message : String(error) });
+      recordDraftFailure(turnLifecycle, attempt + 1, "validation", error);
       validationError = error;
       parsed = null;
       delta = null;

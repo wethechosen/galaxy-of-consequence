@@ -3,6 +3,11 @@ import { attachRepairedLedger, appendTurnEvent, assertCampaignResponseStructure,
 import { planConversationTrade, reconcileConversationTradeDelta } from "./conversation-trade";
 
 describe("authoritative Saga narration", () => {
+  it("rejects the revision-508 dock arrival without a saved destination", () => {
+    const narration = "## SCENE\nYou leave the cantina.\n## GAMEPLAY RESULT\nYou successfully navigate the market district and arrive at Docking Bay 94’s Level B slip 14 without delay or incident.";
+    expect(() => assertMovementSceneProgress(narration, "I head back to the docks and seek Jax out", null, {}, "Taris — Market District (inside the cantina)")).toThrow(/saving that destination/);
+    expect(() => assertMovementSceneProgress(narration, "I head back to the docks and seek Jax out", null, {location:"Taris — Docking Bay 94, Level B, Slip 14"}, "Taris — Market District (inside the cantina)")).not.toThrow();
+  });
   it("permits the same physical desk when the NPC gives a genuinely new answer", () => {
     const scene = "You stand at the guesthouse desk opposite the human proprietor. A ceiling fan clicks above her terminal while crockery rattles behind the breakfast partition. Your coat rests against the scuffed counter.";
     const oldResult = "The proprietor quotes 500 credits for seven nights in a private room with a lock. No booking is made.";
