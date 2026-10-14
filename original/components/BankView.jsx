@@ -34,7 +34,7 @@ export function BankView() {
       {valid && value > credits && value > deposited && <p className="text-sm text-[#ffad76] mt-3">Neither balance covers that transfer.</p>}
       {confirmation && <p role="status" className="text-sm text-[#22e5c5] mt-3">{confirmation}</p>}
       {(turnError || saveError) && <p role="alert" className="text-sm text-[#ffad76] mt-3">{turnError || saveError}</p>}
-      <p className="text-xs text-[#8b93a3] mt-4">Underworld credits remain separate. Deposits do not convert funds, earn automatic interest, or create new credits.</p>
+      <p className="text-xs text-[#8b93a3] mt-4">Physical credit chips remain separate. These transfers move electronic funds only; they do not convert physical cash, earn automatic interest, or create new credits.</p>
     </GlassCard>
     <section><h3 className="text-xs tracking-widest text-[#a9adb8] mb-3">RECENT TRANSFERS</h3><div className="space-y-2">{(gameState.bankTransactions || []).slice(-10).reverse().map(entry => <div key={entry.transactionId} className="rounded-xl bg-white/5 p-3 text-sm text-[#c7c4bc]"><span className="capitalize">{entry.action}</span> · {Number(entry.amount).toLocaleString()} cr <span className="text-[#8b93a3]">· {new Date(entry.committedAt).toLocaleString()}</span></div>)}{!(gameState.bankTransactions || []).length && <p className="text-sm text-[#8b93a3]">No deposits or withdrawals recorded yet. Existing credits remain spendable until you deposit them.</p>}</div></section>
     <Link to="/exchanges" className="inline-block text-sm text-[#22d3ee] underline">Stocks, bonds, and galactic exchanges →</Link>

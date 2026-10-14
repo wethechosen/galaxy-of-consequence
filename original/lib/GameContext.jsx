@@ -455,9 +455,11 @@ export function GameProvider({ children }) {
   useEffect(() => {
     if (!saveReady || !accountId || !user?.id) return;
     let cancelled = false;
+    let syncing = false;
     const sync = async () => {
       const session = saveSession.current;
-      if (cancelled || !session || session.accountId !== accountId || activeTurn.current) return;
+      if (cancelled || syncing || !session || session.accountId !== accountId || activeTurn.current) return;
+      syncing = true;
       try {
         const saved = await datapadRequest(accountId);
         if (cancelled || activeTurn.current || !saved.snapshot || Number(saved.revision) <= Number(session.revision)) return;
@@ -473,10 +475,14 @@ export function GameProvider({ children }) {
         setSaveError("");
       } catch {
         // The local turn remains usable; the next interval retries the sync.
-      }
+      } finally { syncing = false; }
     };
+    const resumeSync = () => { if (document.visibilityState === "visible") void sync(); };
+    window.addEventListener("focus", resumeSync);
+    document.addEventListener("visibilitychange", resumeSync);
+    void sync();
     const interval = setInterval(sync, 3000);
-    return () => { cancelled = true; clearInterval(interval); };
+    return () => { cancelled = true; clearInterval(interval); window.removeEventListener("focus", resumeSync); document.removeEventListener("visibilitychange", resumeSync); };
   }, [saveReady, accountId, user?.id]);
 
   async function persistSnapshot(session, next) {
@@ -621,7 +627,7 @@ Upgrades: ${char.upgrades || "none"}
 CURRENT WORLD STATE
 Location: ${state.location}
 Condition: ${state.health}/100
-Standard credits: ${state.credits} | Underworld credits: ${state.creditsCriminal}
+Electronic spending credits: ${state.credits} | Physical galactic credit chips: ${state.creditsCriminal} (legacy field creditsCriminal, not underworld funds)
 Notoriety: ${state.notoriety}/100 | Force meter: ${state.forceAlignment}/100 (0=Dark, 100=Light)
 Faction reputation — Empire: ${rep.empire}, Rebel Alliance: ${rep.rebellion}, CSA: ${rep.csa}
 Inventory: ${invList}
