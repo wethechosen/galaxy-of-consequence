@@ -1372,6 +1372,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       : null;
     try {
       response = await invokeNvidia({
+        purpose: "gm",
         system,
         timeout_ms: providerBudget(24_000),
         sourceQuery: action || String(currentSnapshot.gameState.location || "opening scene"),
@@ -1383,6 +1384,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       fallbackReason = "provider";
       console.warn("[api/gm] drafting failed", { turnId: input.turnId, attempt: attempt + 1, status: error.status, message: error.message });
       recordDraftFailure(turnLifecycle, attempt + 1, "provider", error);
+      if (error.status === 429) throw error;
       validationError = error;
       // An outage is not an in-world event. Keep the action and roll for retry.
       continue;
@@ -1398,6 +1400,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
         const repairableLedger = mode === "play" && error instanceof Error && /(?:world-state ledger|world-state field|world-state JSON|world-state block)/i.test(error.message);
         if (!repairableLedger) throw error;
         const repair = await invokeNvidia({
+          purpose: "ledger",
           system: `${LEDGER_REPAIR_SYSTEM}\n${LEASE_LEDGER_INSTRUCTION}\nSCHEMA: objectiveComplete is an array of existing objective title strings, conditionRemove is an array of condition name strings. A spoken merchant quote MUST produce tradeOfferAdd even when no payment occurred and the draft says 'no persistent change'. Convert written-out prices into whole-credit integers. These amounts occur in the result; retain the offered terms associated with each quoted price, never ignore them: ${JSON.stringify(quotedCreditAmounts(sectionBody(candidate, "GAMEPLAY RESULT")))}. If quoting rent and deposit components, save one lease offer at their total instead of selling the components separately.\n\nAUTHORITATIVE CAMPAIGN STATE:\n${publicContext(currentSnapshot)}\n\nAUTHORITATIVE SAGA RESULT:\n${JSON.stringify(roll || null)}`,
           timeout_ms: providerBudget(10_000),
           sourceQuery: action || String(currentSnapshot.gameState.location || "opening scene"),
@@ -1482,6 +1485,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
     } catch (error) {
       console.warn("[api/gm] draft validation failed", { turnId: input.turnId, attempt: attempt + 1, reason: error instanceof Error ? error.message : String(error) });
       recordDraftFailure(turnLifecycle, attempt + 1, "validation", error);
+      if (error instanceof NvidiaProviderError && error.status === 429) throw error;
       validationError = error;
       parsed = null;
       delta = null;

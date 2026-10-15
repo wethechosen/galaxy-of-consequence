@@ -4,9 +4,27 @@ import type { Account } from "./accounts";
 import { openStorage } from "./storage";
 import { readDatapad, saveAuthoritativeDatapad } from "./datapad-save";
 import { runGmTurn } from "./gm";
+import { NvidiaProviderError } from "./nvidia-errors";
 const provider = vi.hoisted(() => vi.fn());
 vi.mock("./original-provider", async original => ({...await original<typeof import("./original-provider")>(),invokeNvidia:provider}));
 let db: ReturnType<typeof openStorage> | undefined;
+it("preserves a rate-limited dialogue without committing or consuming three drafts", async () => {
+ db = accounts.accountStore(openStorage(":memory:"));
+ vi.spyOn(accounts,"accountStore").mockReturnValue(db);
+ vi.spyOn(console,"warn").mockImplementation(() => {});
+ vi.spyOn(console,"error").mockImplementation(() => {});
+ const actor:Account = {id:"rate-budget-fixture",username:"rate@galaxy.local",displayName:"Fixture",role:"player"};
+ db.prepare("INSERT INTO accounts VALUES (?, ?, ?, ?, '', '')").run(actor.id,actor.username,actor.displayName,actor.role);
+ const action = "Ask Jax about work";
+ saveAuthoritativeDatapad(actor,null,0,{character:{name:"Fixture",level:2,experience:2650,sagaStats:"STR 12 | DEX 14 | CON 10 | INT 12 | WIS 10 | CHA 12",trainedSkills:[]},gameState:{location:"Taris — docks",credits:1000,inventory:[],contacts:[],objectives:[],turnEvents:[]},messages:[],comms:[],settings:{}},db);
+ provider.mockResolvedValueOnce({provider:"nvidia",model:"intent",finishReason:"stop",content:JSON.stringify({intent:"dialogue",canonicalAction:action,declaredSpan:action,checkNeeded:false,skill:null,rationale:"Ordinary conversation",travelTarget:null,acceptedOfferId:null})});
+ provider.mockRejectedValueOnce(new NvidiaProviderError("Cooling down",429,23));
+ await expect(runGmTurn(actor,{revision:1,turnId:"rate-limited-dialogue",action})).rejects.toMatchObject({status:429,retryAfterSeconds:23,turnLifecycle:{gameplayAdvanced:false,retriable:true,draftAttempts:1}});
+ expect(provider).toHaveBeenCalledTimes(2);
+ const saved = readDatapad(actor,null,db);
+ expect(saved.revision).toBe(1);
+ expect(saved.snapshot?.gameState.credits).toBe(1000);
+});
 afterEach(() => {vi.restoreAllMocks();provider.mockReset();db?.close();});
 it("recovers the preserved Jax declaration once, correcting the saved arrival without paying or hiring", async () => {
  db = accounts.accountStore(openStorage(":memory:"));
