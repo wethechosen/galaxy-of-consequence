@@ -56,7 +56,11 @@ describe("Saga combat authority", () => {
   it("establishes initiative and leaves the opening attack unresolved when the player wins", () => {
     const result = beginCombat("I punch the guard", character, { health: 18, conditionTrack: 0 }, { total: 19 }, sequence(5));
     expect(result.combat).toMatchObject({ status: "active", round: 1, activeSide: "player" });
-    expect(result.combat.combatants.find((entry) => entry.side === "opposition")?.hp).toBe(12);
+    expect(result.combat.combatants.find((entry) => entry.side === "opposition")).toMatchObject({
+      hp: 5, reflex: 14, fortitude: 11, will: 10, attackModifier: 2, attackMode: "ranged",
+      damage: { count: 3, sides: 6, modifier: 0, type: "energy" },
+      sagaBuild: { ruleset: "Star Wars Saga Edition", classLevels: { nonheroic: 1 }, heroicLevel: 0, talents: [] },
+    });
     expect(result.rolls).toHaveLength(1);
   });
 

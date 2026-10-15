@@ -1,4 +1,5 @@
 import { cleanPlayerMessage, parseImmersiveMessage } from "./immersiveChat";
+import { reconcileFulfilledObjectives } from "@/lib/objective-reconciliation";
 
 const entries = (value) => Array.isArray(value) ? value.filter(Boolean) : [];
 const text = (value) => cleanPlayerMessage(typeof value === "string" ? value : "");
@@ -17,7 +18,7 @@ export function isInterruptedMessage(message) {
   if (message.role !== "assistant") return false;
   const content = text(message.content);
   // A server-resolved receipt is a real saved consequence even if prose generation failed.
-  if (message.model === "resolved-saga-receipt" && content) return false;
+  if (["resolved-saga-receipt", "commercial-progress-receipt"].includes(message.model) && content) return false;
   return message.provider === "local-safe-fallback" || Boolean(message.fallbackReason)
     || !content || diagnostic.test(content) || genericScene.test(content)
     || /^(?:transmission (?:lost|interrupted|disrupted)|comlink static)\b/i.test(content);
@@ -73,6 +74,7 @@ function changeSummary(event) {
  * @param {{messages?: any[], gameState?: Record<string, any>, character?: Record<string, any> | null}} [snapshot]
  */
 export function buildCampaignRecap({ messages = [], gameState = {}, character = {} } = {}) {
+  gameState = reconcileFulfilledObjectives(gameState);
   const transcript = campaignTranscript(messages);
   const invalidTurns = new Set(transcript.archived.filter((message) => message.role === "assistant").map((message) => message.turnId).filter(Boolean));
   const validByTurn = new Map(transcript.confirmed.filter((message) => message.role === "assistant" && message.turnId).map((message) => [message.turnId, message]));

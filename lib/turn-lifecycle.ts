@@ -12,7 +12,18 @@ export type TurnLifecycleReceipt = {
   gameplayAdvanced: boolean;
   retriable: boolean;
   reason?: string;
+  draftFailures?: Array<{ attempt: number; phase: "provider" | "validation"; reason: string }>;
 };
+
+// Receipts survive the response and can be retained by either client after the
+// hosting platform's short log window expires. Never include the model draft,
+// source context, request headers, connection strings, or provider credentials.
+export function recordDraftFailure(receipt: TurnLifecycleReceipt, attempt: number, phase: "provider" | "validation", error: unknown) {
+  const raw = error instanceof Error ? error.message : String(error);
+  const reason = raw.replace(/(?:https?:\/\/|postgres(?:ql)?:\/\/)[^\s]+/gi, "[redacted endpoint]")
+    .replace(/\b(?:Bearer\s+\S+|(?:sk|nvapi)[-_][\w-]+)\b/gi, "[redacted credential]").slice(0, 500);
+  receipt.draftFailures = [...(receipt.draftFailures || []), { attempt, phase, reason }].slice(-3);
+}
 
 export function beginTurnLifecycle(turnId: string, baseRevision: number, now = new Date().toISOString()): TurnLifecycleReceipt {
   return {
