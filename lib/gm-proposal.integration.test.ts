@@ -23,7 +23,7 @@ it("preserves a rate-limited dialogue without committing or consuming three draf
  expect(provider).toHaveBeenCalledTimes(2);
  const saved = readDatapad(actor,null,db);
  expect(saved.revision).toBe(1);
- expect(saved.snapshot.gameState.credits).toBe(1000);
+ expect(saved.snapshot?.gameState.credits).toBe(1000);
 });
 afterEach(() => {vi.restoreAllMocks();provider.mockReset();db?.close();});
 it("recovers the preserved Jax declaration once, correcting the saved arrival without paying or hiring", async () => {

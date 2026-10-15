@@ -792,7 +792,9 @@ If this is the very first message of the session, open the scene in-character ba
       }
       const result = await response.json();
       if (!response.ok || !result.snapshot) throw Object.assign(
-        new Error(result.error || "The Game Master turn failed. Its outcome is not confirmed."),
+        new Error(response.status === 429
+          ? `Comlink cooling down. Wait ${Math.max(1, Number(result.retryAfterSeconds || response.headers.get("Retry-After")) || 60)} seconds before retrying the same action. No outcome was applied.`
+          : result.error || "The Game Master turn failed. Its outcome is not confirmed."),
         { status: response.status, receipt: result.receipt || null },
       );
       if (saveSession.current !== session) return false;

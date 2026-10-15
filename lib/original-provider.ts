@@ -7,7 +7,8 @@ import { setTimeout as wait } from "node:timers/promises";
 export { NvidiaProviderError } from "./nvidia-errors";
 export const TEST_AI_MODEL = "nvidia/nemotron-3-super-120b-a12b";
 export function testAiStatus() {
-  return { provider: "nvidia", model: process.env.NVIDIA_MODEL || TEST_AI_MODEL,
+  return { provider: "nvidia", model: nvidiaModel("gm"),
+    models: { gm: nvidiaModel("gm"), interpretation: nvidiaModel("interpretation"), ledger: nvidiaModel("ledger") },
     configured: Boolean(process.env.NVIDIA_API_KEY), mode: "live-playtest" };
 }
 

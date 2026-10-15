@@ -123,6 +123,8 @@ export function parseImmersiveMessage(content = "") {
 
 export function immersiveTurnError(error = "") {
   const value = String(error).toLowerCase();
+  const cooldown = /comlink cooling down\. wait (\d+) seconds/.exec(value);
+  if (cooldown) return `Comlink cooling down. Wait ${cooldown[1]} seconds, then retry the same action. Your declaration is preserved; no outcome was applied.`;
   if (/latest saved campaign is loaded/.test(value)) return String(error);
   if (/campaign|revision|newer.*record/.test(value)) return "Another saved campaign record is newer than this page. Your action is preserved, but its outcome is not confirmed. Reload the saved record before retrying.";
   if (/dice|interrupt|turn identifier|already used/.test(value)) return "The last transmission ended before the outcome was confirmed. Retry the transmission; no duplicate outcome will be recorded.";
