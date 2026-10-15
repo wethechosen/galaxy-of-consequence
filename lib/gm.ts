@@ -24,7 +24,7 @@ import { itemStatBlock } from "@/original/lib/itemStats";
 import { constrainReadOnlyGoodsInspectionDelta, isReadOnlyGoodsInspection } from "./goods-inspection";
 import { advanceTurnLifecycle, beginTurnLifecycle, commitTurnLifecycle, failTurnLifecycle, recordDraftFailure, type TurnLifecycleReceipt } from "./turn-lifecycle";
 import { pendingTransitArrival, transitArrivalFailure } from "./transit-progression";
-import { reconcileFulfilledObjectives } from "./objective-reconciliation";
+import { reconcileFulfilledObjectives, currentObjectiveContext } from "./objective-reconciliation";
 import { reconcileCommittedArrival } from "./committed-arrival";
 
 type TurnInput = { accountId?: string; revision: number; action: string; turnId: string; openScene?: boolean; statePolicy?: "committed-trade" | null };
@@ -197,7 +197,8 @@ function publicContext(snapshot: DatapadSnapshot) {
     marketTransactions: Array.isArray(state.marketTransactions) ? state.marketTransactions.slice(-8) : [],
     forceAlignment: state.forceAlignment, factionRep: state.factionRep, inventory: state.inventory,
     itemStatBlocks: [...(Array.isArray(state.inventory) ? state.inventory : []), ...(Array.isArray(state.properties) ? state.properties : []).map(item => ({ ...item, ownership: "property" })), ...(Array.isArray(state.ships) ? state.ships : []).map(item => ({ ...item, ownership: "vehicle" }))].slice(0, 30).map(item => ({ id: item.id, ...itemStatBlock(item, snapshot.character || {}, state) })),
-    contacts: state.contacts, decisions: state.decisions, relationships: state.relationships, objectives: state.objectives,
+    contacts: state.contacts, decisions: state.decisions, relationships: state.relationships,
+    objectives: currentObjectiveContext(state),
     discoveries: state.discoveries, milestones: state.milestones, legacyAssets: state.legacyAssets,
     storyDirectives: state.storyDirectives,
     creatorCanon: state.creatorCanon, campaignExceptions: state.campaignExceptions,

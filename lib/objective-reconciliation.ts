@@ -1,5 +1,13 @@
 type Ledger = Record<string, unknown>;
 
+/** Completed objectives are history, not instructions to repeat old work. */
+export function currentObjectiveContext(state: Ledger) {
+  return (Array.isArray(state.objectives) ? state.objectives : []).filter(record).map(objective =>
+    key(objective.status) === "completed"
+      ? { title: objective.title, status: "completed", completedAt: objective.completedAt }
+      : objective);
+}
+
 const record = (value: unknown): value is Ledger => Boolean(value) && typeof value === "object" && !Array.isArray(value);
 const key = (value: unknown) => String(value || "").trim().replace(/\s+/g, " ").toLocaleLowerCase();
 const tokens = (value: unknown) => new Set(key(value).replace(/[^\p{L}\p{N}]+/gu, " ").split(" ").filter((word) =>
