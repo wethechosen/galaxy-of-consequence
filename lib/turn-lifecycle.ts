@@ -63,7 +63,7 @@ export function failTurnLifecycle(receipt: TurnLifecycleReceipt, phase: string, 
     phase,
     completedAt: now,
     gameplayAdvanced: false,
-    retriable: status >= 500,
+    retriable: status === 429 || status >= 500,
     reason: reason.slice(0, 500),
   };
 }

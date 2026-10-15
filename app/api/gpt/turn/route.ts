@@ -121,6 +121,8 @@ export async function POST(request: Request) {
       error: error instanceof Error ? error.message : "Custom GPT turn failed. No outcome was applied.",
       ...(typeof currentRevision === "number" ? { revision: currentRevision } : {}),
       ...(receipt ? { receipt } : {}),
-    }, { status });
+      retryAfterSeconds: error instanceof NvidiaProviderError ? error.retryAfterSeconds : undefined,
+    }, { status, headers: nvidiaRetryHeaders(error) });
   }
 }
+import { NvidiaProviderError, nvidiaRetryHeaders } from "@/lib/nvidia-errors";
