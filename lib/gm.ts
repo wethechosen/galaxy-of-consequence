@@ -25,6 +25,7 @@ import { constrainReadOnlyGoodsInspectionDelta, isReadOnlyGoodsInspection } from
 import { advanceTurnLifecycle, beginTurnLifecycle, commitTurnLifecycle, failTurnLifecycle, recordDraftFailure, type TurnLifecycleReceipt } from "./turn-lifecycle";
 import { pendingTransitArrival, transitArrivalFailure } from "./transit-progression";
 import { reconcileFulfilledObjectives } from "./objective-reconciliation";
+import { reconcileCommittedArrival } from "./committed-arrival";
 
 type TurnInput = { accountId?: string; revision: number; action: string; turnId: string; openScene?: boolean; statePolicy?: "committed-trade" | null };
 type Message = { role: "user" | "assistant" | "roll"; content: string; [key: string]: unknown };
@@ -491,6 +492,23 @@ function resolvedGoodsInspectionNarration(snapshot: DatapadSnapshot, action: str
 function isCommercialTravelProgressAction(action: string) {
   return /\b(?:pilots?|captains?|charters?|passage|passengers?|shipyards?|ship brokers?|ship sales|buy (?:a |the )?ship|vessels?|transport)\b/i.test(action)
     && /\b(?:find|hire|recruit|work|ask|referr|point|direction|offer|pay|buy|travel|take (?:me|us))\b/i.test(action);
+}
+
+export function resolvedProposalDiscussion(snapshot: DatapadSnapshot, action: string, intent: string | undefined, roll: Record<string, unknown> | null) {
+  if (roll || !["dialogue", "commerce"].includes(intent || "")
+    || !/\b(?:discuss|talk|revisit|clarify)\b/i.test(action)
+    || !/\b(?:proposal|employment|contract|retainer)\b/i.test(action)
+    || /\b(?:accept|sign|pay|transfer|purchase)\b/i.test(action)) return null;
+  // This recovery engages the declared conversation, not an accepted deal.
+  // A named interlocutor must also be present in the last committed result.
+  const last = (snapshot.messages as Message[]).filter(message => message.role === "assistant").at(-1);
+  const result = last ? sectionBody(String(last.content), "GAMEPLAY RESULT") : "";
+  const name = /\b(?:tell|ask|with|to)\s+([A-Z][\p{L}'’-]*)/iu.exec(action)?.[1];
+  if (!name || !new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(result)) return null;
+  const location = String(snapshot.gameState.location || "Current location");
+  const reply = `${name} turns the conversation to the proposed employment arrangement. “Let's settle the scope before either of us commits. What duties and destinations do you want covered, and which operating expenses will you take responsibility for?” The earlier proposal remains a basis for discussion, not a signed agreement or an instruction to transfer credits.`;
+  const delta = { discoveryAdd: [{title:`Employment scope under discussion with ${name}`, detail:"The player reopened discussion of the prior proposal. Duties, destinations and expenses require agreement; no employment or payment has been confirmed."}] };
+  return {provider:"local-safe-fallback" as const, model:"proposal-discussion-receipt", finishReason:"stop", content:`## LOCATION\n${location}\n\n## SCENE\nYou address ${name} at the established meeting place, returning to the original employment proposal rather than seeking another passage referral.\n\n## GM ADJUDICATION\nDiscussing proposed terms is ordinary conversation, not acceptance, payment or a contested persuasion attempt. No Saga check is required.\n\n## GAMEPLAY RESULT\n${reply}\n\n## SAGA CHECK\nNo check required.\n\n## STATE UPDATE\nThe reopened negotiation is recorded. No funds, inventory, crew or contract ownership changes.\n\n## PLAYER OPTIONS\nA. Describe the duties and destinations I want included.\nB. Ask which expenses the proposal covers.\nC. Request written terms before making a decision.\nYou may declare another action.\n<!--STATE:${JSON.stringify(delta)}-->`};
 }
 
 function asksForAlternative(action: string) {
@@ -1214,7 +1232,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   const accountId = input.accountId || actor.id;
   const saved = readDatapad(actor, accountId);
   if (!saved.snapshot?.character) throw new GmTurnError("Create or load a character before opening a scene.", 409);
-  let currentSnapshot = ensureCampaignScaffold(saved.snapshot) as DatapadSnapshot;
+  let currentSnapshot = reconcileCommittedArrival(ensureCampaignScaffold(saved.snapshot) as DatapadSnapshot);
   if (!/^[a-zA-Z0-9_-]{8,100}$/.test(input.turnId)) throw new GmTurnError("A valid turn identifier is required.");
   const action = normalizeTurnAction(input.action);
   if ((!action && !input.openScene) || action.length > 2000) throw new GmTurnError("Provide an action between 1 and 2,000 characters.");
@@ -1470,11 +1488,21 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
     }
   }
   if (validationError) {
+    const proposalRecovery = mode === "play" ? resolvedProposalDiscussion(currentSnapshot, action, semantic?.intent, roll) : null;
     if (mode === "play" && isReadOnlyGoodsInspection(action)) {
       fallbackReason = "validation";
       response = resolvedGoodsInspectionNarration(currentSnapshot, action);
       parsed = parseEngineResponse(response.content, { requireState: true });
       delta = {};
+      validationError = null;
+    } else if (proposalRecovery) {
+      fallbackReason = "validation";
+      response = proposalRecovery;
+      parsed = parseEngineResponse(response.content, { requireState: true });
+      delta = parsed.delta as unknown as Record<string, unknown>;
+      assertCampaignResponseStructure(parsed.clean);
+      assertMechanicalNarration(parsed.clean, null);
+      assertMaterialAuthority(delta, action, null, currentSnapshot.gameState as Record<string, unknown>, null);
       validationError = null;
     } else if (mode === "play" && isCommercialTravelProgressAction(resolvedIntent)) {
       fallbackReason = "validation";
