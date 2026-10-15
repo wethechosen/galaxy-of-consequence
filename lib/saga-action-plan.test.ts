@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("./original-provider", () => ({ invokeNvidia: vi.fn() }));
 import { invokeNvidia } from "./original-provider";
+import { NvidiaProviderError } from "./nvidia-errors";
 import { buildSemanticSagaCheck, declaredForcePower, interpretSagaAction, validateSagaSemanticAction } from "./saga-action-plan";
 import type { SagaSemanticAction } from "./saga-action-plan";
 
@@ -15,6 +16,12 @@ const reply = (plan: SagaSemanticAction) => vi.mocked(invokeNvidia).mockResolved
 beforeEach(() => vi.resetAllMocks());
 
 describe("semantic interpretation before Saga mechanics", () => {
+  it("propagates rate limits without falling through to another model call", async () => {
+    const error = new NvidiaProviderError("Cooling down", 429, 23);
+    vi.mocked(invokeNvidia).mockRejectedValueOnce(error);
+    await expect(interpretSagaAction("Ask Jax about work", character, state)).rejects.toBe(error);
+    expect(invokeNvidia).toHaveBeenCalledTimes(1);
+  });
   it("applies a recorded Skill Focus choice to interpreted checks", () => {
     const action = "I bypass the door lock";
     const plan = validateSagaSemanticAction(semantic(action, { intent: "manipulate", checkNeeded: true, skill: "Mechanics" }), action);
