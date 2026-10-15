@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { objectiveIsAuthoritativelyFulfilled, reconcileFulfilledObjectives } from "./objective-reconciliation";
+import { currentObjectiveContext, objectiveIsAuthoritativelyFulfilled, reconcileFulfilledObjectives } from "./objective-reconciliation";
 
 const state = {
   location: "Taris — Shipyards, Level C",
@@ -17,6 +17,14 @@ const state = {
 };
 
 describe("authoritative objective reconciliation", () => {
+  it("keeps completed history without presenting stale requirements as current", () => {
+    const historical = {title:"Secure housing",status:"completed",detail:"Payment remains unconfirmed",completedAt:42};
+    const active = {title:"Find work",status:"active",detail:"Speak with a captain"};
+    expect(currentObjectiveContext({objectives:[historical,active,null]})).toEqual([
+      {title:"Secure housing",status:"completed",completedAt:42},active,
+    ]);
+    expect(historical.detail).toBe("Payment remains unconfirmed");
+  });
   it("closes receipted purchases, established housing, and completed departures", () => {
     const reconciled = reconcileFulfilledObjectives(state, 42);
     expect((reconciled.objectives as Array<Record<string, unknown>>).map((entry) => [entry.title, entry.status])).toEqual([
