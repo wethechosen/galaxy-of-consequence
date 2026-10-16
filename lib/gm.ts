@@ -69,6 +69,8 @@ function deterministicTurnRoller(turnId: string, lane: string) {
 }
 
 export const GM_SYSTEM = `You are the Game Master of Galaxy of Consequence, a persistent player-driven Star Wars Saga Edition campaign in 150 ABY. The player controls only their character. You control NPCs, scenes, factions, consequences, and continuity.
+ENDPOINT CONSISTENCY: LOCATION and the hidden location ledger describe the END of the resolved action, not its starting room. Moving within a venue (for example from its workroom to its front counter) changes the saved sublocation too. Never narrate a completed move while saving the old room. A successful check cannot be described as a failed objective; a successful search may establish that nothing concealed is present.
+PUBLIC REPORTS: A request for local, regional, and galactic news is not limited to the character's current quest. Answer each requested territory independently, and save every newly established bulletin in publicNewsAdd with its source and territory. Historical wars and battles are history, not breaking 150 ABY news, unless a new campaign-established present-day development explicitly relates to them. Do not invent a present-day war, ruler, or emergency to fill an empty feed. If no verified report exists, say so without recycling old history as current events.
 
 Act as the single director over four private specialist roles before writing the final response:
 - SAGA REFEREE: interprets only Saga Edition mechanics and accepts the authoritative server roll. It never invents a roll, modifier, defense, damage result, feat, talent, or Force power.
@@ -674,6 +676,10 @@ function hasPersistentTurnProgress(delta: Record<string, unknown> | null | undef
 const noProgressResult = /\b(?:no (?:new |useful |concrete )?(?:information|lead|progress|agreement|concession|referral|commitment)|without (?:a |any )?(?:lead|commitment|agreement|progress)|no closer to|environment remains unchanged|figure it out yourself|leav(?:e|ing) you without a lead)\b/i;
 
 export function assertResolvedOutcome(narration: string, roll: Record<string, unknown> | null, delta?: Record<string, unknown> | null, action = "") {
+  const resolved = sectionBody(narration, "GAMEPLAY RESULT");
+  if (roll?.outcome === "success" && /\b(?:(?:your|the) (?:objective|attempt|check) (?:fails|failed|is unsuccessful)|you fail(?:ed)? (?:the check|your attempt|to (?:notice|detect|spot|perceive|identify)))\b/i.test(resolved)) {
+    throw new GmTurnError("The authoritative check succeeded, but the result explicitly calls that attempt a failure. Resolve the stated successful check; a successful inspection may truthfully find no hidden feature without calling the check failed.", 502);
+  }
   if (roll?.outcome !== "success" || !["Persuasion", "Deception", "Gather Information"].includes(String(roll.label))) return;
   const result = sectionBody(narration, "GAMEPLAY RESULT");
   if (noProgressResult.test(result) || /\b(?:(?:your|the) (?:deception|persuasion|attempt|request) (?:fails|is rejected|has no effect)|does not accept your (?:offer|proposal|request)|(?:sees?|saw) through (?:your|the) (?:lie|deception)|(?:roll|check) (?:is|was) invalid)\b/i.test(result)) {
@@ -1096,9 +1102,13 @@ export function assertMovementSceneProgress(
   currentLocation?: unknown,
 ) {
   if (!action || !permitsPhysicalMovement(action)) return;
+  const result = sectionBody(narration, "GAMEPLAY RESULT");
+  const localEndpoint = result.match(/\byou\s+(?:return|move|walk|cross|go|step)\s+(?:back\s+)?(?:to|into|through|across)\s+(?:the\s+)?(front counter|rear workroom|showroom|workshop|office|reception|lobby|corridor)\b/i)?.[1];
+  if (localEndpoint && !normalizedKey(delta?.location || currentLocation).includes(localEndpoint.toLowerCase())) {
+    throw new GmTurnError("The movement reached a different position within the venue, but the saved location does not name that endpoint. Rewrite LOCATION and delta.location to the confirmed endpoint, preserving its planet and venue. Do not send the character back to the prior room.", 502);
+  }
   if (delta?.location && delta.location !== currentLocation) return;
   const scene = extractSceneNarration(narration);
-  const result = sectionBody(narration, "GAMEPLAY RESULT");
   // Kiosks, counters and stalls are local waypoints within the saved concourse.
   // Still require a delta for travel to a distinct place such as a new port or ship.
   const completedNamedPlace = /\byou\s+(?:arrive(?:\s+at)?|reach|enter|exit|leave|[^.!?\n]{0,100}\band\s+(?:arrive\s+(?:at|in)|reach))\b[^.!?\n]{0,100}\b(?:apartment|residence|home|docking bay|spaceport|district|city|planet|ship|shuttle|transport)\b/i.test(`${scene}\n${result}`);
@@ -1692,6 +1702,9 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   if (!response || !parsed) throw new GmTurnError("The GM could not produce a valid authoritative response. No outcome was saved; retry the turn.", 502);
   // All recovery branches must satisfy the same action contract before commit.
   if (mode === "play") {
+    assertResolvedOutcome(parsed.clean, roll, delta, resolvedIntent);
+    assertNarratedLocation(parsed.clean, delta, currentSnapshot.gameState.location);
+    assertMovementSceneProgress(parsed.clean, resolvedIntent, roll, delta, currentSnapshot.gameState.location);
     const waitError = eventWaitFailure(action, sectionBody(parsed.clean, "GAMEPLAY RESULT"), delta);
     if (waitError) throw new GmTurnError(waitError, 502);
     if (transitArrival) {

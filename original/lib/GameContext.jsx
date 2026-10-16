@@ -341,8 +341,8 @@ function legacySnapshot(email, allowShared = false) {
     model: loadAccountKey("gc_model", email, DEFAULT_MODEL) });
 }
 
-async function datapadRequest(accountId, body) {
-  const response = await fetch(`/api/datapad?accountId=${encodeURIComponent(accountId)}`, {
+async function datapadRequest(accountId, body, revisionOnly = false) {
+  const response = await fetch(`/api/datapad?accountId=${encodeURIComponent(accountId)}${revisionOnly ? "&revisionOnly=1" : ""}`, {
     method: body ? "PUT" : "GET", cache: "no-store", headers: { "Content-Type": "application/json" },
     ...(body ? { body: JSON.stringify({ ...body, accountId }) } : {}),
   });
@@ -466,6 +466,8 @@ export function GameProvider({ children }) {
       if (cancelled || syncing || !session || session.accountId !== accountId || activeTurn.current) return;
       syncing = true;
       try {
+        const metadata = await datapadRequest(accountId, undefined, true);
+        if (cancelled || activeTurn.current || Number(metadata.revision) <= Number(session.revision)) return;
         const saved = await datapadRequest(accountId);
         if (cancelled || activeTurn.current || !saved.snapshot || Number(saved.revision) <= Number(session.revision)) return;
         const recovered = failedTurn.current ? recoverCampaignTurn(saved, failedTurn.current) : null;
