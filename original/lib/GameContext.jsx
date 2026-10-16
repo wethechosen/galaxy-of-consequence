@@ -456,6 +456,9 @@ export function GameProvider({ children }) {
     if (!saveReady || !accountId || !user?.id) return;
     let cancelled = false;
     let syncing = false;
+    let streamOpen = false;
+    let streamedRevision = 0;
+    let stream = null;
     const sync = async () => {
       const session = saveSession.current;
       if (cancelled || syncing || !session || session.accountId !== accountId || activeTurn.current) return;
@@ -477,12 +480,21 @@ export function GameProvider({ children }) {
         // The local turn remains usable; the next interval retries the sync.
       } finally { syncing = false; }
     };
-    const resumeSync = () => { if (document.visibilityState === "visible") void sync(); };
+    const connect = () => {
+      stream?.close(); streamOpen = false;
+      if (document.visibilityState !== "visible" || typeof EventSource === "undefined") return;
+      stream = new EventSource(`/api/datapad/stream?accountId=${encodeURIComponent(accountId)}&since=${saveSession.current?.revision || 0}`);
+      stream.onopen = () => { streamOpen = true; };
+      stream.onerror = () => { streamOpen = false; };
+      stream.addEventListener("revision", event => { try { streamedRevision = Number(JSON.parse(event.data).revision); } catch {} void sync(); });
+    };
+    const resumeSync = () => { connect(); if (document.visibilityState === "visible") void sync(); };
     window.addEventListener("focus", resumeSync);
     document.addEventListener("visibilitychange", resumeSync);
     void sync();
-    const interval = setInterval(sync, 3000);
-    return () => { cancelled = true; clearInterval(interval); window.removeEventListener("focus", resumeSync); document.removeEventListener("visibilitychange", resumeSync); };
+    connect();
+    const interval = setInterval(() => { if ((!streamOpen || streamedRevision > Number(saveSession.current?.revision || 0)) && document.visibilityState === "visible") void sync(); }, 3000);
+    return () => { cancelled = true; stream?.close(); clearInterval(interval); window.removeEventListener("focus", resumeSync); document.removeEventListener("visibilitychange", resumeSync); };
   }, [saveReady, accountId, user?.id]);
 
   async function persistSnapshot(session, next) {

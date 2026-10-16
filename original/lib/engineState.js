@@ -227,7 +227,7 @@ export function applyEngineDelta(previous, delta, genId = defaultId) {
   for (const item of patch.publicNewsAdd || []) {
     if (!headlines.has(keyOf(item.headline))) { next.publicNews.push({ id: genId(), source: "unattributed public report", ...item, ts: Date.now() }); headlines.add(keyOf(item.headline)); }
   }
-  next.publicNews = next.publicNews.slice(-12);
+  next.publicNews = next.publicNews.slice(-200);
   for (const id of patch.travelAccessAdd || []) if (!next.travelAccess.some((entry) => keyOf(entry) === keyOf(id))) next.travelAccess.push(id);
   for (const item of patch.conditionAdd || []) {
     const existing = next.conditions.find((entry) => keyOf(entry.name) === keyOf(item.name));

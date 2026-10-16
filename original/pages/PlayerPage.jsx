@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import {
   Radio, Terminal, Package, Home as HomeIcon, Rocket, Wallet, UserCog,
   Send, ChevronRight, Plus, Upload, Heart, MapPin, Skull, Download, Dice5, Sparkles,
@@ -372,7 +372,7 @@ function HudView() {
 
 /* ---------- Travel ---------- */
 
-function TravelView({ setTab }) {
+export function TravelView({ setTab, places = GALAXY_LOCATIONS }) {
   const { gameState, character, travelToLocation, sending, saveReady, saveError } = useGame();
   const [selected, setSelected] = useState(null);
   const [district, setDistrict] = useState("");
@@ -387,7 +387,7 @@ function TravelView({ setTab }) {
         <div className="text-right text-xs text-[#a9adb8]"><MapPin size={15} className="inline mr-1 text-[#ff7a1a]" />CURRENTLY IN<br /><strong className="text-[#f2f0ea]">{gameState.location}</strong><br /><span className="text-[#22e5c5]">{gameState.credits.toLocaleString()} cr available</span></div>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
-        {GALAXY_LOCATIONS.map((place) => (
+        {places.map((place) => (
           <GlassCard key={place.id} className="p-5">
             {(() => {
               const fare = getTravelCost(place, gameState.location);
@@ -401,6 +401,7 @@ function TravelView({ setTab }) {
             </div>
             <p className="text-xs leading-relaxed text-[#c7c4bc] mt-4">{place.description}</p>
             <p className="text-xs leading-relaxed text-[#8b93a3] mt-3">{place.era}</p>
+            <div className="mt-3 border-l-2 border-[var(--sig)] pl-3 text-xs text-[#a9adb8]"><strong>{place.worldStatus.condition} · {place.worldStatus.habitability}</strong><p className="mt-1">{place.worldStatus.reason}</p><a href={place.worldStatus.source} target="_blank" rel="noreferrer" className="underline text-[#22e5c5]">Historical reference</a></div>
             <div className="grid grid-cols-2 gap-3 mt-4 text-xs">
               <div><p className="text-[9px] tracking-widest text-[#5c6370] mb-1">KNOWN AREAS</p><p className="text-[#a9adb8]">{place.districts.join(" · ")}</p></div>
               <div><p className="text-[9px] tracking-widest text-[#5c6370] mb-1">LIKELY CONTACTS</p><p className="text-[#a9adb8]">{place.npcs.join(" · ")}</p></div>
@@ -422,7 +423,7 @@ function TravelView({ setTab }) {
         <div className="gc-glass rounded-2xl p-6 max-w-md w-full" onClick={(event) => event.stopPropagation()}>
           <p className="text-[10px] tracking-[0.2em] text-[#ff7a1a] mb-2">ASTROGATION CONFIRMATION</p>
           <h3 className="gc-display text-2xl font-bold text-[#f2f0ea]">{selected.name}</h3>
-          <p className="text-sm text-[#a9adb8] mt-2">Passage will cost {getTravelCost(selected, gameState.location).toLocaleString()} credits. The GM will place you there and begin the scene with the route, risks, and local situation in force.</p>
+          <p className="text-sm text-[#a9adb8] mt-2">Indicative passage estimate: {getTravelCost(selected, gameState.location).toLocaleString()} credits. Request a route and current terms from the GM; this estimate is not a purchased ticket or a confirmed arrival.</p>
           <select value={district} onChange={(event) => setDistrict(event.target.value)} className="gc-input w-full px-3 py-2 mt-4 text-sm text-[#f2f0ea]">
             {selected.districts.map((area) => <option key={area} value={area}>{area}</option>)}
           </select>
@@ -536,7 +537,7 @@ function PlayerPageBody() {
         {tab === "hangar" && (character ? <HangarView items={gameState.ships} economicItems={economy.ships} readOnly /> : <EmptyNote text="NO CHARACTER ON FILE." />)}
         {tab === "economy" && (character ? <BankView /> : <EmptyNote text="NO CHARACTER ON FILE." />)}
         {tab === "market" && (character ? <MarketplaceView setTab={setTab} /> : <EmptyNote text="NO CHARACTER ON FILE." />)}
-        {tab === "travel" && <TravelView setTab={setTab} />}
+        {tab === "travel" && <Navigate to="/archive" replace />}
         {tab === "user" && (user?.role === "admin" ? <UserControlsView /> : <EmptyNote text="ADMINISTRATOR ACCESS REQUIRED." />)}
       </div>
     </div>
