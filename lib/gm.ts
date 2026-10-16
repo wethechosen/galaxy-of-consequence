@@ -34,7 +34,7 @@ type Message = { role: "user" | "assistant" | "roll"; content: string; [key: str
 
 function isAuthoritativeLocalReceipt(message: Message | undefined) {
   return message?.provider === "local-safe-fallback"
-    && ["resolved-saga-receipt", "commercial-progress-receipt"].includes(String(message.model || ""));
+    && ["resolved-saga-receipt", "commercial-progress-receipt", "service-inquiry-receipt"].includes(String(message.model || ""));
 }
 
 function deterministicTurnRoller(turnId: string, lane: string) {
@@ -579,6 +579,26 @@ function resolvedCommercialProgressNarration(snapshot: DatapadSnapshot, action: 
     model: "commercial-progress-receipt",
     finishReason: "stop",
     content: `## LOCATION\n${location}\n\n## SCENE\nAt ${location}, the inquiry turns to lawful passenger charters and currently available crews. The exchange stays at the saved location while the practical next route is identified.\n\n## GM ADJUDICATION\n${roll ? "The server-owned Saga result controls this social attempt. A success earns only the declared commercial opening; a failure preserves the refusal without making ordinary passenger commerce impossible." : "This is an ordinary request for public commercial information and needs no Saga check."}\n\n## GAMEPLAY RESULT\n${result}\n\n## SAGA CHECK\n${check}\n\n## STATE UPDATE\n${stateUpdate}\n\n## PLAYER OPTIONS\n${options.map((option, index) => `${String.fromCharCode(65 + index)}. ${option}`).join("\n")}\nYou may declare another action.\n<!--STATE:${JSON.stringify(delta)}-->`,
+  };
+}
+
+/** A final safety net for a failed *format* draft of a routine service question.
+ * It only applies at an established service counter after the provider returned
+ * drafts, and never claims a booked appointment, price, item, or payment.
+ * Actual provider outages still preserve the unresolved turn for retry.
+ */
+function resolvedServiceInquiryNarration(snapshot: DatapadSnapshot, action: string) {
+  const location = String(snapshot.gameState.location || "").trim();
+  const scene = String((snapshot.gameState.scene as { summary?: unknown } | undefined)?.summary || "");
+  if (!/\b(?:counter|clerk|desk|shop|lobby|atelier|design house|office|clinic|reception|workroom|guesthouse)\b/i.test(location + " " + scene)) return null;
+  const scheduling = /\b(?:appointment|booking|schedule|fitting|consultation|commission)\b/i.test(action);
+  if (!scheduling) return null;
+  const result = "The attendant explains the procedure: a commission or appointment request is sent with the intended work and a preferred day to the person responsible for scheduling. That person must confirm an available time before any appointment is booked. No time, price, or acceptance is promised.";
+  return {
+    provider: "local-safe-fallback" as const,
+    model: "service-inquiry-receipt",
+    finishReason: "stop",
+    content: `## LOCATION\n${location}\n\n## SCENE\nAt ${location}, D'mir remains at the established service desk after asking his question. The attendant turns to the immediate scheduling inquiry; the surrounding business continues while the two remain in the same place. No belongings, payments or access rights change hands.\n\n## GM ADJUDICATION\nAn ordinary request for an appointment procedure is conversation, not an accepted commission or a Persuasion challenge. No Saga skill check is needed.\n\n## GAMEPLAY RESULT\n${result}\n\n## SAGA CHECK\nNo check required.\n\n## STATE UPDATE\nNo persistent change. No appointment or charge is recorded.\n\n## PLAYER OPTIONS\nA. Give the attendant the proposed commission details.\nB. Ask when the person responsible for scheduling can confirm availability.\nYou may declare another action.\n<!--STATE:{}-->`,
   };
 }
 
@@ -1557,6 +1577,21 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       assertCampaignResponseStructure(parsed.clean);
       assertMechanicalNarration(parsed.clean, null);
       assertMaterialAuthority(delta, action, null, currentSnapshot.gameState as Record<string, unknown>, null);
+      validationError = null;
+    } else if (routineServiceInquiry && !roll && !trade && response?.content && response.provider !== "local-safe-fallback" && resolvedServiceInquiryNarration(currentSnapshot, action)) {
+      // Three malformed GM drafts must not strand a harmless service inquiry.
+      // Use only established service-desk context and a zero-mutation receipt.
+      const recovered = resolvedServiceInquiryNarration(currentSnapshot, action)!;
+      fallbackReason = "validation";
+      response = recovered;
+      parsed = parseEngineResponse(recovered.content, { requireState: true });
+      delta = {};
+      assertCampaignResponseStructure(parsed.clean);
+      assertNarrativeFocus(parsed.clean, action);
+      assertMechanicalNarration(parsed.clean, null);
+      assertMaterialAuthority(delta, action, null, currentSnapshot.gameState as Record<string, unknown>);
+      assertNarrativeLedgerConsistency(parsed.clean, delta, resolvedIntent);
+      assertNoProgressLoop(parsed.clean, resolvedIntent, delta, currentSnapshot.gameState.location, priorResult);
       validationError = null;
     } else if (mode === "play" && isCommercialTravelProgressAction(resolvedIntent)) {
       fallbackReason = "validation";
