@@ -1,0 +1,76 @@
+/** Visual dossier specifications: text references, NOT generated image assets.
+ * Every identifier refers to an established GOC character; no scene appearance is implied.
+ */
+export type CharacterVisualDossier = {description:string;personality:string;environment:string;headshotPrompt:string;fullBodyPrompt:string;headshotAsset?:string;fullBodyAsset?:string};
+export const CHARACTER_VISUAL_DOSSIERS: Readonly<Record<string,CharacterVisualDossier>> = {
+  "jena-lorr": {
+    description: "Copper-brown skin, oval face, deep-set amber-brown eyes, neat black twists pinned behind the neck and a narrow crease between her brows. Wears an ink-black auditor's tunic with brass seam clips, charcoal trousers, soft-soled industrial boots and a coded wrist seal; a compact scratched ledger datapad never leaves her left hand.",
+    personality: "Industrial compliance auditor; rigorous, guarded, and polite until a ledger fails reconciliation. Having watched contract labor swallow her family's wages, she insists on verifiable tariffs rather than convenient accusations.",
+    environment: "Bonadan tariff hall; soot-streaked windows and industrial lighting",
+    headshotPrompt: "Original cinematic Star Wars Legends-compatible character portrait, Copper-brown skin, oval face, deep-set amber-brown eyes, neat black twists pinned behind the neck and a narrow crease between her brows. Wears an ink-black auditor's tunic with brass seam clips, charcoal trousers, soft-soled industrial boots and a coded wrist seal; a compact scratched ledger datapad never leaves her left hand. Head and shoulders, clear face, front three-quarter view, realistic concept painting, no text, no watermark.",
+    fullBodyPrompt: "Original full-body science-fiction concept character illustration, Copper-brown skin, oval face, deep-set amber-brown eyes, neat black twists pinned behind the neck and a narrow crease between her brows. Wears an ink-black auditor's tunic with brass seam clips, charcoal trousers, soft-soled industrial boots and a coded wrist seal; a compact scratched ledger datapad never leaves her left hand. Standing neutral pose, boots fully visible, Bonadan tariff hall; soot-streaked windows and industrial lighting; realistic material details, no labels, no text, no watermark.",
+  },
+  "orlan-vale": {
+    description: "Broad-shouldered, middle-aged Human with ash-gray close-cut hair, lined olive skin and a healed nick across his chin. Heavy blue-gray canvas field jacket over an unmarked utility shirt, durable black boots and a distinctive articulated steel brace around his left wrist.",
+    personality: "Former Fel military logistics sergeant turned civilian inspector; orderly, economical in speech and protective of noncombatants. Trusts signed manifests more than rank insignia.",
+    environment: "Bastion municipal supply archive, cold clean Imperial stone",
+    headshotPrompt: "Original cinematic Star Wars Legends-compatible character portrait, Broad-shouldered, middle-aged Human with ash-gray close-cut hair, lined olive skin and a healed nick across his chin. Heavy blue-gray canvas field jacket over an unmarked utility shirt, durable black boots and a distinctive articulated steel brace around his left wrist. Head and shoulders, clear face, front three-quarter view, realistic concept painting, no text, no watermark.",
+    fullBodyPrompt: "Original full-body science-fiction concept character illustration, Broad-shouldered, middle-aged Human with ash-gray close-cut hair, lined olive skin and a healed nick across his chin. Heavy blue-gray canvas field jacket over an unmarked utility shirt, durable black boots and a distinctive articulated steel brace around his left wrist. Standing neutral pose, boots fully visible, Bastion municipal supply archive, cold clean Imperial stone; realistic material details, no labels, no text, no watermark.",
+  },
+  "ari-vess": {
+    description: "Lean Human with warm umber skin, a small white scar through the right eyebrow, short uneven dark hair, rust-green salvage vest with stitched pockets, loose utility pants and brown steel-toe boots; grease stains at every fingertip.",
+    personality: "Taris salvage-clerk survivor whose practical humor masks anxiety about forged titles and stolen parts; wants her cooperative to remain legal and solvent.",
+    environment: "Taris salvage-market terraces, industrial scrap and civic permit kiosks",
+    headshotPrompt: "Original cinematic Star Wars Legends-compatible character portrait, Lean Human with warm umber skin, a small white scar through the right eyebrow, short uneven dark hair, rust-green salvage vest with stitched pockets, loose utility pants and brown steel-toe boots; grease stains at every fingertip. Head and shoulders, clear face, front three-quarter view, realistic concept painting, no text, no watermark.",
+    fullBodyPrompt: "Original full-body science-fiction concept character illustration, Lean Human with warm umber skin, a small white scar through the right eyebrow, short uneven dark hair, rust-green salvage vest with stitched pockets, loose utility pants and brown steel-toe boots; grease stains at every fingertip. Standing neutral pose, boots fully visible, Taris salvage-market terraces, industrial scrap and civic permit kiosks; realistic material details, no labels, no text, no watermark.",
+  },
+  "mirren-sol": {
+    description: "Sun-weathered tan complexion, steady gray-green eyes, long midnight-brown braid over one shoulder, layered olive survey coat, tan undershirt, dust-covered knee guards and worn gaiters. Carries a folded survey rangefinder and weatherproof grid maps.",
+    personality: "Dantooine field surveyor and frontier problem solver; patient with measurements, skeptical of rumors, unwilling to endanger workers with an unverified route.",
+    environment: "Dantooine plains, repaired survey station and grassland horizon",
+    headshotPrompt: "Original cinematic Star Wars Legends-compatible character portrait, Sun-weathered tan complexion, steady gray-green eyes, long midnight-brown braid over one shoulder, layered olive survey coat, tan undershirt, dust-covered knee guards and worn gaiters. Carries a folded survey rangefinder and weatherproof grid maps. Head and shoulders, clear face, front three-quarter view, realistic concept painting, no text, no watermark.",
+    fullBodyPrompt: "Original full-body science-fiction concept character illustration, Sun-weathered tan complexion, steady gray-green eyes, long midnight-brown braid over one shoulder, layered olive survey coat, tan undershirt, dust-covered knee guards and worn gaiters. Carries a folded survey rangefinder and weatherproof grid maps. Standing neutral pose, boots fully visible, Dantooine plains, repaired survey station and grassland horizon; realistic material details, no labels, no text, no watermark.",
+  },
+  "torin-kade": {
+    description: "Compact, athletic Corellian Human with short springy black curls, a crooked nose from a workshop accident, dark blue welding jacket patched at the shoulder, reinforced orange-gray gloves, hanging calipers and magnetic work boots.",
+    personality: "Displaced shipwright who knows how a falsified safety sign-off can kill a crew; impulsive about injustice but methodical around machinery.",
+    environment: "Corellian dock inspection gallery, starship hull overhead",
+    headshotPrompt: "Original cinematic Star Wars Legends-compatible character portrait, Compact, athletic Corellian Human with short springy black curls, a crooked nose from a workshop accident, dark blue welding jacket patched at the shoulder, reinforced orange-gray gloves, hanging calipers and magnetic work boots. Head and shoulders, clear face, front three-quarter view, realistic concept painting, no text, no watermark.",
+    fullBodyPrompt: "Original full-body science-fiction concept character illustration, Compact, athletic Corellian Human with short springy black curls, a crooked nose from a workshop accident, dark blue welding jacket patched at the shoulder, reinforced orange-gray gloves, hanging calipers and magnetic work boots. Standing neutral pose, boots fully visible, Corellian dock inspection gallery, starship hull overhead; realistic material details, no labels, no text, no watermark.",
+  },
+  "lenna-fen": {
+    description: "Deep-brown skin, alert dark eyes, black hair tucked under a cream cloth wrap; faded sienna medcenter uniform with a modest silver medical pin, clean supply gloves hanging from a belt and a compact sealed batch scanner.",
+    personality: "Resourceful Coruscant medcenter procurement officer who protects patient confidentiality and distrusts undocumented replacement supplies.",
+    environment: "Coruscant neighborhood medcenter loading atrium, soft clinical lights",
+    headshotPrompt: "Original cinematic Star Wars Legends-compatible character portrait, Deep-brown skin, alert dark eyes, black hair tucked under a cream cloth wrap; faded sienna medcenter uniform with a modest silver medical pin, clean supply gloves hanging from a belt and a compact sealed batch scanner. Head and shoulders, clear face, front three-quarter view, realistic concept painting, no text, no watermark.",
+    fullBodyPrompt: "Original full-body science-fiction concept character illustration, Deep-brown skin, alert dark eyes, black hair tucked under a cream cloth wrap; faded sienna medcenter uniform with a modest silver medical pin, clean supply gloves hanging from a belt and a compact sealed batch scanner. Standing neutral pose, boots fully visible, Coruscant neighborhood medcenter loading atrium, soft clinical lights; realistic material details, no labels, no text, no watermark.",
+  },
+  "tesa-norr": {
+    description: "Tall, erect Human woman with pale-brown skin, tightly bound dark hair, sharp dark eyes, a thin scar beside the left ear and carefully pressed slate-gray civilian fatigues. A worn mechanical wrist chronometer is conspicuous.",
+    personality: "Demobilized naval quartermaster who separates classified materiel from public inventory; restrained, procedural, quietly loyal to veteran colleagues.",
+    environment: "Anaxes civilian depot archive under immense naval structures",
+    headshotPrompt: "Original cinematic Star Wars Legends-compatible character portrait, Tall, erect Human woman with pale-brown skin, tightly bound dark hair, sharp dark eyes, a thin scar beside the left ear and carefully pressed slate-gray civilian fatigues. A worn mechanical wrist chronometer is conspicuous. Head and shoulders, clear face, front three-quarter view, realistic concept painting, no text, no watermark.",
+    fullBodyPrompt: "Original full-body science-fiction concept character illustration, Tall, erect Human woman with pale-brown skin, tightly bound dark hair, sharp dark eyes, a thin scar beside the left ear and carefully pressed slate-gray civilian fatigues. A worn mechanical wrist chronometer is conspicuous. Standing neutral pose, boots fully visible, Anaxes civilian depot archive under immense naval structures; realistic material details, no labels, no text, no watermark.",
+  },
+  "bren-varo": {
+    description: "Young slim-built guide with sun-darkened bronze skin, light-brown eyes narrowed against dust, unruly dark curls, long sand-colored cloak over patched desert leathers and scratched eye shields; respirator clipped to belt.",
+    personality: "Socorran route scout raised near a shelter for broken-down freighter crews; charming but fiercely serious about emergency wayfinding.",
+    environment: "Socorro dusty freeport wayfinding board at dusk",
+    headshotPrompt: "Original cinematic Star Wars Legends-compatible character portrait, Young slim-built guide with sun-darkened bronze skin, light-brown eyes narrowed against dust, unruly dark curls, long sand-colored cloak over patched desert leathers and scratched eye shields; respirator clipped to belt. Head and shoulders, clear face, front three-quarter view, realistic concept painting, no text, no watermark.",
+    fullBodyPrompt: "Original full-body science-fiction concept character illustration, Young slim-built guide with sun-darkened bronze skin, light-brown eyes narrowed against dust, unruly dark curls, long sand-colored cloak over patched desert leathers and scratched eye shields; respirator clipped to belt. Standing neutral pose, boots fully visible, Socorro dusty freeport wayfinding board at dusk; realistic material details, no labels, no text, no watermark.",
+  },
+  "sorin-pell": {
+    description: "Long-faced scholar with warm brown complexion, gray-flecked trimmed beard, deep-set hazel eyes, ink-stained cuffs, dark plain robe and frayed weather cloak; holds a careful pair of archival gloves.",
+    personality: "Neutral Ossus catalogue conservator; believes public access and responsible provenance can coexist, refuses to claim Jedi credentials.",
+    environment: "Ossus civilian historical archive, stone reading tables",
+    headshotPrompt: "Original cinematic Star Wars Legends-compatible character portrait, Long-faced scholar with warm brown complexion, gray-flecked trimmed beard, deep-set hazel eyes, ink-stained cuffs, dark plain robe and frayed weather cloak; holds a careful pair of archival gloves. Head and shoulders, clear face, front three-quarter view, realistic concept painting, no text, no watermark.",
+    fullBodyPrompt: "Original full-body science-fiction concept character illustration, Long-faced scholar with warm brown complexion, gray-flecked trimmed beard, deep-set hazel eyes, ink-stained cuffs, dark plain robe and frayed weather cloak; holds a careful pair of archival gloves. Standing neutral pose, boots fully visible, Ossus civilian historical archive, stone reading tables; realistic material details, no labels, no text, no watermark.",
+  },
+  "calen-vardex": {
+    description: "Middle-aged Coruscanti statesman with silver-streaked dark hair, controlled expression, high-collared graphite ceremonial uniform and muted Fel-era service insignia; a slim diplomatic data case always at hand.",
+    personality: "Imperial logistics governor managing security versus commerce. His public authority derives from administrative office, not a future Moff promotion.",
+    environment: "Bastion administrative chamber, angular stone and archival holocharts",
+    headshotPrompt: "Original cinematic Star Wars Legends-compatible character portrait, Middle-aged Coruscanti statesman with silver-streaked dark hair, controlled expression, high-collared graphite ceremonial uniform and muted Fel-era service insignia; a slim diplomatic data case always at hand. Head and shoulders, clear face, front three-quarter view, realistic concept painting, no text, no watermark.",
+    fullBodyPrompt: "Original full-body science-fiction concept character illustration, Middle-aged Coruscanti statesman with silver-streaked dark hair, controlled expression, high-collared graphite ceremonial uniform and muted Fel-era service insignia; a slim diplomatic data case always at hand. Standing neutral pose, boots fully visible, Bastion administrative chamber, angular stone and archival holocharts; realistic material details, no labels, no text, no watermark.",
+  },
+};
