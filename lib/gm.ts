@@ -53,7 +53,8 @@ export function gmSystemForCharacter(character: Record<string, unknown>, gameSta
     .replace(/D['’]mir['’]s/gi, `${name}'s`)
     .replace(/D['’]mir/gi, name)
     .replace(/150 ABY/g, `${campaignYear} ABY`)
-    + `\n\nNPC TEST CAMPAIGN: ${name} is the active viewpoint. This campaign is an independent, GM-controlled NPC continuity. D'mir's history, assets, Force awareness, family and objectives do not transfer to this character. Never merge this timeline into D'mir's primary save. For flashbacks, keep knowledge and technology within the saved historical date.`;
+    + `\n\nNPC TEST CAMPAIGN: ${name} is the active viewpoint. This campaign is an independent, GM-controlled NPC continuity. D'mir's history, assets, Force awareness, family and objectives do not transfer to this character. Never merge this timeline into D'mir's primary save. For flashbacks, keep knowledge and technology within the saved historical date.`
+    + (character.npcHistoricalBaselineId ? `\nNPC ORIGIN RECORD: ${name} has an audited level ${character.npcStartingLevel} 150 ABY starting career. The historical starting XP is prior life experience, not a reward for this turn; retain it without re-awarding anything. The Saga HEROIC CLASS Jedi is usable to represent a Sith or Imperial Knight Force practitioner; it does NOT imply affiliation with the Jedi Order. Faction and verified private history, not the class label, determine identity. Any Force power must exist on the actual character sheet and obey the Saga resolver.` : "");
 }
 
 function deterministicTurnRoller(turnId: string, lane: string) {
