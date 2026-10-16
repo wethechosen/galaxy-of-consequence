@@ -1,0 +1,52 @@
+import { afterEach, expect, it, vi } from "vitest";
+import * as accounts from "./accounts";
+import type { Account } from "./accounts";
+import { openStorage } from "./storage";
+import { readDatapad, saveAuthoritativeDatapad } from "./datapad-save";
+import { runGmTurn } from "./gm";
+import { NvidiaProviderError } from "./nvidia-errors";
+const provider = vi.hoisted(() => vi.fn());
+vi.mock("./original-provider", async original => ({...await original<typeof import("./original-provider")>(),invokeNvidia:provider}));
+let db: ReturnType<typeof openStorage> | undefined;
+it("preserves a rate-limited dialogue without committing or consuming three drafts", async () => {
+ db = accounts.accountStore(openStorage(":memory:"));
+ vi.spyOn(accounts,"accountStore").mockReturnValue(db);
+ vi.spyOn(console,"warn").mockImplementation(() => {});
+ vi.spyOn(console,"error").mockImplementation(() => {});
+ const actor:Account = {id:"rate-budget-fixture",username:"rate@galaxy.local",displayName:"Fixture",role:"player"};
+ db.prepare("INSERT INTO accounts VALUES (?, ?, ?, ?, '', '')").run(actor.id,actor.username,actor.displayName,actor.role);
+ const action = "Ask Jax about work";
+ saveAuthoritativeDatapad(actor,null,0,{character:{name:"Fixture",level:2,experience:2650,sagaStats:"STR 12 | DEX 14 | CON 10 | INT 12 | WIS 10 | CHA 12",trainedSkills:[]},gameState:{location:"Taris — docks",credits:1000,inventory:[],contacts:[],objectives:[],turnEvents:[]},messages:[],comms:[],settings:{}},db);
+ provider.mockResolvedValueOnce({provider:"nvidia",model:"intent",finishReason:"stop",content:JSON.stringify({intent:"dialogue",canonicalAction:action,declaredSpan:action,checkNeeded:false,skill:null,rationale:"Ordinary conversation",travelTarget:null,acceptedOfferId:null})});
+ provider.mockRejectedValueOnce(new NvidiaProviderError("Cooling down",429,23));
+ await expect(runGmTurn(actor,{revision:1,turnId:"rate-limited-dialogue",action})).rejects.toMatchObject({status:429,retryAfterSeconds:23,turnLifecycle:{gameplayAdvanced:false,retriable:true,draftAttempts:1}});
+ expect(provider).toHaveBeenCalledTimes(2);
+ const saved = readDatapad(actor,null,db);
+ expect(saved.revision).toBe(1);
+ expect(saved.snapshot?.gameState.credits).toBe(1000);
+});
+afterEach(() => {vi.restoreAllMocks();provider.mockReset();db?.close();});
+it("recovers the preserved Jax declaration once, correcting the saved arrival without paying or hiring", async () => {
+ db = accounts.accountStore(openStorage(":memory:"));
+ vi.spyOn(accounts,"accountStore").mockReturnValue(db);
+ vi.spyOn(console,"warn").mockImplementation(() => {});
+ vi.spyOn(console,"error").mockImplementation(() => {});
+ const actor:Account = {id:"proposal-508",username:"dmir@galaxy.local",displayName:"D'mir",role:"player"};
+ db.prepare("INSERT INTO accounts VALUES (?, ?, ?, ?, '', '')").run(actor.id,actor.username,actor.displayName,actor.role);
+ const action = "Tell Jax I'm ready to discuss his original six-month employment proposal seriously.";
+ saveAuthoritativeDatapad(actor,null,0,{character:{name:"D'mir",level:2,experience:2650,sagaStats:"STR 12 | DEX 14 | CON 10 | INT 12 | WIS 10 | CHA 12",trainedSkills:[],feats:"Adept Negotiator"},gameState:{location:"Taris — Market District (inside the cantina)",credits:628650006,creditsCriminal:50000,scene:{id:"508",action:"I head back to the docks and seek Jax out"},inventory:[],contacts:[],objectives:[],turnEvents:[]},messages:[{role:"assistant",provider:"nvidia",content:"## GAMEPLAY RESULT\nYou successfully navigate the market district and arrive at Docking Bay 94’s Level B slip 14 without delay or incident. Jax stands near the airlock.\n## SAGA CHECK\nNo check required."}],comms:[],settings:{}},db);
+ provider.mockImplementation(async (request:{sourceQuery?:string}) => !request.sourceQuery
+  ? {provider:"nvidia",model:"intent",finishReason:"stop",content:JSON.stringify({intent:"dialogue",canonicalAction:action,declaredSpan:action,checkNeeded:false,skill:null,rationale:"Discussion is not acceptance",travelTarget:null,acceptedOfferId:null})}
+  : {provider:"nvidia",model:"broken",finishReason:"stop",content:"Invalid incomplete draft"});
+ const result = await runGmTurn(actor,{revision:1,turnId:"preserved-jax-proposal-01",action});
+ expect(result.model).toBe("proposal-discussion-receipt");
+ expect(result.snapshot.gameState.location).toBe("Taris — Docking Bay 94, Level B slip 14");
+ expect(result.snapshot.gameState.credits).toBe(628650006);
+ expect(result.snapshot.gameState.creditsCriminal).toBe(50000);
+ expect(result.snapshot.character.experience).toBe(2650);
+ expect(result.snapshot.gameState.tradeOffers || []).toHaveLength(0);
+ expect(result.snapshot.gameState.ships || []).toHaveLength(0);
+ expect(result.receipt.draftFailures).toHaveLength(3);
+ expect(await runGmTurn(actor,{revision:1,turnId:"preserved-jax-proposal-01",action})).toEqual(result);
+ expect(readDatapad(actor,null,db).revision).toBe(2);
+});

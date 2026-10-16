@@ -123,7 +123,7 @@ function GmConsoleBody() {
           <NumberField label="Condition" value={gameState.health} onChange={(v) => updateGameStateField(["health"], v)} />
           <TextField label="Location" value={gameState.location} onChange={(v) => updateGameStateField(["location"], v)} />
           <NumberField label="Standard Credits" value={gameState.credits} onChange={(v) => updateGameStateField(["credits"], v)} />
-          <NumberField label="Underworld Credits" value={gameState.creditsCriminal} onChange={(v) => updateGameStateField(["creditsCriminal"], v)} />
+          <NumberField label="Physical Credits" value={gameState.creditsCriminal} onChange={(v) => updateGameStateField(["creditsCriminal"], v)} />
           <NumberField label="Notoriety" value={gameState.notoriety} onChange={(v) => updateGameStateField(["notoriety"], v)} />
           <NumberField label="Force Alignment" value={gameState.forceAlignment} onChange={(v) => updateGameStateField(["forceAlignment"], v)} />
           <NumberField label="Empire Rep" value={rep.empire} onChange={(v) => updateGameStateField(["factionRep", "empire"], v)} />

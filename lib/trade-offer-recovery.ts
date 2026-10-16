@@ -1,5 +1,6 @@
 import type { DatapadSnapshot } from "./datapad-save";
 import { invokeNvidia } from "./original-provider";
+import { NvidiaProviderError } from "./nvidia-errors";
 import { commitConversationTradeState, currentTradeOffers, validateTradeOffers } from "./conversation-trade";
 import { quotedCreditAmounts } from "./quoted-credits";
 
@@ -34,12 +35,14 @@ export async function recoverConfirmedTradeOffer(snapshot: DatapadSnapshot): Pro
     let response: { content?: string };
     try {
       response = await invokeNvidia({
+        purpose: "ledger",
         system: `Extract an UNPAID concrete merchant offer from the confirmed GM text supplied below. Return STRICT JSON {"offers":[]} when no unpaid exact offer is established, or {"offers":[{"sellerName":"exact established seller","totalCredits":123,"items":[{"name":"exact quoted goods or service","qty":1,"tag":"gear"}]}]}. No commentary. Never extract proposed player terms, completed payments, paid offers, estimates, examples, or options. For a residential lease also include lease:{propertyName,propertyLocation,landlord,termMonths,rentCredits,refundableDepositCredits,accessDescription}; all terms must be explicit in the confirmed text, totalCredits must equal rent plus deposit, items must describe only the contracted tenancy/access, and no ownership is granted. Never infer an omitted price, fee, benefit, term, or credential. Use the source text's numeric amounts. This is a historical serialization repair, not gameplay or payment authorization.`,
         messages: [{ role: "user", content: confirmed.slice(0, 16000) }],
         temperature: 0, top_p: 0.1, max_tokens: 1024, timeout_ms: 10_000,
       });
       if (typeof response?.content !== "string") continue;
-    } catch {
+    } catch (error) {
+      if (error instanceof NvidiaProviderError && error.status === 429) throw error;
       continue;
     }
     let parsed: RecordValue;

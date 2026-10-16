@@ -38,7 +38,7 @@ export function HudOverlay({ character, gameState, onClose }) {
       </div>
       <div className="grid grid-cols-2 gap-2 text-[11px] mb-2">
         <div className="flex items-center gap-1.5"><Wallet size={12} style={{ color: "#22e5c5" }} /><span className="text-[#a9adb8]">{gameState.credits.toLocaleString()}cr</span></div>
-        <div className="flex items-center gap-1.5"><Skull size={12} style={{ color: "#e23b3b" }} /><span className="text-[#a9adb8]">{gameState.creditsCriminal.toLocaleString()}cr</span></div>
+        <div className="flex items-center gap-1.5" title="Physical galactic credit chips"><Wallet size={12} style={{ color: "#22e5c5" }} /><span className="text-[#a9adb8]">{gameState.creditsCriminal.toLocaleString()}cr cash</span></div>
       </div>
       <div className="flex items-center gap-1.5 text-[11px] text-[#a9adb8] pt-2" style={{ borderTop: "1px solid rgba(255,255,255,.06)" }}>
         <MapPin size={12} style={{ color: accent }} /> {gameState.location}

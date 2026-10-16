@@ -17,7 +17,8 @@ export async function GET(request: Request) {
     const state = saved.snapshot?.gameState || {};
     const result = { revision: saved.revision, character, hud: {
       location: state.location, health: state.health, conditionTrack: state.conditionTrack || 0,
-      credits: state.credits || 0, bankCredits: state.bankCredits || 0, creditsCriminal: state.creditsCriminal || 0,
+      credits: state.credits || 0, bankCredits: state.bankCredits || 0, physicalCredits: state.creditsCriminal || 0, creditsCriminal: state.creditsCriminal || 0,
+      currencyNote: "creditsCriminal is a legacy alias for physical galactic credit chips, not underworld funds. Inventory chips represent the same cash balance.",
       level: character.level || 1, experience: character.experience || 0,
       forcePoints: state.forcePoints || 0, destinyPoints: state.destinyPoints || 0, darkSideScore: state.darkSideScore || 0,
       notoriety: state.notoriety || 0, combat: state.combat || null,

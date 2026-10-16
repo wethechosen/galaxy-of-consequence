@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { itemStatBlock, itemPreset } from "../original/lib/itemStats";
 describe("verified item stat blocks", () => {
+ it("shows physical chips as cash without duplicating or criminalizing them", () => {
+  const block = itemStatBlock({name:"Physical credit chips (50,000)", tag:"currency", qty:1});
+  expect(block.kind).toBe("currency");
+  expect(block.stats["Face value"]).toBe("50,000 cr");
+  expect(block.notes.join(" ")).toContain("not extra credits");
+ });
  it("shows source-backed blaster and armor without granting proficiency", () => {
   expect(itemStatBlock({name:"Blaster pistol"}).stats.Damage).toBe("3d6 energy");
   const armor=itemStatBlock({name:"Armored spacer’s flight suit"},{level:12});
