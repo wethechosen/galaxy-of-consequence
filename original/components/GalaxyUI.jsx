@@ -101,6 +101,7 @@ export function TopBar({ character, gameState, right }) {
           {user?.role !== "admin" && <Link to="/players" className={`px-2.5 py-1.5 rounded-lg ${location.pathname === "/players" ? "bg-white/10 text-[#f2f0ea]" : "text-[#8b93a3] hover:text-[#f2f0ea]"}`}>PLAYERS</Link>}
           {user?.role !== "admin" && <Link to="/comms" className={`px-2.5 py-1.5 rounded-lg ${location.pathname === "/comms" ? "bg-white/10 text-[#f2f0ea]" : "text-[#8b93a3] hover:text-[#f2f0ea]"}`}>COMMS</Link>}
           <Link to="/exchanges" className={`px-2.5 py-1.5 rounded-lg ${location.pathname === "/exchanges" ? "bg-white/10 text-[#f2f0ea]" : "text-[#8b93a3] hover:text-[#f2f0ea]"}`}>EXCHANGES</Link>
+          {user?.role === "admin" && <Link to="/npcs" className={`px-2.5 py-1.5 rounded-lg ${location.pathname === "/npcs" ? "bg-white/10 text-[#f2f0ea]" : "text-[#8b93a3] hover:text-[#f2f0ea]"}`}>NPCS</Link>}
           <Link to="/syndicates" className={`px-2.5 py-1.5 rounded-lg ${location.pathname === "/syndicates" ? "bg-white/10 text-[#f2f0ea]" : "text-[#8b93a3] hover:text-[#f2f0ea]"}`}>SYNDICATES</Link>
           <Link to="/profile" className={`px-2.5 py-1.5 rounded-lg ${location.pathname === "/profile" ? "bg-white/10 text-[#f2f0ea]" : "text-[#8b93a3] hover:text-[#f2f0ea]"}`}>PROFILE</Link>
           <Link to="/archive" className={`px-2.5 py-1.5 rounded-lg ${location.pathname === "/archive" ? "bg-white/10 text-[#f2f0ea]" : "text-[#8b93a3] hover:text-[#f2f0ea]"}`}>ATLAS, TRAVEL & ARCHIVES</Link>

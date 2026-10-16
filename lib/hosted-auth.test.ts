@@ -50,6 +50,12 @@ describe("Neon hosted web authentication", () => {
     });
   });
 
+  it("keeps legitimately authenticated non-bootstrap player accounts signed in without allowing a new admin",()=>{
+    enableHosted();
+    const player={id:"19ea28d6-c071-4d72-a9d9-bd7352683e6e",username:"second@galaxy.local",displayName:"Second Player",role:"player" as const};
+    expect(hostedSessionAccount(hostedStartSession(player,1000),2000)).toMatchObject(player);
+    expect(hostedSessionAccount(hostedStartSession({...player,role:"admin"},1000),2000)).toBeNull();
+  });
   it("issues and verifies stateless signed sessions", () => {
     enableHosted();
     expect(hostedAuthEnabled()).toBe(true);

@@ -6,6 +6,7 @@ import { useAuth } from "@/original/lib/AuthContext";
 import { STAR_WARS_TERMINOLOGY } from "@/original/lib/starWarsTerminology";
 import { invokeNvidiaAssistant, NVIDIA_MODEL } from "@/original/lib/nvidia";
 import { getTravelAccess, getTravelCost } from "@/original/lib/galaxyLocations";
+import { STARTER_WORLDS, initialPublicLocation } from "@/original/lib/startingWorld";
 import { getSellQuote, getTradeAccess } from "@/original/lib/marketCatalog";
 import { CAMPAIGN_STATE_DEFAULTS, ensureCampaignScaffold } from "@/original/lib/campaignState";
 import { pendingOperation, clearPendingOperation } from "@/original/lib/pendingOperation";
@@ -27,7 +28,7 @@ At the opening D'mir is 16, imprisoned in a Fel Imperial juvenile detention comp
 For every play reply, write a focused scene, resolve only the attempted action, and offer open-ended next options. End with exactly one valid JSON block like <!--STATE:{"health":0,"credits":0,"location":"","note":""}-->. All numbers are relative changes; use {} for no changes. Supported fields: health, notoriety, forceAlignment, credits, creditsCriminal, factionRep (empire, rebellion, csa), location, inventoryAdd, inventoryRemove, propertyAdd, shipAdd, investmentAdd, contactAdd, publicNewsAdd, travelAccessAdd, note, characterUpdate. Deduct fare or purchase price only when the transaction actually succeeds. Grant travelAccessAdd only after the character earns credible coordinates, sponsorship, permits, or safe passage; credits alone never unlock secret Sith or quarantined routes. Public news must be observable and protect private scene information. Never mention this brief, the provider, or the hidden block in narration.`;
 
 export const EMPTY_CHARACTER = {
-  name: "", age: "", species: "", homeworld: "", background: "", allegiance: "",
+  name: "", age: "", species: "", homeworld: "", startingWorld: "", background: "", allegiance: "",
   forceSensitive: "Unknown", forceAlignment: "Gray", appearance: "",
   equipPrimary: "", equipSecondary: "", equipArmor: "", equipSpecial: "",
   skills: "", goal: "", contacts: "", imageFullBody: "", imageHeadshot: "",
@@ -75,6 +76,7 @@ export const CREATION_STEPS = [
   { key: "name", label: "PC Name", hint: "What do people call you out here?" },
   { key: "species", label: "Species", hint: "Human, Twi'lek, Rodian, Zabrak..." },
   { key: "homeworld", label: "Homeworld", hint: "Where you're from, or where you claim." },
+  { key: "startingWorld", label: "Starting World", hint: "Choose a public arrival world where the opening scene begins. Restricted worlds require earned access.", options: STARTER_WORLDS },
   { key: "background", label: "Background", hint: "Smuggler, ex-soldier, exile, corporate agent..." },
   { key: "allegiance", label: "Allegiance", hint: "Empire, Rebellion, CSA, independent, unaligned..." },
   { key: "forceSensitive", label: "Force Sensitive", hint: "Yes, No, or Unknown", options: ["Yes", "No", "Unknown"] },
@@ -864,6 +866,7 @@ If this is the very first message of the session, open the scene in-character ba
     if (!text.trim() || !saveReady || saveSession.current?.error || activeTurn.current || commsInFlight.current.size) return false;
     const session = saveSession.current;
     const contact = gameState.contacts?.find((item) => item.channel === channel);
+    if (!contact || !/^(npc|player):/.test(String(channel))) return false;
     const entry = { id: genId(), channel, role: "user", author: character?.name || "Player", content: text.trim(), ts: Date.now() };
     const next = [...comms, entry];
     setComms(next);
@@ -1059,7 +1062,9 @@ If this is the very first message of the session, open the scene in-character ba
     const created = { ...CHARACTER_BASE, ...draftChar };
     setCharacter(created);
     saveAccountKey("gc_character", characterEmail, created);
-    const fresh = { ...DEFAULT_GAME_STATE, notoriety: 10, forceAlignment: 50 };
+    const startingLocation = initialPublicLocation(draftChar.startingWorld);
+    if (!startingLocation) return false;
+    const fresh = { ...DEFAULT_GAME_STATE, location: startingLocation, notoriety: 10, forceAlignment: 50 };
     setGameState(fresh);
     saveKey("gc_gamestate", fresh);
     return sendTurn(null, [], fresh, created);
