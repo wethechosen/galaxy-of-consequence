@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { classifyTurnMode, withSceneFrame, assertNarratedLocation, assertNoProgressLoop, safeMessages } from "./gm";
+import { classifyTurnMode, withSceneFrame, assertNarratedLocation, assertNoProgressLoop, assertResolvedOutcome, safeMessages } from "./gm";
 import { eventWaitFailure, isEventWait } from "./event-wait";
 import type { DatapadSnapshot } from "./datapad-save";
 
 describe("revision 562 gameplay regression", () => {
+  it("rejects the reported successful negotiation narrated as an outright refusal", () => {
+    expect(() => assertResolvedOutcome("## GAMEPLAY RESULT\nJax does not accept your offer. He slides the paper back toward you.", { outcome: "success", label: "Persuasion" }, {}, "I offer extra to prioritize departure")).toThrow(/denied its stated objective/);
+  });
   it("routes the player's correction outside the fiction", () => {
     expect(classifyTurnMode("are you broken? we were on Taris, Jax is taking me to CSA space to bonadan.")).toBe("ooc");
     expect(classifyTurnMode('I ask Jax, "Are you broken?"')).toBe("play");
