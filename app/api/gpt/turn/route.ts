@@ -5,6 +5,7 @@ import { AdvancementRequiredError, advancementErrorBody } from "@/lib/advancemen
 import { hostedGet, hostedPersistenceEnabled, hydrateHostedSave, saveHostedResult } from "@/lib/hosted-bridge";
 import { anchorNarrationLocation } from "@/lib/gpt-narration";
 import { replayHostedTurn } from "@/lib/hosted-turn-replay";
+import { turnLifecycleFromError } from "@/lib/turn-lifecycle";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -86,6 +87,7 @@ export async function POST(request: Request) {
       turnId,
       provider: result.provider,
       fallbackReason: result.fallbackReason || null,
+      receipt: result.receipt,
       location: state.location,
       revision: result.revision,
     });
@@ -111,7 +113,16 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof AdvancementRequiredError) return NextResponse.json(advancementErrorBody(error), { status: error.status });
     console.error("[gpt/turn] failure", error);
-    const status = error instanceof GptActionError || error instanceof GmTurnError ? error.status : 500;
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Custom GPT turn failed. No outcome was applied." }, { status });
+    const rawStatus = (error as { status?: unknown })?.status;
+    const status = typeof rawStatus === "number" && rawStatus >= 400 && rawStatus < 600 ? rawStatus : 500;
+    const currentRevision = (error as { currentRevision?: unknown })?.currentRevision;
+    const receipt = turnLifecycleFromError(error);
+    return NextResponse.json({
+      error: error instanceof Error ? error.message : "Custom GPT turn failed. No outcome was applied.",
+      ...(typeof currentRevision === "number" ? { revision: currentRevision } : {}),
+      ...(receipt ? { receipt } : {}),
+      retryAfterSeconds: error instanceof NvidiaProviderError ? error.retryAfterSeconds : undefined,
+    }, { status, headers: nvidiaRetryHeaders(error) });
   }
 }
+import { NvidiaProviderError, nvidiaRetryHeaders } from "@/lib/nvidia-errors";

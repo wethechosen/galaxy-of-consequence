@@ -24,6 +24,16 @@ export function itemPreset(item = {}) {
   return id ? { id, ...ITEM_STAT_PRESETS[id] } : null;
 }
 export function itemStatBlock(item = {}, character = {}, state = {}) {
+  const chips = /^Physical credit chips\s*\(([\d,]+)\)$/i.exec(String(item.name || ""));
+  if (chips && item.tag === "currency") {
+    const value = Number(chips[1].replace(/,/g, ""));
+    if (Number.isSafeInteger(value) && value >= 0) return {
+      name: item.name, kind: "currency", source: { title: "Saved campaign currency record", verified: true },
+      stats: { "Face value": `${value.toLocaleString()} cr`, Form: "Physical galactic credit chips", Quantity: item.qty ?? 1, "Account balance": "Separate from electronic spending and bank deposits", "Mechanical bonus": "None — currency is purchasing power, not equipment" },
+      notes: ["The chips are a representation of the recorded physical cash balance, not extra credits to add again. Payment must debit that balance exactly once.", "Physical currency does not become illegal merely because it is carried."],
+      proficiency: null, proficient: null, earned: item.acquisition || null, upgrades: [],
+    };
+  }
   const preset = itemPreset(item);
   const property = item.ownership === "property" || /lease|apartment|residence|home|warehouse/i.test(String(item.type || item.category || ""));
   const kind = preset?.kind || (property ? "residence" : item.ownership === "vehicle" || item.class ? "vehicle" : item.tag === "force-relic" ? "artifact" : "gear");

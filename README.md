@@ -100,10 +100,10 @@ source-reviewed lore and faction/NPC behavior; authoritative OpenAI tool
 orchestration, constrained Nemotron voice, idempotent AI retries and spending
 controls. The old keyword-based combat checks have been removed.
 
-The first persistent playtest loop is enabled: the server loads the saved campaign, plans and rolls common Saga checks, retrieves local source material, calls NVIDIA for narration, validates the proposed ledger delta, and saves the completed turn. Full combat/condition-track automation and the production Supabase identity bridge remain later milestones.
+The persistent playtest loop loads the saved campaign, plans and rolls Saga checks, retrieves source material, calls NVIDIA for narration, validates the proposed ledger delta, and saves the completed turn. Hosted campaign saves, checkpoints, accounts, and sourcebook passages use Neon Postgres; local development can still use SQLite.
 Changing a campaign's database rules flag must not bypass these gates. Test
 provider narration is explicitly labeled and cannot create campaign canon.
-The PostgreSQL schema in `db/` is historical and unused.
+The production Neon schema is versioned in `db/neon/`. Other legacy schema files in `db/` are historical and unused.
 
 ## Verification
 

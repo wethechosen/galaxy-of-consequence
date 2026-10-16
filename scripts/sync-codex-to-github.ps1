@@ -80,8 +80,8 @@ if ($forbiddenNames) {
 
 $diff = git diff --cached --unified=0
 $secretPatterns = @(
-  '^\+[^+].*SUPABASE_SERVICE_ROLE_KEY\s*=\s*\S+',
-  '^\+[^+].*GOC_SUPABASE_BRIDGE_KEY\s*=\s*\S+',
+  '^\+[^+].*DATABASE_URL(?:_UNPOOLED)?\s*=\s*\S+',
+  '^\+[^+].*GOC_SESSION_SECRET\s*=\s*\S+',
   '^\+[^+].*GOC_GPT_ACTION_KEY\s*=\s*\S+',
   '^\+[^+].*NVIDIA_API_KEY\s*=\s*\S+',
   '^\+[^+].*OPENAI_API_KEY\s*=\s*\S+',

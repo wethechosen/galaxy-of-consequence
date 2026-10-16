@@ -4,6 +4,8 @@ import { assertLocalRequest } from "@/lib/local-http";
 import { DatapadError, readDatapad, saveDatapad, saveDatapadConfig } from "@/lib/datapad-save";
 import { hostedGet, hostedPersistenceEnabled, hydrateHostedSave, hostedPut, ensureHostedActor } from "@/lib/hosted-bridge";
 import { AdvancementRequiredError, advancementErrorBody } from "@/lib/advancement-gate";
+import { neonGetConfig, neonSaveConfig } from "@/lib/neon-campaign-store";
+import { neonQuery } from "@/lib/neon-db";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 function errorResponse(error: unknown) {
@@ -25,12 +27,26 @@ export async function GET(request: Request) {
   try {
     assertLocalRequest(request);
     const actor = requireAccount(request);
-    const requested = new URL(request.url).searchParams.get("accountId");
+    const params = new URL(request.url).searchParams;
+    const requested = params.get("accountId");
+    if (params.get("revisionOnly") === "1") {
+      const target = hostedTarget(actor, requested);
+      const revision = hostedPersistenceEnabled()
+        ? Number((await neonQuery<{ revision: string }>("SELECT revision FROM private.goc_datapad_saves WHERE account_id=$1", [target.id]))[0]?.revision || 0)
+        : readDatapad(actor, requested).revision;
+      return NextResponse.json({ revision }, { headers: { "Cache-Control": "private, no-store" } });
+    }
     if (hostedPersistenceEnabled()) {
       const target = hostedTarget(actor, requested);
       ensureHostedActor(target);
       const hosted = await hostedGet(target.username);
       if (hosted) hydrateHostedSave(target, hosted);
+      const response = readDatapad(actor, requested);
+      const admin = listAccounts().find(account => account.role === "admin");
+      if (!admin) throw new DatapadError("Campaign administrator is not configured.", 503);
+      const config = await neonGetConfig(admin.id);
+      return NextResponse.json({ ...response, config: config?.config ?? null,
+        configRevision: config?.revision ?? 0 }, { headers: { "Cache-Control": "no-store" } });
     }
     return NextResponse.json(readDatapad(actor, requested), { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return errorResponse(error); }
@@ -44,7 +60,12 @@ export async function PUT(request: Request) {
     if (text.length > 8_100_000) throw new DatapadError("Campaign save is too large.", 413);
     const body = JSON.parse(text);
     if (!body || typeof body !== "object" || Array.isArray(body)) throw new DatapadError("Invalid save request.");
-    if (body.action === "config") return NextResponse.json(saveDatapadConfig(actor, body.revision, body.config));
+    if (body.action === "config") {
+      if (actor.role !== "admin") throw new DatapadError("Only the GM can edit the campaign directive and source library.", 403);
+      return NextResponse.json(hostedPersistenceEnabled()
+        ? await neonSaveConfig(actor.id, body.revision, body.config)
+        : saveDatapadConfig(actor, body.revision, body.config));
+    }
     if (hostedPersistenceEnabled()) {
       const target = hostedTarget(actor, typeof body.accountId === "string" ? body.accountId : null);
       ensureHostedActor(target);
@@ -53,7 +74,7 @@ export async function PUT(request: Request) {
       if (hosted) hydrateHostedSave(target, hosted);
       // Hosted autosave follows the same authority rules as local autosave:
       // preserve confirmed mechanics and validate any exact catalog trade.
-      // The local increment is only a cache; Supabase is committed once.
+      // The local increment is only a cache; Neon is committed once.
       saveDatapad(actor, target.id, body.revision, body.snapshot);
       const validated = readDatapad(actor, target.id).snapshot;
       if (!validated) throw new DatapadError("Invalid campaign save.");

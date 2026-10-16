@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  SAGA_XP_THRESHOLDS, advancementRequirements, applySagaAdvancement, applySagaFoundation, availableTalents, availableFeats,
+  SAGA_XP_THRESHOLDS, SAGA_LEVEL_BREAKDOWN, SAGA_PRESTIGE_GUIDANCE, advancementRequirements, applySagaAdvancement, applySagaFoundation, availableTalents, availableFeats,
   advancementChoiceContext, advancementFeatChoiceContext, availableClassSkills, availableFeatSkills, foundationRequirements, parseAbilityScores,
   forcePowerChoiceRequirements,
   ensureAdvancementScaffold, experienceForLevel, nextLevelExperience, progressionStatus, sagaLevelForExperience,
@@ -22,13 +22,17 @@ describe("Saga Edition advancement", () => {
     expect(sagaLevelForExperience(190000)).toBe(20);
     expect(experienceForLevel(4)).toBe(6000);
     expect(nextLevelExperience(4)).toBe(10000);
+    expect(SAGA_LEVEL_BREAKDOWN.filter(entry => entry.characterFeat).map(entry => entry.level)).toEqual([1, 3, 6, 9, 12, 15, 18]);
+    expect(SAGA_LEVEL_BREAKDOWN.filter(entry => entry.abilityIncrease).map(entry => entry.level)).toEqual([4, 8, 12, 16, 20]);
+    expect(SAGA_PRESTIGE_GUIDANCE).toMatchObject({ status: "reference-only" });
+    expect(SAGA_PRESTIGE_GUIDANCE.rules.join(" ")).toMatch(/cannot begin at level 1|cannot begin.*level 1/i);
   });
 
   it("awards XP without silently choosing or committing a level", () => {
     const character = { level: 1, experience: 900 };
     const awarded = applyExperienceAward(character, 100);
     expect(awarded).toEqual({ level: 1, experience: 1000 });
-    expect(progressionStatus(awarded)).toMatchObject({ earnedLevel: 2, advancementAvailable: true, levelsAvailable: 1 });
+    expect(progressionStatus(awarded)).toMatchObject({ earnedLevel: 2, advancementAvailable: true, levelsAvailable: 1, pendingLevels: 1, levelFloorXp: 0, xpIntoLevel: 1000, xpToNextLevel: 0, progressPercent: 100 });
     expect(ensureAdvancementScaffold(snapshot(awarded)).gameState.levelUpAvailable).toBe(true);
   });
 

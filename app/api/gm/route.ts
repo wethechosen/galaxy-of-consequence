@@ -3,9 +3,11 @@ import { requireAccount, listAccounts } from "@/lib/accounts";
 import { GmTurnError, runGmTurn } from "@/lib/gm";
 import { assertLocalRequest, readLocalObject } from "@/lib/local-http";
 import { NvidiaProviderError } from "@/lib/original-provider";
+import { nvidiaRetryHeaders } from "@/lib/nvidia-errors";
 import { hostedGet, hostedPersistenceEnabled, hydrateHostedSave, saveHostedResult } from "@/lib/hosted-bridge";
 import { replayHostedTurn } from "@/lib/hosted-turn-replay";
 import { AdvancementRequiredError, advancementErrorBody } from "@/lib/advancement-gate";
+import { turnLifecycleFromError } from "@/lib/turn-lifecycle";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,6 +46,11 @@ export async function POST(request: Request) {
       : error instanceof Error && "status" in error && [409,504].includes(Number(error.status)) ? Number(error.status)
       : error instanceof Error && /sign in/i.test(error.message) ? 401
       : error instanceof Error && /local access|cross-origin|cross-site/i.test(error.message) ? 403 : 500;
-    return NextResponse.json({ error: error instanceof Error ? error.message : "The GM request failed. No outcome was applied." }, { status });
+    const receipt = turnLifecycleFromError(error);
+    return NextResponse.json({
+      error: error instanceof Error ? error.message : "The GM request failed. No outcome was applied.",
+      ...(receipt ? { receipt } : {}),
+      retryAfterSeconds: error instanceof NvidiaProviderError ? error.retryAfterSeconds : undefined,
+    }, { status, headers: nvidiaRetryHeaders(error) });
   }
 }

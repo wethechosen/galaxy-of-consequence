@@ -17,3 +17,17 @@ it("requires the saved location and blocks active combat and pending advancement
  current.gameState.location="Unit A"; current.gameState.combat={status:"active"}; expect(()=>applyResidenceRest(current,"home-a")).toThrow(/threat/);
  current.character!.experience=3000; expect(()=>applyResidenceRest(current,"home-a")).toThrow(/advancement|level/i);
 });
+it.each(["revoked", "expired", "evicted", "sold", "lost", "terminated", "inactive"])("does not permit rest through a %s property record", status => {
+ const current=save(); (current.gameState.properties as Array<Record<string,unknown>>)[0].status=status;
+ expect(()=>applyResidenceRest(current,"home-a")).toThrow(/access|tenancy/i);
+ expect(current.gameState.health).toBe(30);
+ expect(current.gameState.campaignTimeMinutes).toBe(0);
+});
+it("requires lease access for the whole rest, allowing completion exactly at its end", () => {
+ const current=save(); const holding=(current.gameState.properties as Array<Record<string,unknown>>)[0]; holding.lease={endsAtCampaignMinute:479};
+ expect(()=>applyResidenceRest(current,"home-a")).toThrow(/tenancy/i);
+ holding.lease={endsAtCampaignMinute:480};
+ expect(applyResidenceRest(current,"home-a").snapshot.gameState.campaignTimeMinutes).toBe(480);
+ current.gameState.campaignTimeMinutes=480;
+ expect(()=>applyResidenceRest(current,"home-a")).toThrow(/access/i);
+});

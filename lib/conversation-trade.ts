@@ -46,11 +46,36 @@ export function currentTradeOffers(state: Ledger): TradeOffer[] {
   const offers: TradeOffer[] = [];
   for (const raw of Array.isArray(state.tradeOffers) ? state.tradeOffers : []) {
     if (!isRecord(raw) || raw.status !== "open" || !validName(raw.id) || !validName(raw.sourceTurnId)
-      || key(raw.location) !== key(state.location)) continue;
+      || key(raw.location) !== key(state.location) || offerAlreadySettled(raw, state)) continue;
     try { offers.push({ ...validateTradeOffers([raw])[0], id: String(raw.id), location: String(raw.location), sourceTurnId: String(raw.sourceTurnId), status: "open" }); }
     catch { /* A malformed historical offer is not a price authority. */ }
   }
   return offers;
+}
+
+/** Transaction identity, not merely owning a similar item, prevents replay.
+ * Historical reconciliation offers retain the original source turn identity. */
+export function offerAlreadySettled(offer: Ledger, state: Ledger) {
+  const sourceTurn = String(offer.sourceTurnId || "").replace(/^reconcile:/, "");
+  const bundle = (value: Ledger) => (Array.isArray(value.items) ? value.items.filter(isRecord) : [])
+    .map(item => `${key(item.name)}:${Number(item.qty)}`).sort().join("|");
+  const receipts = Array.isArray(state.tradeReceipts) ? state.tradeReceipts.filter(isRecord) : [];
+  if (receipts.some(receipt => (offer.id && receipt.offerId === offer.id)
+    || (offer.acceptedTurnId && receipt.turnId === offer.acceptedTurnId)
+    || (sourceTurn && receipt.sourceTurnId === sourceTurn && bundle(receipt) === bundle(offer)
+      && Number(receipt.totalCredits) === Number(offer.totalCredits)))) return true;
+  const related = (Array.isArray(state.tradeOffers) ? state.tradeOffers.filter(isRecord) : []).some(other =>
+    other.id !== offer.id && other.status === "purchased" && sourceTurn
+    && String(other.sourceTurnId || "").replace(/^reconcile:/, "") === sourceTurn
+    && bundle(other) === bundle(offer) && Number(other.totalCredits) === Number(offer.totalCredits)
+    && receipts.some(receipt => receipt.offerId === other.id));
+  if (related) return true;
+  if (!isRecord(offer.lease)) return false;
+  const lease = offer.lease;
+  return (Array.isArray(state.properties) ? state.properties.filter(isRecord) : []).some(property =>
+    ["active", "leased"].includes(key(property.status)) && isRecord(property.lease)
+    && ["leased", "lease", "residential lease"].includes(key(property.tenure || property.type))
+    && key(property.name) === key(lease.propertyName) && key(property.location) === key(lease.propertyLocation));
 }
 
 function merchandiseWords(name: string) {

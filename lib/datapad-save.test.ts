@@ -4,6 +4,7 @@ import { accountStore, type Account } from "./accounts";
 import { readDatapad, saveAuthoritativeDatapad, saveDatapad, saveDatapadConfig } from "./datapad-save";
 import * as accounts from "./accounts";
 import * as hostedBridge from "./hosted-bridge";
+import * as neonCampaignStore from "./neon-campaign-store";
 import { GET as getHostedDatapad, PUT as putHostedDatapad } from "../app/api/datapad/route";
 const databases: ReturnType<typeof openStorage>[] = [];
 function setup() {
@@ -85,6 +86,7 @@ function hostedSetup() {
   const actor = vi.spyOn(accounts, "requireAccount").mockReturnValue(one);
   vi.spyOn(accounts, "listAccounts").mockReturnValue([owner, one, two]);
   vi.spyOn(hostedBridge, "hostedPersistenceEnabled").mockReturnValue(true);
+  vi.spyOn(neonCampaignStore, "neonGetConfig").mockResolvedValue(null);
   vi.spyOn(hostedBridge, "ensureHostedActor").mockImplementation(account => account);
   const get = vi.spyOn(hostedBridge, "hostedGet").mockImplementation(async username => username === cloud.account_username ? cloud : null);
   vi.spyOn(hostedBridge, "hydrateHostedSave").mockImplementation((account, save) => {

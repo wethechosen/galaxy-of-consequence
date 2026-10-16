@@ -36,7 +36,14 @@ beforeEach(() => { vi.clearAllMocks(); mocks.actor.mockReturnValue(player); mock
 describe("durable turn replay", () => {
   it("returns the saved roll and current HUD without applying the original purchase again", () => {
     const replay = replayHostedTurn(saved(), turnId, action);
-    expect(replay).toMatchObject({ replayed: true, revision: 12, roll, state: { credits: 3500 }, hud: { experience: 500, carried: 1 } });
+    expect(replay).toMatchObject({
+      replayed: true,
+      revision: 12,
+      roll,
+      receipt: { status: "committed", phase: "committed", committedRevision: 12, gameplayAdvanced: true, replayed: true },
+      state: { credits: 3500 },
+      hud: { experience: 500, carried: 1 },
+    });
     expect(replay?.snapshot).toEqual(saved().snapshot);
   });
 

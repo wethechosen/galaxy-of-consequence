@@ -9,7 +9,7 @@ describe("shared GPT campaign reads", () => {
     const location = "Coruscant — upper-city transit spine, Level 512";
     const content = `## LOCATION\n${location}\n## SCENE\nJax turns the displayed lease toward you. Commuters pass the concourse window.\n## GAMEPLAY RESULT\nThe contract waits for your decision. No payment has been made.\n## STATE UPDATE\nNo persistent change.`;
     const saved: any = { revision: 314, snapshot: { character: { name: "D'mir Holloran", level: 1, experience: 1050 },
-      gameState: { location, credits: 1199996506, bankCredits: 200, properties: [], ships: [], investments: [], tradeOffers: [{ id: "quote" }], tradeReceipts: [], health: 26 },
+      gameState: { location, credits: 1199996506, bankCredits: 200, creditsCriminal: 50, properties: [], ships: [], investments: [], legacyAssets: [{ name: "HIDDEN_INHERITANCE", status: "suspected" }], tradeOffers: [{ id: "quote" }], tradeReceipts: [], health: 26 },
       messages: [{ role: "user", content: "I review the lease.", turnId: "confirmed" }, { role: "assistant", content, turnId: "confirmed", provider: "nvidia" },
         { role: "user", content: "I pay.", turnId: "failed" }, { role: "assistant", content: "Your action meets the immediate world and stops.", turnId: "failed", provider: "local-safe-fallback" }], comms: [], settings: {} } };
     const before = JSON.stringify(saved);
@@ -28,6 +28,13 @@ describe("shared GPT campaign reads", () => {
     expect(body.lastConfirmedInteraction.current).toBe(false);
     expect(body.storyThusFar.lastSavedTurn).toBe("confirmed");
     expect(body.world.bankCredits).toBe(200);
+    expect(body.assetLedger.balances).toEqual({
+      spendable: 1199996506, deposited: 200, totalGalactic: 1199996706, underworld: 50,
+    });
+    expect(body.assetLedger.holdings).toEqual([]);
+    expect(body.assetLedger.purchases).toEqual([]);
+    expect(body.assetLedger).not.toHaveProperty("legacyClaims");
+    expect(JSON.stringify(body.assetLedger)).not.toContain("HIDDEN_INHERITANCE");
     expect(body.world.tradeOffers).toEqual([{ id: "quote" }]);
     expect(body.world.properties).toEqual([]);
     expect(JSON.stringify(saved)).toBe(before);

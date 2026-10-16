@@ -1,5 +1,6 @@
 import { sagaLevelForExperience } from "@/original/lib/sagaAdvancement";
 import { validateLeaseTerms, validatePriceComponents } from "@/original/lib/leaseTerms";
+import { buildSagaNpc, sagaNpcRole } from "@/lib/saga-npc";
 
 // Only this whitelist may cross from generated prose into the campaign ledger.
 // Validate the whole response before committing any of its effects.
@@ -219,12 +220,14 @@ export function applyEngineDelta(previous, delta, genId = defaultId) {
   addUnique(next.properties, patch.propertyAdd, (item) => ({ id: genId(), type: "property", location: "", baseValue: 0, income: 0, upkeep: 0, risk: "", ...item }));
   addUnique(next.ships, patch.shipAdd, (item) => ({ id: genId(), class: "unknown class", location: "", baseValue: 0, income: 0, upkeep: 0, risk: "", ...item }));
   addUnique(next.investments, patch.investmentAdd, (item) => ({ id: genId(), type: "stock", amount: 0, coupon: 0, risk: "", ...item }));
-  addUnique(next.contacts, patch.contactAdd, (item) => ({ id: genId(), role: "contact", location: next.location, bio: "", portrait: "", ...item, channel: `npc:${genId()}`, provider: "nvidia" }));
+  addUnique(next.contacts, patch.contactAdd, (item) => ({ id: genId(), role: "contact", location: next.location, bio: "", portrait: "", ...item,
+    sagaBuild: buildSagaNpc({ name: item.name, level: 1, role: sagaNpcRole(`${item.role || ""} ${item.name}`) }),
+    channel: `npc:${genId()}`, provider: "nvidia" }));
   const headlines = new Set(next.publicNews.filter((item) => typeof item.headline === "string").map((item) => keyOf(item.headline)));
   for (const item of patch.publicNewsAdd || []) {
     if (!headlines.has(keyOf(item.headline))) { next.publicNews.push({ id: genId(), source: "unattributed public report", ...item, ts: Date.now() }); headlines.add(keyOf(item.headline)); }
   }
-  next.publicNews = next.publicNews.slice(-12);
+  next.publicNews = next.publicNews.slice(-200);
   for (const id of patch.travelAccessAdd || []) if (!next.travelAccess.some((entry) => keyOf(entry) === keyOf(id))) next.travelAccess.push(id);
   for (const item of patch.conditionAdd || []) {
     const existing = next.conditions.find((entry) => keyOf(entry.name) === keyOf(item.name));

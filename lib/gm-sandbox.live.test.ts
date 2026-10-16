@@ -22,7 +22,7 @@ function fixtureNarration(scene: string, result: string) {
 
 function setupFixture(id: string, snapshot: DatapadSnapshot) {
   vi.stubEnv("VERCEL", ""); vi.stubEnv("GOC_USE_CLOUD_RAG", "0");
-  vi.stubEnv("SUPABASE_GOC_BRIDGE_URL", ""); vi.stubEnv("SUPABASE_GOC_BRIDGE_KEY", "");
+  vi.stubEnv("DATABASE_URL", ""); vi.stubEnv("GOC_ALLOW_HOSTED_WEB", "");
   db = accounts.accountStore(openStorage(":memory:"));
   vi.spyOn(accounts, "accountStore").mockReturnValue(db);
   const actor = { id, username: `${id}@galaxy.invalid`, displayName: "Isolated fixture", role: "player" as const };
@@ -83,7 +83,7 @@ describe.skipIf(!enabled)("actual model plus authoritative sandbox turn loop (no
   it("resolves a colloquial paid-lodging reply and a saved bundle purchase with different, concrete scenes", async () => {
     // Deliberately isolate all writes and source retrieval from production.
     vi.stubEnv("VERCEL", ""); vi.stubEnv("GOC_USE_CLOUD_RAG", "0");
-    vi.stubEnv("SUPABASE_GOC_BRIDGE_URL", ""); vi.stubEnv("SUPABASE_GOC_BRIDGE_KEY", "");
+    vi.stubEnv("DATABASE_URL", ""); vi.stubEnv("GOC_ALLOW_HOSTED_WEB", "");
     db = accounts.accountStore(openStorage(":memory:"));
     vi.spyOn(accounts, "accountStore").mockReturnValue(db);
     const realInvoke = provider.invokeNvidia;

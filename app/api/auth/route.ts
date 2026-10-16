@@ -22,7 +22,8 @@ export async function GET(request: Request) {
     }
     return response;
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to verify session." }, { status: 403 });
+    const code = error && typeof error === "object" && "status" in error ? Number(error.status) : 0;
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to verify session." }, { status: code === 503 ? 503 : 403 });
   }
 }
 
@@ -49,7 +50,8 @@ export async function POST(request: Request) {
     response.cookies.set(SESSION_COOKIE, startSession(user), { ...options, secure: new URL(request.url).protocol === "https:" });
     return response;
   } catch (error) {
-    const status = error && typeof error === "object" && "status" in error && Number(error.status) === 504 ? 504 : 400;
+    const code = error && typeof error === "object" && "status" in error ? Number(error.status) : 0;
+    const status = code === 503 || code === 504 ? code : 400;
     return NextResponse.json({ error: error instanceof Error ? error.message : "Sign-in failed." }, { status });
   }
 }
