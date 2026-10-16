@@ -15,6 +15,7 @@ vi.mock('./original-provider', async (importOriginal) => ({
 const databases: ReturnType<typeof openStorage>[] = [];
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   provider.mockReset();
   databases.splice(0).forEach((db) => db.close());
 });
@@ -121,6 +122,7 @@ function contextFrom(request: NvidiaRequest) {
 
 describe('authoritative GM continuity and unavailable drafting', () => {
   it.skipIf(process.env.GOC_LIVE_NVIDIA !== '1')('live NVIDIA arrival commits and reloads in an isolated fixture', async () => {
+    vi.stubEnv('CAMPAIGN_DB_PATH', ':memory:');
     const { actor, db, initial } = setup();
     const location = 'Taris → Bonadan — aboard the YT-1300 freighter';
     initial.gameState.location = location;
@@ -176,6 +178,17 @@ describe('authoritative GM continuity and unavailable drafting', () => {
     expect(result.snapshot.gameState.credits).toBe(before.gameState.credits);
     expect(result.roll).toBeNull();
     expect(provider).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves a provider timeout without three repeated drafting requests or a save change', async () => {
+    const { actor, db } = setup();
+    const before = readDatapad(actor, null, db);
+    mockProvider(() => { throw new NvidiaProviderError('NVIDIA took too long to respond. No outcome was applied; retry the turn.', 504); });
+    await expect(runGmTurn(actor, { turnId: 'timeout-preservation-01', revision: 1, action: QUESTION })).rejects.toMatchObject({ status: 504 });
+    expect(provider).toHaveBeenCalledTimes(2); // One interpretation, one bounded draft.
+    expect(readDatapad(actor, null, db)).toEqual(before);
+    const draft = provider.mock.calls.map(([request]) => request as NvidiaRequest).find(request => request.sourceQuery);
+    expect(draft?.timeout_ms).toBeGreaterThan(24_000);
   });
 
   it('keeps gameplay connected when the third safe draft only repeats scene framing', async () => {

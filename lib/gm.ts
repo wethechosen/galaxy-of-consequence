@@ -1401,7 +1401,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       response = await invokeNvidia({
         purpose: "gm",
         system,
-        timeout_ms: providerBudget(24_000),
+        timeout_ms: providerBudget(55_000),
         sourceQuery: action || String(currentSnapshot.gameState.location || "opening scene"),
         max_tokens: mode === "ooc" ? 768 : 2400,
         messages: [...history, { role: "user", content: userMessage }, ...(correction ? [correction] : [])],
@@ -1411,7 +1411,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       fallbackReason = "provider";
       console.warn("[api/gm] drafting failed", { turnId: input.turnId, attempt: attempt + 1, status: error.status, message: error.message });
       recordDraftFailure(turnLifecycle, attempt + 1, "provider", error);
-      if (error.status === 429) throw error;
+      if (error.status === 429 || error.status === 504) throw error;
       validationError = error;
       // An outage is not an in-world event. Keep the action and roll for retry.
       continue;
