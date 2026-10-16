@@ -3,6 +3,7 @@ import { requireAccount, listAccounts } from "@/lib/accounts";
 import { GmTurnError, runGmTurn } from "@/lib/gm";
 import { assertLocalRequest, readLocalObject } from "@/lib/local-http";
 import { NvidiaProviderError } from "@/lib/original-provider";
+import { nvidiaRetryHeaders } from "@/lib/nvidia-errors";
 import { hostedGet, hostedPersistenceEnabled, hydrateHostedSave, saveHostedResult } from "@/lib/hosted-bridge";
 import { replayHostedTurn } from "@/lib/hosted-turn-replay";
 import { AdvancementRequiredError, advancementErrorBody } from "@/lib/advancement-gate";
@@ -49,6 +50,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       error: error instanceof Error ? error.message : "The GM request failed. No outcome was applied.",
       ...(receipt ? { receipt } : {}),
-    }, { status });
+      retryAfterSeconds: error instanceof NvidiaProviderError ? error.retryAfterSeconds : undefined,
+    }, { status, headers: nvidiaRetryHeaders(error) });
   }
 }

@@ -22,6 +22,12 @@ export function pendingTransitArrival(
   action: string,
 ): TransitArrivalRequest | null {
   if (!isArrivalWaitDeclaration(action)) return null;
+  const journey = state.journey && typeof state.journey === "object" && !Array.isArray(state.journey)
+    ? state.journey as Record<string, unknown> : null;
+  if (journey?.status === "in_transit" && journey.confirmed === true
+    && typeof journey.destination === "string" && journey.destination.trim()) {
+    return { destination: journey.destination.trim(), objectiveTitle: String(journey.objectiveTitle || "") };
+  }
   const scene = state.scene && typeof state.scene === "object" && !Array.isArray(state.scene)
     ? state.scene as Record<string, unknown>
     : null;

@@ -1,8 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { invokeNvidia } from "./original-provider";
+vi.mock("./nvidia-rate-budget", () => ({ reserveNvidiaSlot: vi.fn(async () => 0), checkNvidiaCooldown: vi.fn(async () => {}), recordNvidiaCooldown: vi.fn(async () => {}), parseRetryAfter: () => 17 }));
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 describe("bounded model requests", () => {
+  it("preserves rate limits and does not retry the provider", async () => {
+    vi.stubEnv("NVIDIA_API_KEY", "test-only-secret");
+    const fetchMock = vi.fn(async () => new Response(null, { status: 429, headers: { "Retry-After": "17" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(invokeNvidia({ messages: [{ role: "user", content: "Talk" }] })).rejects.toMatchObject({ status: 429, retryAfterSeconds: 17 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
   it("bounds stalled response bodies and does not expose the key", async () => {
     vi.stubEnv("NVIDIA_API_KEY", "test-only-secret");
     const abort = new AbortController();

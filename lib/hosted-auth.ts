@@ -70,7 +70,16 @@ export function hostedSessionAccount(token: string, now = Date.now()): HostedAcc
     const parsed = JSON.parse(decode(payload)) as SessionPayload;
     if (!parsed?.account || !Number.isFinite(parsed.exp) || parsed.exp <= now) return null;
     const current = KNOWN_ACCOUNTS.find((entry) => entry.id === parsed.account.id && entry.username === parsed.account.username);
-    return current ? { ...current } : null;
+    if (current) return { ...current };
+    // Newly registered PC accounts carry a server-signed session just like
+    // D'mir. The historical KNOWN_ACCOUNTS bootstrap list must not prohibit
+    // them from remaining signed in. Non-bootstrap users cannot self-elevate.
+    const candidate = parsed.account;
+    if (candidate.role !== "player" ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(candidate.id) ||
+        !/^[a-z0-9_.@-]{3,80}$/i.test(candidate.username) ||
+        !candidate.displayName || candidate.displayName.length > 80) return null;
+    return {...candidate, role:"player"};
   } catch {
     return null;
   }
