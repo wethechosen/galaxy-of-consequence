@@ -34,7 +34,7 @@ describe.skipIf(!enabled)("LIVE NVIDIA / three decisions / Kelvek 147 ABY flashb
         },
         gameState: {
           location: character.location, credits: 0, creditsCriminal: 0, health: 18,
-          campaignTimeMinutes: 147 * 525600, inventory: [],
+          campaignTimeMinutes: 147 * 525600, campaignYearABY: 147, inventory: [],
           scene: { location: character.location, beat: 1, summary: "Detention library. A public catalogue display is accessible under supervision. No secret assets are available or known." },
           turnEvents: [], objectives: [{title:character.objective,status:"active"}],
         },
