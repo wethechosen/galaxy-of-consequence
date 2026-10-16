@@ -27,6 +27,7 @@ import { pendingTransitArrival, transitArrivalFailure } from "./transit-progress
 import { reconcileFulfilledObjectives, currentObjectiveContext } from "./objective-reconciliation";
 import { reconcileCommittedArrival } from "./committed-arrival";
 import { EVENT_WAIT_INSTRUCTION, eventWaitFailure, isEventWait } from "./event-wait";
+import { currentTerritory } from "@/original/lib/regionalNews";
 
 type TurnInput = { accountId?: string; revision: number; action: string; turnId: string; openScene?: boolean; statePolicy?: "committed-trade" | null };
 type Message = { role: "user" | "assistant" | "roll"; content: string; [key: string]: unknown };
@@ -174,6 +175,7 @@ function rollMessage(roll: Record<string, unknown>) {
 
 function publicContext(snapshot: DatapadSnapshot) {
   const state = reconcileFulfilledObjectives(snapshot.gameState);
+  const territory = currentTerritory(state.location);
   const scene = currentSceneFrame(snapshot);
   const recentTurns = (Array.isArray(state.turnEvents) ? state.turnEvents as Array<Record<string, unknown>> : [])
     .slice(-8)
@@ -191,6 +193,7 @@ function publicContext(snapshot: DatapadSnapshot) {
     forcePoints: state.forcePoints, destinyPoints: state.destinyPoints, darkSideScore: state.darkSideScore,
     campaignTimeMinutes: state.campaignTimeMinutes,
     journey: state.journey,
+    territory: { name: territory.name, region: territory.region, worldStatus: "worldStatus" in territory ? territory.worldStatus : null },
     credits: state.credits, bankCredits: state.bankCredits, physicalCredits: state.creditsCriminal,
     currencyLedger: "The legacy delta field creditsCriminal stores PHYSICAL GALACTIC CREDIT CHIPS, not illegal or underworld currency. Inventory chips describe this same balance, never additional money. Debit it once when explicitly paying in physical chips.", notoriety: state.notoriety,
     properties: state.properties, ships: state.ships, investments: state.investments,
@@ -1383,6 +1386,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   if (transitArrival) system += `\n\nCONFIRMED TRANSPORT TRANSIT — ARRIVAL REQUEST: The current saved journey establishes transit to ${transitArrival.destination}. Older completed journeys and departure scenes are history. The player has chosen to wait until arrival. Resolve this existing flight to ${transitArrival.destination}, without requiring another departure order or payment. Narrate arrival/approach, use an end-of-turn LOCATION beginning "${transitArrival.destination}", and save the same location plus positive, plausible timeAdvanceMinutes. No unrelated credits, equipment, or XP awards. A repeated departure or in-flight scene is not a resolved arrival.`;
   if (mode === "play") system += `\n\n${conversationTradeInstruction(trade)}\n${routineCommerce ? "ORDINARY INTERACTION: No check is required for a normal question or stock/price inquiry. Answer the actual question as the CURRENT interlocutor in the saved scene. A broad market location does not mean a clothing stall. Resolve short follow-ups against the last exchange, including lodging duration, privacy, meals and prices. Quote new terms before charging; do not invent procedural refusal without an established reason." : ""}\nSERIALIZATION: End with exactly one HTML STATE comment containing strict JSON, with double-quoted keys and string values. Multiple merchandise items use one inventoryAdd array, never duplicate keys. A no-change example is <!--STATE:{}-->. Record every concrete priced offer in tradeOfferAdd, including services as named entitlements tagged service with the agreed duration and amenities. Quotes grant nothing yet. LOCATION names the place at the END of this action and must match delta.location when declared travel changes it, or the saved location otherwise.`;
   if (mode === "play") system += `\n${LEASE_LEDGER_INSTRUCTION}\n${QUOTE_COMPONENT_INSTRUCTION}`;
+  if (mode === "play" && !input.openScene) system += `\nHOLONET WORLD UPDATES: Resolve the current 150 ABY territory using the saved atlas entry. When a turn establishes a public development, or significant elapsed time produces a plausible public bulletin, record that bulletin in publicNewsAdd with headline, facts, an attributed in-universe source, and location. Use the planet name for a local report, its region name for a territorial report, or "Galactic" for genuinely galaxy-wide news. Do not recycle old headlines, announce an unestablished war or ruler as canonical fact, reveal private conversations or undiscovered secrets, or describe player purchases as galaxy-wide news. Reports are campaign developments, not real-world news. Destroyed worlds cannot have intact planetary ports; damaged inhabited worlds are not automatically destroyed. Canon imports must respect the established Legends-led continuity.`;
   let parsed: ReturnType<typeof parseEngineResponse> | null = null;
   let delta: Record<string, unknown> | null = null;
   let validationError: unknown = null;
