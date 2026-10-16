@@ -10,6 +10,7 @@ import {invokeNvidia} from "./original-provider";
 import {ALL_NPC_TEST_ROSTER,type NpcTestSubject} from "./npc-test-roster";
 import {NPC_ULTIMATE_ARCS,NPC_ULTIMATE_ARC_VERSION} from "./npc-ultimate-arcs";
 import {npcRepetitionRecovery} from "./npc-repetition-recovery";
+import {rebaseIsolatedNpcPendingAttempt} from "./npc-pending-revision";
 import {NPC_HISTORICAL_TIERS,advanceNpcEarnedXp} from "./npc-historical-baselines";
 import {CAMPAIGN_NPCS_150_ABY} from "./npc-canon-roster";
 import {progressionStatus} from "@/original/lib/sagaAdvancement";
@@ -102,7 +103,7 @@ async function retry<T>(fn:()=>Promise<T>,id:string,phase:string):Promise<T>{
   for(let i=0;i<7;i++)try{return await fn();}catch(err){
     const error=err as Error & {status?:number;retryAfterSeconds?:number};
     const eligible=[429,502,503,504].includes(Number(error.status))||
-      /rate|cooldown|busy|unavailable|retry|quota|draft/i.test(String(error.message));
+      /rate|cooldown|busy|unavailable|retry|quota|draft|invalid pc action/i.test(String(error.message));
     const delay=Math.max(3000,Math.min(70000,Number(error.retryAfterSeconds||2**(i+1)*3)*1000));
     record({id,phase:"retry",stage:phase,attempt:i,error:error.message||String(err),
       delay:eligible&&i<6?delay:0});
@@ -159,9 +160,19 @@ async function run(n:NpcTestSubject){
     const turnId="npc-real-"+n.id+"-t"+String(turn).padStart(3,"0");
     // An interrupted GM call must be retried with exactly the same action
     // and idempotency key, never another newly generated PC declaration.
-    const attempt=db.prepare("SELECT action FROM gm_turn_attempts WHERE account_id=? AND turn_id=?")
-      .get(actor.id,turnId) as {action?:string}|undefined;
-    let previous=String(attempt?.action||"");
+    // Only isolated GM origin/long-arc setup may reconcile a pending
+    // test attempt's old revision. No actual gameplay turn may intervene.
+    const rebased=rebaseIsolatedNpcPendingAttempt(db,{
+      accountId:actor.id,turnId,currentRevision:saved.revision,
+      existingGameTurnCount:Array.isArray(saved.snapshot!.gameState.turnEvents)?
+        saved.snapshot!.gameState.turnEvents.length:0,
+      expectedGameTurnCount:turn-1,
+      verifiedAdministrativeChange:saved.snapshot!.gameState.npcArcVersion===NPC_ULTIMATE_ARC_VERSION,
+    });
+    if(rebased.rebased)record({id:n.id,phase:"rebase_pending",turn,turnId,
+      originalRevision:rebased.previousRevision,revision:saved.revision,
+      actionPreserved:true,rollPreserved:true});
+    let previous=String(rebased.action||"");
     if(!previous && existsSync("data/npc-autoplay.jsonl")){
       const earlier=readFileSync("data/npc-autoplay.jsonl","utf8").split("\n").reverse();
       for(const line of earlier){
