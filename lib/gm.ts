@@ -1468,7 +1468,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       };
       if (mode === "play") {
         parsed = { ...parsed, clean: ensurePlayerOptions(normalizePlayerOptions(parsed.clean), currentSnapshot.gameState, currentSnapshot.character as Record<string, unknown>, action) };
-        parsed = { ...parsed, clean: normalizeCampaignSections(parsed.clean, parsed.delta as Record<string, unknown> | null, currentSnapshot.gameState.location, !permitsLocationChange(resolvedIntent) && semantic?.intent !== "travel" && !transitArrival && !parsed.delta?.location) };
+        parsed = { ...parsed, clean: normalizeCampaignSections(parsed.clean, parsed.delta as Record<string, unknown> | null, currentSnapshot.gameState.location, !permitsLocationChange(resolvedIntent) && semantic?.intent !== "travel" && !transitArrival && !(parsed.delta as Record<string, unknown> | null)?.location) };
       }
       if (mode === "play") assertCampaignResponseStructure(parsed.clean);
       if (mode === "play") assertNarrativeFocus(parsed.clean, action);
@@ -1563,7 +1563,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       response = resolvedCommercialProgressNarration(currentSnapshot, resolvedIntent, roll);
       parsed = parseEngineResponse(response.content, { requireState: true });
       parsed = { ...parsed, clean: ensurePlayerOptions(normalizePlayerOptions(parsed.clean), currentSnapshot.gameState, currentSnapshot.character as Record<string, unknown>, action) };
-      parsed = { ...parsed, clean: normalizeCampaignSections(parsed.clean, parsed.delta as Record<string, unknown> | null, currentSnapshot.gameState.location, !permitsLocationChange(resolvedIntent) && semantic?.intent !== "travel" && !transitArrival && !parsed.delta?.location) };
+      parsed = { ...parsed, clean: normalizeCampaignSections(parsed.clean, parsed.delta as Record<string, unknown> | null, currentSnapshot.gameState.location, !permitsLocationChange(resolvedIntent) && semantic?.intent !== "travel" && !transitArrival && !(parsed.delta as Record<string, unknown> | null)?.location) };
       assertCampaignResponseStructure(parsed.clean);
       assertNarrativeFocus(parsed.clean, action);
       assertActionConstraints(parsed.clean, resolvedIntent);
@@ -1596,7 +1596,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       parsed = { ...parsed, clean: alignMechanicalResult(sanitizeGmNarration(parsed.clean), roll) };
       if (mode === "play") {
         parsed = { ...parsed, clean: ensurePlayerOptions(normalizePlayerOptions(parsed.clean), currentSnapshot.gameState, currentSnapshot.character as Record<string, unknown>, action) };
-        parsed = { ...parsed, clean: normalizeCampaignSections(parsed.clean, parsed.delta as Record<string, unknown> | null, currentSnapshot.gameState.location, !permitsLocationChange(resolvedIntent) && semantic?.intent !== "travel" && !transitArrival && !parsed.delta?.location) };
+        parsed = { ...parsed, clean: normalizeCampaignSections(parsed.clean, parsed.delta as Record<string, unknown> | null, currentSnapshot.gameState.location, !permitsLocationChange(resolvedIntent) && semantic?.intent !== "travel" && !transitArrival && !(parsed.delta as Record<string, unknown> | null)?.location) };
         assertCampaignResponseStructure(parsed.clean);
         assertNarrativeFocus(parsed.clean, action);
       }
