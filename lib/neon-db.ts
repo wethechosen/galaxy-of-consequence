@@ -1,5 +1,6 @@
 import { Pool, type PoolClient } from "pg";
 import { attachDatabasePool } from "@vercel/functions";
+import { neonConnectionString } from "./neon-connection";
 
 let pool: Pool | undefined;
 
@@ -15,7 +16,7 @@ function databasePool() {
   if (!neonConfigured()) throw Object.assign(new Error("Neon campaign persistence is not configured."), { status: 503 });
   if (!pool) {
     pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
+      connectionString: neonConnectionString(process.env.DATABASE_URL),
       max: 5,
       connectionTimeoutMillis: 15_000,
       idleTimeoutMillis: 30_000,

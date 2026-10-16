@@ -1,15 +1,15 @@
 import { assertAuthenticatedRequest } from "./local-http";
 import { runtimeSourceGrounding } from "./runtime-source-grounding";
 import { NvidiaProviderError, nvidiaRetryHeaders } from "./nvidia-errors";
-import { nvidiaModel, type NvidiaPurpose } from "./nvidia-models";
+import { nvidiaModel, nvidiaApiKey, type NvidiaPurpose } from "./nvidia-models";
 import { reserveNvidiaSlot, checkNvidiaCooldown, recordNvidiaCooldown, parseRetryAfter } from "./nvidia-rate-budget";
 import { setTimeout as wait } from "node:timers/promises";
 export { NvidiaProviderError } from "./nvidia-errors";
 export const TEST_AI_MODEL = "nvidia/nemotron-3-super-120b-a12b";
 export function testAiStatus() {
   return { provider: "nvidia", model: nvidiaModel("gm"),
-    models: { gm: nvidiaModel("gm"), interpretation: nvidiaModel("interpretation"), ledger: nvidiaModel("ledger") },
-    configured: Boolean(process.env.NVIDIA_API_KEY), mode: "live-playtest" };
+    models: { gm: nvidiaModel("gm"), npc: nvidiaModel("npc"), interpretation: nvidiaModel("interpretation"), ledger: nvidiaModel("ledger") },
+    configured: Boolean(nvidiaApiKey("gm")), mode: "live-playtest" };
 }
 
 export type NvidiaMessage = { role: "user" | "assistant" | "system"; content: string };
@@ -26,7 +26,7 @@ export type NvidiaRequest = {
 
 export async function invokeNvidia(body: NvidiaRequest) {
   if (!Array.isArray(body.messages) || !body.messages.length || body.messages.length > 100) throw new NvidiaProviderError("Conversation required.", 400);
-  const key = process.env.NVIDIA_API_KEY;
+  const key = nvidiaApiKey(body.purpose);
   if (!key) throw new NvidiaProviderError("NVIDIA is not configured on the server. Add NVIDIA_API_KEY and restart the app.", 503);
   const messages = body.messages.map((message) => {
     if (!(["user", "assistant", "system"] as string[]).includes(message.role) || typeof message.content !== "string") throw new NvidiaProviderError("Invalid message.", 400);

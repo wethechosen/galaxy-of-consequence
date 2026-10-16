@@ -16,6 +16,15 @@ const reply = (plan: SagaSemanticAction) => vi.mocked(invokeNvidia).mockResolved
 beforeEach(() => vi.resetAllMocks());
 
 describe("semantic interpretation before Saga mechanics", () => {
+  it("resolves explicit event waits without allowing a model to turn them into dialogue", async () => {
+    for (const action of ["i sleep until we arrive", "i set the datapad aside and rest until arrival", "i enter deep meditation until arrival"]) {
+      const result = await interpretSagaAction(action, character, state);
+      expect(result.semantic?.intent).toBe("wait");
+      expect(result.semantic?.canonicalAction).toBe(action);
+      expect(result.semantic?.checkNeeded).toBe(false);
+    }
+    expect(invokeNvidia).not.toHaveBeenCalled();
+  });
   it("propagates rate limits without falling through to another model call", async () => {
     const error = new NvidiaProviderError("Cooling down", 429, 23);
     vi.mocked(invokeNvidia).mockRejectedValueOnce(error);
