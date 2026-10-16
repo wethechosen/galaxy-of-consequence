@@ -630,7 +630,7 @@ const noProgressResult = /\b(?:no (?:new |useful |concrete )?(?:information|lead
 export function assertResolvedOutcome(narration: string, roll: Record<string, unknown> | null, delta?: Record<string, unknown> | null, action = "") {
   if (roll?.outcome !== "success" || !["Persuasion", "Deception", "Gather Information"].includes(String(roll.label))) return;
   const result = sectionBody(narration, "GAMEPLAY RESULT");
-  if (noProgressResult.test(result) || /\b(?:(?:your|the) (?:deception|persuasion|attempt|request) (?:fails|is rejected|has no effect)|(?:sees?|saw) through (?:your|the) (?:lie|deception)|(?:roll|check) (?:is|was) invalid)\b/i.test(result)) {
+  if (noProgressResult.test(result) || /\b(?:(?:your|the) (?:deception|persuasion|attempt|request) (?:fails|is rejected|has no effect)|does not accept your (?:offer|proposal|request)|(?:sees?|saw) through (?:your|the) (?:lie|deception)|(?:roll|check) (?:is|was) invalid)\b/i.test(result)) {
     throw new GmTurnError("The social check succeeded, but the draft denied its stated objective. Rewrite the concrete success without granting unrelated benefits.", 502);
   }
   const soughtDurableResult = /\b(?:find|locate|recruit|hire|employ|work for me|lead|referr|information|direction|agreement|commitment|contact|pilot|captain|broker)\b/i.test(action);
