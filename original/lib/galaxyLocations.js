@@ -1,3 +1,4 @@
+import { worldStatus } from "./worldStatus";
 export const GALAXY_LOCATIONS = [
   {
     id: "coruscant",
@@ -227,7 +228,13 @@ export const GALAXY_LOCATIONS = [
     travelCost: 1300,
     access: { tier: "invitation", label: "KAJIDIC SPONSOR", reason: "A kajidic sponsor, valuable cargo contract, or campaign-earned invitation is required." },
   },
-];
+  ...[
+    { id: "taris", name: "Taris", region: "Outer Rim", districts: ["Market District", "Spaceport", "Rebuilt urban districts"] },
+    { id: "bonadan", name: "Bonadan", region: "Corporate Sector", districts: ["Spaceport", "Industrial districts", "Commercial concourse"] },
+    { id: "alderaan", name: "Alderaan", region: "Core Worlds", districts: ["Graveyard of Alderaan — debris field"], destroyed: true },
+    { id: "malachor-v", name: "Malachor V", region: "Outer Rim", districts: ["Former planetary coordinates — debris survey"], destroyed: true },
+  ].map(place => ({ description: "Historical world and system registry.", era: "Current campaign: 150 ABY.", npcs: [], mysteries: [], tags: [place.destroyed ? "Destroyed" : "Inhabited"], travel: place.destroyed ? "No planetary landing exists. A system survey needs earned coordinates and a suitable vessel." : "Request current passage terms through the GM.", access: place.destroyed ? { tier: "story", label: "DESTROYED WORLD", reason: "Only a separately authorized debris-field expedition is possible; no civilian planetary landing exists." } : { tier: "open", label: "PUBLIC ROUTE" }, ...place })),
+].map(place => ({ ...place, region: place.id === "commenor" ? "Colonies" : place.region, worldStatus: worldStatus(place) }));
 
 const REGION_FARES = {
   "Core Worlds": 650,

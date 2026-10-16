@@ -14,7 +14,7 @@ import { ensureCampaignScaffold } from "@/original/lib/campaignState";
 import { appendDmirCreatorCanon, isDmirPrimaryCampaign } from "./dmir-authority";
 import { activeCombat, beginCombat, endPlayerTurn, isAttackDeclaration, isCombatMovementDeclaration, isCombatWithdrawDeclaration, isEndTurnDeclaration, resolveCombatAction, type CombatResolution } from "./saga-combat";
 import { commitConversationTradeState, conversationTradeInstruction, currentTradeOffers, isVerifiedConversationTradeDelta, planConversationTrade, reconcileConversationTradeDelta, type ConversationTrade } from "./conversation-trade";
-import { alignMerchantIdentity, isRoutineCommerce, sceneMerchant } from "./scene-commerce";
+import { alignMerchantIdentity, isRoutineCommerce, isRoutineServiceInquiry, sceneMerchant } from "./scene-commerce";
 import { buildSemanticSagaCheck, declaredForcePower, forceCapabilityConstraint, hasEarnedForcePower, interpretSagaAction, requiredForcePower } from "./saga-action-plan";
 import { buildForcePowerPlan, resolveForcePower, type ForcePowerResolution } from "./saga-force";
 import { recoverConfirmedTradeOffer } from "./trade-offer-recovery";
@@ -27,13 +27,37 @@ import { pendingTransitArrival, transitArrivalFailure } from "./transit-progress
 import { reconcileFulfilledObjectives, currentObjectiveContext } from "./objective-reconciliation";
 import { reconcileCommittedArrival } from "./committed-arrival";
 import { EVENT_WAIT_INSTRUCTION, eventWaitFailure, isEventWait } from "./event-wait";
+import { currentTerritory } from "@/original/lib/regionalNews";
+import { canonicalNpcContext } from "./npc-canon-roster";
+import { npcAlienGmContinuity } from "./npc-alien-story-ratings";
+import { dmirSceneNpcContext, updateDmirNpcContinuity } from "./dmir-npc-memory";
+import { recordVisibleSceneNpcs } from "./player-scene-roster";
 
 type TurnInput = { accountId?: string; revision: number; action: string; turnId: string; openScene?: boolean; statePolicy?: "committed-trade" | null };
 type Message = { role: "user" | "assistant" | "roll"; content: string; [key: string]: unknown };
 
 function isAuthoritativeLocalReceipt(message: Message | undefined) {
   return message?.provider === "local-safe-fallback"
-    && ["resolved-saga-receipt", "commercial-progress-receipt"].includes(String(message.model || ""));
+    && ["resolved-saga-receipt", "commercial-progress-receipt", "service-inquiry-receipt"].includes(String(message.model || ""));
+}
+
+/** Keep D'mir's personal canon out of isolated GM-controlled NPC campaigns. */
+export function gmSystemForCharacter(character: Record<string, unknown>, gameState: Record<string, unknown> = {}) {
+  const name = String(character.name || "the active character").trim().slice(0, 100);
+  const savedYear = Number(gameState.campaignYearABY);
+  const campaignYear = Number.isSafeInteger(savedYear) && savedYear >= 0 && savedYear <= 300 ? savedYear : 150;
+  if (/^d['’]mir holloran$/i.test(name)) return GM_SYSTEM;
+  const storyRating = npcAlienGmContinuity(name, campaignYear);
+  const personal = [/^D'mir's creator /i, /^D'mir continuity anchors /i, /^PLAYER-ESTABLISHED CAMPAIGN DIRECTION:/i];
+  return GM_SYSTEM.split("\n\n")
+    .filter(paragraph => !personal.some(pattern => pattern.test(paragraph.trim())))
+    .join("\n\n")
+    .replace(/D['’]mir['’]s/gi, `${name}'s`)
+    .replace(/D['’]mir/gi, name)
+    .replace(/150 ABY/g, `${campaignYear} ABY`)
+    + `\n\nNPC TEST CAMPAIGN: ${name} is the active viewpoint. This campaign is an independent, GM-controlled NPC continuity. D'mir's history, assets, Force awareness, family and objectives do not transfer to this character. Never merge this timeline into D'mir's primary save. For flashbacks, keep knowledge and technology within the saved historical date.`
+    + (character.npcHistoricalBaselineId ? `\nNPC ORIGIN RECORD: ${name} has an audited level ${character.npcStartingLevel} 150 ABY starting career. The historical starting XP is prior life experience, not a reward for this turn; retain it without re-awarding anything. The Saga HEROIC CLASS Jedi is usable to represent a Sith or Imperial Knight Force practitioner; it does NOT imply affiliation with the Jedi Order. Faction and verified private history, not the class label, determine identity. Any Force power must exist on the actual character sheet and obey the Saga resolver.` : "")
+    + (storyRating ? `\n\nPRIVATE NPC ORIGIN AND STORY-RATING REFERENCE: ${JSON.stringify(storyRating)}\nThe proposed ratings are editorial design targets, not automatic engine state. The character's stored level, validated species traits, Force abilities and actual GM adjudication always take precedence; never award an unearned power, hidden resource, title, or story outcome.` : "");
 }
 
 function deterministicTurnRoller(turnId: string, lane: string) {
@@ -45,6 +69,8 @@ function deterministicTurnRoller(turnId: string, lane: string) {
 }
 
 export const GM_SYSTEM = `You are the Game Master of Galaxy of Consequence, a persistent player-driven Star Wars Saga Edition campaign in 150 ABY. The player controls only their character. You control NPCs, scenes, factions, consequences, and continuity.
+ENDPOINT CONSISTENCY: LOCATION and the hidden location ledger describe the END of the resolved action, not its starting room. Moving within a venue (for example from its workroom to its front counter) changes the saved sublocation too. Never narrate a completed move while saving the old room. A successful check cannot be described as a failed objective; a successful search may establish that nothing concealed is present.
+PUBLIC REPORTS: A request for local, regional, and galactic news is not limited to the character's current quest. Answer each requested territory independently, and save every newly established bulletin in publicNewsAdd with its source and territory. Historical wars and battles are history, not breaking 150 ABY news, unless a new campaign-established present-day development explicitly relates to them. Do not invent a present-day war, ruler, or emergency to fill an empty feed. If no verified report exists, say so without recycling old history as current events.
 
 Act as the single director over four private specialist roles before writing the final response:
 - SAGA REFEREE: interprets only Saga Edition mechanics and accepts the authoritative server roll. It never invents a roll, modifier, defense, damage result, feat, talent, or Force power.
@@ -174,6 +200,7 @@ function rollMessage(roll: Record<string, unknown>) {
 
 function publicContext(snapshot: DatapadSnapshot) {
   const state = reconcileFulfilledObjectives(snapshot.gameState);
+  const territory = currentTerritory(state.location);
   const scene = currentSceneFrame(snapshot);
   const recentTurns = (Array.isArray(state.turnEvents) ? state.turnEvents as Array<Record<string, unknown>> : [])
     .slice(-8)
@@ -191,6 +218,7 @@ function publicContext(snapshot: DatapadSnapshot) {
     forcePoints: state.forcePoints, destinyPoints: state.destinyPoints, darkSideScore: state.darkSideScore,
     campaignTimeMinutes: state.campaignTimeMinutes,
     journey: state.journey,
+    territory: { name: territory.name, region: territory.region, worldStatus: "worldStatus" in territory ? territory.worldStatus : null },
     credits: state.credits, bankCredits: state.bankCredits, physicalCredits: state.creditsCriminal,
     currencyLedger: "The legacy delta field creditsCriminal stores PHYSICAL GALACTIC CREDIT CHIPS, not illegal or underworld currency. Inventory chips describe this same balance, never additional money. Debit it once when explicitly paying in physical chips.", notoriety: state.notoriety,
     properties: state.properties, ships: state.ships, investments: state.investments,
@@ -579,6 +607,26 @@ function resolvedCommercialProgressNarration(snapshot: DatapadSnapshot, action: 
   };
 }
 
+/** A final safety net for a failed *format* draft of a routine service question.
+ * It only applies at an established service counter after the provider returned
+ * drafts, and never claims a booked appointment, price, item, or payment.
+ * Actual provider outages still preserve the unresolved turn for retry.
+ */
+function resolvedServiceInquiryNarration(snapshot: DatapadSnapshot, action: string) {
+  const location = String(snapshot.gameState.location || "").trim();
+  const scene = String((snapshot.gameState.scene as { summary?: unknown } | undefined)?.summary || "");
+  if (!/\b(?:counter|clerk|desk|shop|lobby|atelier|design house|office|clinic|reception|workroom|guesthouse)\b/i.test(location + " " + scene)) return null;
+  const scheduling = /\b(?:appointments?|bookings?|schedule|fittings?|consultations?|commissions?)\b/i.test(action);
+  if (!scheduling) return null;
+  const result = "The attendant explains the procedure: a commission or appointment request is sent with the intended work and a preferred day to the person responsible for scheduling. That person must confirm an available time before any appointment is booked. No time, price, or acceptance is promised.";
+  return {
+    provider: "local-safe-fallback" as const,
+    model: "service-inquiry-receipt",
+    finishReason: "stop",
+    content: `## LOCATION\n${location}\n\n## SCENE\nAt ${location}, D'mir remains at the established service desk after asking his question. The attendant turns to the immediate scheduling inquiry; the surrounding business continues while the two remain in the same place. No belongings, payments or access rights change hands.\n\n## GM ADJUDICATION\nAn ordinary request for an appointment procedure is conversation, not an accepted commission or a Persuasion challenge. No Saga skill check is needed.\n\n## GAMEPLAY RESULT\n${result}\n\n## SAGA CHECK\nNo check required.\n\n## STATE UPDATE\nNo persistent change. No appointment or charge is recorded.\n\n## PLAYER OPTIONS\nA. Give the attendant the proposed commission details.\nB. Ask when the person responsible for scheduling can confirm availability.\nYou may declare another action.\n<!--STATE:{}-->`,
+  };
+}
+
 /** Removes UI retry wording before it reaches the authoritative action planner. */
 export function normalizeTurnAction(value: string) {
   return String(value || "")
@@ -628,9 +676,13 @@ function hasPersistentTurnProgress(delta: Record<string, unknown> | null | undef
 const noProgressResult = /\b(?:no (?:new |useful |concrete )?(?:information|lead|progress|agreement|concession|referral|commitment)|without (?:a |any )?(?:lead|commitment|agreement|progress)|no closer to|environment remains unchanged|figure it out yourself|leav(?:e|ing) you without a lead)\b/i;
 
 export function assertResolvedOutcome(narration: string, roll: Record<string, unknown> | null, delta?: Record<string, unknown> | null, action = "") {
+  const resolved = sectionBody(narration, "GAMEPLAY RESULT");
+  if (roll?.outcome === "success" && /\b(?:(?:your|the) (?:objective|attempt|check) (?:fails|failed|is unsuccessful)|you fail(?:ed)? (?:the check|your attempt|to (?:notice|detect|spot|perceive|identify)))\b/i.test(resolved)) {
+    throw new GmTurnError("The authoritative check succeeded, but the result explicitly calls that attempt a failure. Resolve the stated successful check; a successful inspection may truthfully find no hidden feature without calling the check failed.", 502);
+  }
   if (roll?.outcome !== "success" || !["Persuasion", "Deception", "Gather Information"].includes(String(roll.label))) return;
   const result = sectionBody(narration, "GAMEPLAY RESULT");
-  if (noProgressResult.test(result) || /\b(?:(?:your|the) (?:deception|persuasion|attempt|request) (?:fails|is rejected|has no effect)|(?:sees?|saw) through (?:your|the) (?:lie|deception)|(?:roll|check) (?:is|was) invalid)\b/i.test(result)) {
+  if (noProgressResult.test(result) || /\b(?:(?:your|the) (?:deception|persuasion|attempt|request) (?:fails|is rejected|has no effect)|does not accept your (?:offer|proposal|request)|(?:sees?|saw) through (?:your|the) (?:lie|deception)|(?:roll|check) (?:is|was) invalid)\b/i.test(result)) {
     throw new GmTurnError("The social check succeeded, but the draft denied its stated objective. Rewrite the concrete success without granting unrelated benefits.", 502);
   }
   const soughtDurableResult = /\b(?:find|locate|recruit|hire|employ|work for me|lead|referr|information|direction|agreement|commitment|contact|pilot|captain|broker)\b/i.test(action);
@@ -827,6 +879,7 @@ export function normalizeCampaignSections(
   narration: string,
   delta: Record<string, unknown> | null,
   savedLocation: unknown,
+  anchorStaticLocation = false,
 ) {
   const headings = ["LOCATION", "SCENE", "GM ADJUDICATION", "GAMEPLAY RESULT", "SAGA CHECK", "STATE UPDATE", "PLAYER OPTIONS"] as const;
   const inlineLocation = narration.replace(
@@ -840,14 +893,25 @@ export function normalizeCampaignSections(
   for (let index = 0; index < markers.length; index += 1) {
     const match = markers[index];
     const name = match[1].toUpperCase();
-    if (sections.has(name)) return narration; // Duplicate headings need a real rewrite.
+    if (sections.has(name)) {
+      // Duplicate location labels are presentation noise on a stationary turn;
+      // preserve strict rejection of duplicate outcome and rules sections.
+      if (name === "LOCATION" && anchorStaticLocation) continue;
+      return narration;
+    }
     const start = (match.index || 0) + match[0].length;
     const end = index + 1 < markers.length ? markers[index + 1].index! : inlineLocation.length;
     sections.set(name, inlineLocation.slice(start, end).trim());
   }
   // Don't silently discard arbitrary text preceding the first section.
   if (inlineLocation.slice(0, markers[0].index || 0).trim()) return narration;
-  if (!sections.has("LOCATION")) {
+  if (anchorStaticLocation) {
+    // An NPC answer cannot move the player. Repair only the displayed location;
+    // the original delta still passes through authoritative movement checks.
+    const verifiedLocation = String(savedLocation || "").trim();
+    if (!verifiedLocation) return narration;
+    sections.set("LOCATION", verifiedLocation);
+  } else if (!sections.has("LOCATION")) {
     const verifiedLocation = String(delta?.location || savedLocation || "").trim();
     if (!verifiedLocation) return narration;
     sections.set("LOCATION", verifiedLocation);
@@ -1038,9 +1102,13 @@ export function assertMovementSceneProgress(
   currentLocation?: unknown,
 ) {
   if (!action || !permitsPhysicalMovement(action)) return;
+  const result = sectionBody(narration, "GAMEPLAY RESULT");
+  const localEndpoint = result.match(/\byou\s+(?:return|move|walk|cross|go|step)\s+(?:back\s+)?(?:to|into|through|across)\s+(?:the\s+)?(front counter|rear workroom|showroom|workshop|office|reception|lobby|corridor)\b/i)?.[1];
+  if (localEndpoint && !normalizedKey(delta?.location || currentLocation).includes(localEndpoint.toLowerCase())) {
+    throw new GmTurnError("The movement reached a different position within the venue, but the saved location does not name that endpoint. Rewrite LOCATION and delta.location to the confirmed endpoint, preserving its planet and venue. Do not send the character back to the prior room.", 502);
+  }
   if (delta?.location && delta.location !== currentLocation) return;
   const scene = extractSceneNarration(narration);
-  const result = sectionBody(narration, "GAMEPLAY RESULT");
   // Kiosks, counters and stalls are local waypoints within the saved concourse.
   // Still require a delta for travel to a distinct place such as a new port or ship.
   const completedNamedPlace = /\byou\s+(?:arrive(?:\s+at)?|reach|enter|exit|leave|[^.!?\n]{0,100}\band\s+(?:arrive\s+(?:at|in)|reach))\b[^.!?\n]{0,100}\b(?:apartment|residence|home|docking bay|spaceport|district|city|planet|ship|shuttle|transport)\b/i.test(`${scene}\n${result}`);
@@ -1302,7 +1370,10 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   }
   enterPhase("plan-commerce");
   const trade = ordinaryTrade ? planConversationTrade(semantic?.acceptedOfferId ? action : resolvedIntent, currentSnapshot.gameState, input.turnId, semantic?.acceptedOfferId) : null;
-  const routineCommerce = semantic ? !semantic.checkNeeded && ["commerce", "dialogue"].includes(semantic.intent) : isRoutineCommerce(action, currentSnapshot.gameState.location);
+  const routineServiceInquiry = mode === "play" && isRoutineServiceInquiry(action);
+  // Simple informational questions cannot become Persuasion rolls because an
+  // upstream intent draft mislabeled them as contested dialogue.
+  const routineCommerce = routineServiceInquiry || (semantic ? !semantic.checkNeeded && ["commerce", "dialogue"].includes(semantic.intent) : isRoutineCommerce(action, currentSnapshot.gameState.location));
   const merchant = sceneMerchant(currentSnapshot);
   // Shared by the browser and GPT controller, including historical quote repairs.
   const encounter = activeCombat(currentSnapshot.gameState as Record<string, unknown>);
@@ -1371,8 +1442,17 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   const combatInstruction = authoritativeResolution ? `\n\nAUTHORITATIVE MECHANICS UPDATE:\n${JSON.stringify({ summary: authoritativeResolution.summary, combat: authoritativeResolution.combat || null, additionalRolls: authoritativeResolution.rolls, playerHealthDelta: authoritativeResolution.playerHealthDelta, playerConditionDelta: authoritativeResolution.playerConditionDelta, experienceAward: authoritativeResolution.experienceAward, stateDelta: authoritativeResolution.stateDelta || {} })}\nThis update is server-owned. Narrate it exactly without inventing another attack, damage roll, movement, action, victory, Force effect, or reward. An opening attack declaration starts initiative only; it does not also resolve the attack. Reflect remaining player actions and stop for the player's next declaration.` : "";
   let system = mode === "ooc" ? `You are the campaign Game Master. Answer the player's out-of-character rules or character-status question concisely from authoritative saved state. Distinguish confirmed state from rumors or prior narrative claims. Do not advance time, narrate a new scene, change state, or output a STATE block.\n\nCURRENT CAMPAIGN STATE:\n${publicContext(currentSnapshot)}`
     : mode === "context" ? `The player supplied character background/context, not an in-world action. Acknowledge it briefly, do not roll, do not advance the scene, and do not invent additions. Do not output a STATE block.\n\nCURRENT CAMPAIGN STATE:\n${publicContext(currentSnapshot)}`
-    : `${GM_SYSTEM}${rollInstruction}${combatInstruction}${authorityInstruction}${creatorInstruction}\n\nTURN CONTRACT: Suggestions must change with the current scene, visible interactables, injuries, carried equipment, trained skills and remaining combat actions. Use 2-4 A-D possible attempts, never a static menu, guaranteed outcome, secret clue or unearned Force technique. Only suggest objects already visible in this scene or recorded in state. LOCATION names the end-of-turn place and matches the ledger, not a stale district label. SCENE shows D'mir's established visible condition and the declared action meeting the immediate environment before mechanics. GM ADJUDICATION accepts the executable intent; an asserted destination is a goal, not a reason to refuse the attempt. GAMEPLAY RESULT must create a playable new beat even on failure. SAGA CHECK contains only server-owned dice or "No check required." Meditation and terminal interaction are not travel. Negated actions never occur. Travel reaches a concrete observable boundary, not an endless generic transit summary. Historical NPCs and locations in old receipts are not present at the CURRENT planet or location unless authoritative state places them there; never replay an old dock, ship, or contact as the destination of generic movement. PRIOR TURN OUTCOME messages omit old scene prose: use them only for continuity, never as a writing template. The saved scene summary identifies the present beat but its wording must not be copied.\n\nCURRENT AUTHORITATIVE CAMPAIGN STATE:\n${publicContext(currentSnapshot)}`;
+    : `${gmSystemForCharacter(currentSnapshot.character as Record<string, unknown>, currentSnapshot.gameState)}${rollInstruction}${combatInstruction}${authorityInstruction}${creatorInstruction}\n\nTURN CONTRACT: Suggestions must change with the current scene, visible interactables, injuries, carried equipment, trained skills and remaining combat actions. Use 2-4 A-D possible attempts, never a static menu, guaranteed outcome, secret clue or unearned Force technique. Only suggest objects already visible in this scene or recorded in state. LOCATION names the end-of-turn place and matches the ledger, not a stale district label. SCENE shows the active character's established visible condition and the declared action meeting the immediate environment before mechanics. GM ADJUDICATION accepts the executable intent; an asserted destination is a goal, not a reason to refuse the attempt. GAMEPLAY RESULT must create a playable new beat even on failure. SAGA CHECK contains only server-owned dice or "No check required." Meditation and terminal interaction are not travel. Negated actions never occur. Travel reaches a concrete observable boundary, not an endless generic transit summary. Historical NPCs and locations in old receipts are not present at the CURRENT planet or location unless authoritative state places them there; never replay an old dock, ship, or contact as the destination of generic movement. PRIOR TURN OUTCOME messages omit old scene prose: use them only for continuity, never as a writing template. The saved scene summary identifies the present beat but its wording must not be copied.\n\nCURRENT AUTHORITATIVE CAMPAIGN STATE:\n${publicContext(currentSnapshot)}`;
   let response: Awaited<ReturnType<typeof invokeNvidia>> | null = null;
+  if (mode === "play") {
+    const currentIdentity = String((currentSnapshot.character as Record<string, unknown>).name || "");
+    const lore = canonicalNpcContext(currentIdentity + "\n" + action);
+    if (lore.length) system += `\n\nCONFIDENTIAL GM CAST CONTINUITY (150 ABY; NOT a player-facing disclosure): ${JSON.stringify(lore)}\nThese names are GOC-specific campaign canon compatible with Star Wars Legends, not external franchise facts. Source documents describe potential 200 ABY futures; never promote anyone to a future title in 150 ABY, make unsupported secrets public, grant powers by narration, or force a cameo without an established scene. The active character's declared action and location remain the authority.`;
+  }
+  if (mode === "play" && isDmirPrimaryCampaign(actor, currentSnapshot.character as Record<string, unknown>)) {
+    const storyCast = dmirSceneNpcContext(action, currentSnapshot.gameState);
+    if (storyCast.length) system += `\n\nDMIR HOMEBREW CHARACTER CONTAINERS (GM CONFIDENTIAL): ${JSON.stringify(storyCast)}\nNPCs have independent motivations; presence and contact must be confirmed through play. Never grant player knowledge of private facts, invent a meeting, resurrect a dead character, or pre-complete a future story.`;
+  }
   if (mode === "play") system += `\n\nCURRENT ACTION TO RESOLVE NOW: ${action}\n${lastConfirmedBeat}\nCURRENT ACTION PRIORITY: Follow this declaration, not any NPC demand from an earlier scene. When public movement is unopposed and access is established, resolve movement and record the new end location. When an action includes unpriced shopping or sales, present exact prices and offers rather than silently charging, granting items, or forcing an unrelated NPC confrontation; resolve the other independently executable substeps as far as the confirmed state permits. Never invent a second payment for an already receipted purchase.`;
   if (mode === "play" && isReadOnlyGoodsInspection(action)) system += `\n\nREAD-ONLY MERCHANDISE INSPECTION: Resolve the declared examination only. Describe visible condition, seals, labels, packaging, and expiration markings supported by the scene. Do not deduct or grant credits; do not add, remove, consume, sell, equip, or transfer an item; do not narrate a completed transaction. Temporary handling remains with the current owner. Use an empty material ledger unless an authoritative mechanic supplied above requires a non-material change.`;
   if (mode === "play" && isMerchantTermsChallenge(action)) system += `\n\nPAYMENT-TERMS DISPUTE: The player is challenging why the seller changed the previously stated payment conditions. The last confirmed merchant response is history, not fresh dialogue: ${priorResult.slice(0, 900)}. Have the merchant address the change in terms directly, acknowledging the earlier instruction and giving an established or plausible explanation, or explicitly declining to explain with a concrete world reaction. The merchant may remain uncooperative; do not force acceptance, reverse past turns, create a new payment verification obstacle without grounded evidence, or repeat the previous explanation verbatim. Any actual sale must pass the authoritative trade-and-ledger checks.`;
@@ -1383,6 +1463,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   if (transitArrival) system += `\n\nCONFIRMED TRANSPORT TRANSIT — ARRIVAL REQUEST: The current saved journey establishes transit to ${transitArrival.destination}. Older completed journeys and departure scenes are history. The player has chosen to wait until arrival. Resolve this existing flight to ${transitArrival.destination}, without requiring another departure order or payment. Narrate arrival/approach, use an end-of-turn LOCATION beginning "${transitArrival.destination}", and save the same location plus positive, plausible timeAdvanceMinutes. No unrelated credits, equipment, or XP awards. A repeated departure or in-flight scene is not a resolved arrival.`;
   if (mode === "play") system += `\n\n${conversationTradeInstruction(trade)}\n${routineCommerce ? "ORDINARY INTERACTION: No check is required for a normal question or stock/price inquiry. Answer the actual question as the CURRENT interlocutor in the saved scene. A broad market location does not mean a clothing stall. Resolve short follow-ups against the last exchange, including lodging duration, privacy, meals and prices. Quote new terms before charging; do not invent procedural refusal without an established reason." : ""}\nSERIALIZATION: End with exactly one HTML STATE comment containing strict JSON, with double-quoted keys and string values. Multiple merchandise items use one inventoryAdd array, never duplicate keys. A no-change example is <!--STATE:{}-->. Record every concrete priced offer in tradeOfferAdd, including services as named entitlements tagged service with the agreed duration and amenities. Quotes grant nothing yet. LOCATION names the place at the END of this action and must match delta.location when declared travel changes it, or the saved location otherwise.`;
   if (mode === "play") system += `\n${LEASE_LEDGER_INSTRUCTION}\n${QUOTE_COMPONENT_INSTRUCTION}`;
+  if (mode === "play" && !input.openScene) system += `\nHOLONET WORLD UPDATES: Resolve the current 150 ABY territory using the saved atlas entry. When a turn establishes a public development, or significant elapsed time produces a plausible public bulletin, record that bulletin in publicNewsAdd with headline, facts, an attributed in-universe source, and location. Use the planet name for a local report, its region name for a territorial report, or "Galactic" for genuinely galaxy-wide news. Do not recycle old headlines, announce an unestablished war or ruler as canonical fact, reveal private conversations or undiscovered secrets, or describe player purchases as galaxy-wide news. Reports are campaign developments, not real-world news. Destroyed worlds cannot have intact planetary ports; damaged inhabited worlds are not automatically destroyed. Canon imports must respect the established Legends-led continuity.`;
   let parsed: ReturnType<typeof parseEngineResponse> | null = null;
   let delta: Record<string, unknown> | null = null;
   let validationError: unknown = null;
@@ -1401,9 +1482,9 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       response = await invokeNvidia({
         purpose: "gm",
         system,
-        timeout_ms: providerBudget(24_000),
+        timeout_ms: providerBudget(55_000),
         sourceQuery: action || String(currentSnapshot.gameState.location || "opening scene"),
-        max_tokens: mode === "ooc" ? 768 : 2400,
+        max_tokens: mode === "ooc" ? 768 : Math.min(4096, Math.max(1200, Math.round(Number(process.env.NVIDIA_GM_MAX_TOKENS) || 3072)) + (attempt > 0 ? 512 : 0)),
         messages: [...history, { role: "user", content: userMessage }, ...(correction ? [correction] : [])],
       });
     } catch (error) {
@@ -1411,7 +1492,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       fallbackReason = "provider";
       console.warn("[api/gm] drafting failed", { turnId: input.turnId, attempt: attempt + 1, status: error.status, message: error.message });
       recordDraftFailure(turnLifecycle, attempt + 1, "provider", error);
-      if (error.status === 429) throw error;
+      if (error.status === 429 || error.status === 504) throw error;
       validationError = error;
       // An outage is not an in-world event. Keep the action and roll for retry.
       continue;
@@ -1449,7 +1530,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       };
       if (mode === "play") {
         parsed = { ...parsed, clean: ensurePlayerOptions(normalizePlayerOptions(parsed.clean), currentSnapshot.gameState, currentSnapshot.character as Record<string, unknown>, action) };
-        parsed = { ...parsed, clean: normalizeCampaignSections(parsed.clean, parsed.delta as Record<string, unknown> | null, currentSnapshot.gameState.location) };
+        parsed = { ...parsed, clean: normalizeCampaignSections(parsed.clean, parsed.delta as Record<string, unknown> | null, currentSnapshot.gameState.location, !permitsLocationChange(resolvedIntent) && semantic?.intent !== "travel" && !transitArrival && !(parsed.delta as Record<string, unknown> | null)?.location) };
       }
       if (mode === "play") assertCampaignResponseStructure(parsed.clean);
       if (mode === "play") assertNarrativeFocus(parsed.clean, action);
@@ -1539,12 +1620,27 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       assertMechanicalNarration(parsed.clean, null);
       assertMaterialAuthority(delta, action, null, currentSnapshot.gameState as Record<string, unknown>, null);
       validationError = null;
+    } else if (routineServiceInquiry && !roll && !trade && response?.content && response.provider !== "local-safe-fallback" && resolvedServiceInquiryNarration(currentSnapshot, action)) {
+      // Three malformed GM drafts must not strand a harmless service inquiry.
+      // Use only established service-desk context and a zero-mutation receipt.
+      const recovered = resolvedServiceInquiryNarration(currentSnapshot, action)!;
+      fallbackReason = "validation";
+      response = recovered;
+      parsed = parseEngineResponse(recovered.content, { requireState: true });
+      delta = {};
+      assertCampaignResponseStructure(parsed.clean);
+      assertNarrativeFocus(parsed.clean, action);
+      assertMechanicalNarration(parsed.clean, null);
+      assertMaterialAuthority(delta, action, null, currentSnapshot.gameState as Record<string, unknown>);
+      assertNarrativeLedgerConsistency(parsed.clean, delta, resolvedIntent);
+      assertNoProgressLoop(parsed.clean, resolvedIntent, delta, currentSnapshot.gameState.location, priorResult);
+      validationError = null;
     } else if (mode === "play" && isCommercialTravelProgressAction(resolvedIntent)) {
       fallbackReason = "validation";
       response = resolvedCommercialProgressNarration(currentSnapshot, resolvedIntent, roll);
       parsed = parseEngineResponse(response.content, { requireState: true });
       parsed = { ...parsed, clean: ensurePlayerOptions(normalizePlayerOptions(parsed.clean), currentSnapshot.gameState, currentSnapshot.character as Record<string, unknown>, action) };
-      parsed = { ...parsed, clean: normalizeCampaignSections(parsed.clean, parsed.delta as Record<string, unknown> | null, currentSnapshot.gameState.location) };
+      parsed = { ...parsed, clean: normalizeCampaignSections(parsed.clean, parsed.delta as Record<string, unknown> | null, currentSnapshot.gameState.location, !permitsLocationChange(resolvedIntent) && semantic?.intent !== "travel" && !transitArrival && !(parsed.delta as Record<string, unknown> | null)?.location) };
       assertCampaignResponseStructure(parsed.clean);
       assertNarrativeFocus(parsed.clean, action);
       assertActionConstraints(parsed.clean, resolvedIntent);
@@ -1577,7 +1673,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       parsed = { ...parsed, clean: alignMechanicalResult(sanitizeGmNarration(parsed.clean), roll) };
       if (mode === "play") {
         parsed = { ...parsed, clean: ensurePlayerOptions(normalizePlayerOptions(parsed.clean), currentSnapshot.gameState, currentSnapshot.character as Record<string, unknown>, action) };
-        parsed = { ...parsed, clean: normalizeCampaignSections(parsed.clean, parsed.delta as Record<string, unknown> | null, currentSnapshot.gameState.location) };
+        parsed = { ...parsed, clean: normalizeCampaignSections(parsed.clean, parsed.delta as Record<string, unknown> | null, currentSnapshot.gameState.location, !permitsLocationChange(resolvedIntent) && semantic?.intent !== "travel" && !transitArrival && !(parsed.delta as Record<string, unknown> | null)?.location) };
         assertCampaignResponseStructure(parsed.clean);
         assertNarrativeFocus(parsed.clean, action);
       }
@@ -1606,6 +1702,9 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   if (!response || !parsed) throw new GmTurnError("The GM could not produce a valid authoritative response. No outcome was saved; retry the turn.", 502);
   // All recovery branches must satisfy the same action contract before commit.
   if (mode === "play") {
+    assertResolvedOutcome(parsed.clean, roll, delta, resolvedIntent);
+    assertNarratedLocation(parsed.clean, delta, currentSnapshot.gameState.location);
+    assertMovementSceneProgress(parsed.clean, resolvedIntent, roll, delta, currentSnapshot.gameState.location);
     const waitError = eventWaitFailure(action, sectionBody(parsed.clean, "GAMEPLAY RESULT"), delta);
     if (waitError) throw new GmTurnError(waitError, 502);
     if (transitArrival) {
@@ -1643,6 +1742,10 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   messages.push({ role: "assistant", content: parsed.clean, turnId: input.turnId, provider: response.provider, model: response.model, fallbackReason, fallbackDetail });
   const snapshot: DatapadSnapshot = { ...finalized, messages };
   if (mode === "play") snapshot.gameState = { ...snapshot.gameState, sceneMerchant: sceneMerchant(snapshot) };
+  if (mode === "play") snapshot.gameState = recordVisibleSceneNpcs(snapshot.gameState, parsed.clean, input.turnId);
+  if (mode === "play" && isDmirPrimaryCampaign(actor, snapshot.character as Record<string, unknown>)) {
+    snapshot.gameState = updateDmirNpcContinuity(snapshot.gameState, delta, input.turnId, action);
+  }
   enterPhase("persist");
   const persisted = saveAuthoritativeDatapad(actor, accountId, input.revision, snapshot);
   const receipt = commitTurnLifecycle(turnLifecycle, persisted.revision, persisted.updatedAt);

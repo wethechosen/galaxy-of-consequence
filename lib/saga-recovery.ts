@@ -8,6 +8,17 @@ export function applyResidenceRest(current: DatapadSnapshot, propertyId: string)
   const state = current.gameState;
   const holding = Array.isArray(state.properties) ? state.properties.find(item => item.id === propertyId) : null;
   if (!holding || holding.location !== state.location || !/lease|apartment|residence|home/i.test(String(holding.type || holding.name))) throw recoveryError("You must be at your recorded residence to rest here.");
+  const status = String(holding.status || "").trim().toLowerCase();
+  const lease = holding.lease && typeof holding.lease === "object" ? holding.lease as Record<string, unknown> : null;
+  const leaseEnd = lease?.endsAtCampaignMinute;
+  const nowMinute = Number(state.campaignTimeMinutes || 0);
+  if (["revoked", "expired", "evicted", "sold", "lost", "terminated", "inactive"].includes(status)
+    || (typeof leaseEnd === "number" && Number.isFinite(leaseEnd) && nowMinute >= leaseEnd)) {
+    throw recoveryError("Access to this residence is no longer active. Establish permission or renew the tenancy before resting here.", 409);
+  }
+  if (typeof leaseEnd === "number" && Number.isFinite(leaseEnd) && nowMinute + 480 > leaseEnd) {
+    throw recoveryError("The tenancy ends before eight uninterrupted hours can be completed. Renew access before resting here.", 409);
+  }
   const scene = state.scene && typeof state.scene === "object" ? state.scene as Record<string, unknown> : {};
   if ((state.combat && typeof state.combat === "object" && (state.combat as Record<string, unknown>).status === "active") || scene.restInterrupted === true || scene.immediateThreat === true) throw recoveryError("An active threat prevents eight uninterrupted hours here. Resolve the scene before resting.", 409);
   if (current.character?.species === "Droid" || current.character?.living === false) throw recoveryError("Droids require repair rather than natural healing.");

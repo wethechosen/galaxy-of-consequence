@@ -15,6 +15,7 @@ vi.mock('./original-provider', async (importOriginal) => ({
 const databases: ReturnType<typeof openStorage>[] = [];
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   provider.mockReset();
   databases.splice(0).forEach((db) => db.close());
 });
@@ -121,6 +122,7 @@ function contextFrom(request: NvidiaRequest) {
 
 describe('authoritative GM continuity and unavailable drafting', () => {
   it.skipIf(process.env.GOC_LIVE_NVIDIA !== '1')('live NVIDIA arrival commits and reloads in an isolated fixture', async () => {
+    vi.stubEnv('CAMPAIGN_DB_PATH', ':memory:');
     const { actor, db, initial } = setup();
     const location = 'Taris → Bonadan — aboard the YT-1300 freighter';
     initial.gameState.location = location;
@@ -176,6 +178,17 @@ describe('authoritative GM continuity and unavailable drafting', () => {
     expect(result.snapshot.gameState.credits).toBe(before.gameState.credits);
     expect(result.roll).toBeNull();
     expect(provider).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves a provider timeout without three repeated drafting requests or a save change', async () => {
+    const { actor, db } = setup();
+    const before = readDatapad(actor, null, db);
+    mockProvider(() => { throw new NvidiaProviderError('NVIDIA took too long to respond. No outcome was applied; retry the turn.', 504); });
+    await expect(runGmTurn(actor, { turnId: 'timeout-preservation-01', revision: 1, action: QUESTION })).rejects.toMatchObject({ status: 504 });
+    expect(provider).toHaveBeenCalledTimes(2); // One interpretation, one bounded draft.
+    expect(readDatapad(actor, null, db)).toEqual(before);
+    const draft = provider.mock.calls.map(([request]) => request as NvidiaRequest).find(request => request.sourceQuery);
+    expect(draft?.timeout_ms).toBeGreaterThan(24_000);
   });
 
   it('keeps gameplay connected when the third safe draft only repeats scene framing', async () => {
@@ -321,5 +334,108 @@ describe('authoritative GM continuity and unavailable drafting', () => {
       ...MONTHLY_OFFER, id: 'offer:continuity-month-01:0', sourceTurnId: 'continuity-month-01', location: LOCATION, status: 'open',
     });
     expect(readDatapad(actor, null, db).snapshot).toEqual(result.snapshot);
+  });
+});
+
+describe('Nuvorren commission appointment regression', () => {
+  it('answers a clerk without an invented roll, a duplicate LOCATION, or repeated retries', async () => {
+    const { actor, db, initial } = setup();
+    const savedLocation = 'Bonadan — Nuvorren Design House, front counter';
+    const question = 'How do I set an appointment for commission?';
+    initial.gameState.location = savedLocation;
+    initial.gameState.tradeOffers = [];
+    initial.gameState.scene = {
+      id: 'nuvorren-counter', location: savedLocation, beat: 7,
+      action: 'I speak to the clerk',
+      summary: 'D\'mir approaches the front counter at Nuvorren Design House to ask about commissioning a bespoke cortosis-weave executive garment.',
+    };
+    initial.messages = [{ role: 'user', content: 'I approach the clerk.' }];
+    saveAuthoritativeDatapad(actor, null, 1, initial, db);
+    const before = readDatapad(actor, null, db);
+    provider.mockImplementation(async (request: NvidiaRequest) => {
+      if (!request.sourceQuery) {
+        return {
+          provider: 'nvidia', model: 'intent-test', finishReason: 'stop',
+          content: JSON.stringify({ intent: 'dialogue', canonicalAction: question, declaredSpan: question, checkNeeded: true, skill: 'Persuasion', rationale: 'Incorrectly classified by draft model.', travelTarget: null }),
+        };
+      }
+      return {
+        provider: 'nvidia', model: 'nuvorren-dialogue-test', finishReason: 'stop',
+        content: `## LOCATION
+Bonadan — Nuvorren Design House, rear workroom
+
+## LOCATION
+Bonadan — Nuvorren Design House, front hallway
+
+## SCENE
+D'mir stands directly across the polished counter from the clerk. A commission ledger lies open beside fine cloth swatches, and an assistant works behind a frosted glass partition. The clerk pauses to address his question without moving him from the counter.
+
+## GM ADJUDICATION
+Asking for an appointment procedure is ordinary conversation. No check is required, and the player has not booked a service or paid any credits.
+
+## GAMEPLAY RESULT
+The clerk explains that a client first submits the intended design and a preferred appointment day, after which the director confirms whether a bespoke consultation can be scheduled. No appointment is booked yet.
+
+## SAGA CHECK
+No check required.
+
+## STATE UPDATE
+No persistent change.
+
+## PLAYER OPTIONS
+A. Ask the clerk to forward the design for review.
+B. Request the commission director's available days.
+You may declare another action.
+<!--STATE:{}-->`,
+      };
+    });
+    const input = { turnId: 'nuvorren-appointment-regression', revision: 2, action: question };
+    const result = await runGmTurn(actor, input);
+    expect(result.roll).toBeNull();
+    expect(result.narration).toContain(`## LOCATION\n${savedLocation}`);
+    expect(result.narration.match(/^## LOCATION$/gm)).toHaveLength(1);
+    expect(result.narration).toContain('client first submits the intended design');
+    expect(result.snapshot.gameState.location).toBe(savedLocation);
+    expect(result.snapshot.gameState.credits).toBe(before.snapshot!.gameState.credits);
+    expect(result.snapshot.gameState.inventory).toEqual(before.snapshot!.gameState.inventory);
+    expect(result.snapshot.gameState.campaignTimeMinutes).toBe(before.snapshot!.gameState.campaignTimeMinutes);
+    expect(result.snapshot.character?.experience).toBe(before.snapshot!.character?.experience);
+    expect(provider).toHaveBeenCalledTimes(2); // One interpreter and one GM draft, not 3 failed drafts.
+    expect(readDatapad(actor, null, db).revision).toBe(3);
+    expect(await runGmTurn(actor, input)).toEqual(result);
+    expect(provider).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('service-dialogue validation exhaustion', () => {
+  it('commits a safe procedural answer after three unusable service drafts, without currency or XP changes', async () => {
+    const { actor, db } = setup();
+    const question = 'How do I set an appointment for commission?';
+    const before = readDatapad(actor, null, db);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    provider.mockImplementation(async (request: NvidiaRequest) => {
+      if (!request.sourceQuery) return {
+        provider: 'nvidia', model: 'intent-test', finishReason: 'stop',
+        content: JSON.stringify({ intent: 'dialogue', canonicalAction: question, declaredSpan: question, checkNeeded: false, skill: null, rationale: 'A simple booking procedure inquiry.', travelTarget: null }),
+      };
+      return { provider: 'nvidia', model: 'broken-service-draft', finishReason: 'stop',
+        content: '## LOCATION\nWrong rear workroom\n\n## SCENE\nThe clerk notices the question.\n<!--STATE:{}-->' };
+    });
+    const input = { turnId: 'service-inquiry-safe-exhaustion', revision: 1, action: question };
+    const result = await runGmTurn(actor, input);
+    expect(result.provider).toBe('local-safe-fallback');
+    expect(result.model).toBe('service-inquiry-receipt');
+    expect(result.fallbackReason).toBe('validation');
+    expect(result.narration).toContain('person responsible for scheduling');
+    expect(result.roll).toBeNull();
+    expect(result.snapshot.gameState.credits).toBe(before.snapshot!.gameState.credits);
+    expect(result.snapshot.gameState.inventory).toEqual(before.snapshot!.gameState.inventory);
+    expect(result.snapshot.gameState.location).toBe(before.snapshot!.gameState.location);
+    expect(result.snapshot.character?.experience).toBe(before.snapshot!.character?.experience);
+    expect(result.snapshot.gameState.tradeReceipts || []).toHaveLength(0);
+    expect(provider).toHaveBeenCalledTimes(4); // One interpretation, three failed drafts, no fourth model call.
+    expect(readDatapad(actor, null, db).revision).toBe(2);
+    expect(await runGmTurn(actor, input)).toEqual(result);
+    expect(provider).toHaveBeenCalledTimes(4);
   });
 });
