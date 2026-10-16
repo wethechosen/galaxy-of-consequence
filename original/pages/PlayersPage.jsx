@@ -21,7 +21,7 @@ export default function PlayersPage() {
     <main className="flex-1 overflow-y-auto m-3 gc-glass rounded-2xl p-6">
       <p className="text-[10px] tracking-[0.2em] text-[#ff7a1a] mb-2">CREW & CONTACTS</p>
       <h1 className="gc-display text-3xl font-bold text-[#f2f0ea]">PLAYER ROSTER</h1>
-      <p className="text-sm text-[#8b93a3] mt-2 mb-6">Local test-session roster. Presence expires automatically when a browser session stops reporting.</p>
+      <p className="text-sm text-[#8b93a3] mt-2 mb-6">This tab shows registered player accounts only. GM-controlled characters are in the NPCS tab. Presence expires automatically when a browser session stops reporting.</p>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {registeredUsers.filter((entry) => entry.role !== "admin").map((entry) => {
           const stored = (() => { try { return JSON.parse(localStorage.getItem(`gc_character:${entry.email}`) || "null"); } catch { return null; } })();

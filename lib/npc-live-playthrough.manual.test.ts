@@ -11,9 +11,11 @@ const declarations = [
   "I approach the prison librarian duty counter and ask which public study materials I may consult today.",
   "I review the public catalogue display without requesting privileged or personal records.",
   "I ask the duty clerk what the procedure is for reserving a public catalogue workstation.",
+  "I ask whether I can make an accurate, public catalogue integrity report through the normal prison library procedure.",
+  "I submit a truthful written public-catalogue integrity report following the approved procedure. I disclose no private financial records or other prisoners' information.",
 ];
 
-describe.skipIf(!enabled)("LIVE NVIDIA / three decisions / Kelvek 147 ABY flashback", () => {
+describe.skipIf(!enabled)("LIVE NVIDIA / five decisions / Kelvek 147 ABY flashback", () => {
   it("commits actual model-generated outcomes and rereads each preserved turn", async () => {
     const db = accountStore();
     const username = "npc-kelvek-live-test";
@@ -66,5 +68,5 @@ describe.skipIf(!enabled)("LIVE NVIDIA / three decisions / Kelvek 147 ABY flashb
       expect(replay.revision).toBe(record.revision);
       expect(readDatapad(actor,null,db).revision).toBe(record.revision);
     }
-  },180000);
+  },900000);
 });

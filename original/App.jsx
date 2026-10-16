@@ -7,6 +7,7 @@ import CharacterPage from "@/original/pages/CharacterPage";
 import PlayerPage from "@/original/pages/PlayerPage";
 import HudPage from "@/original/pages/HudPage";
 import PlayersPage from "@/original/pages/PlayersPage";
+import NpcsPage from "@/original/pages/NpcsPage";
 import CommsPage from "@/original/pages/CommsPage";
 import GmConsolePage from "@/original/pages/GmConsolePage";
 import Login from "@/original/pages/Login";
@@ -40,6 +41,7 @@ function AuthenticatedApp() {
       <Route path="/player" element={<PlayerPage />} />
       <Route path="/hud" element={<HudPage />} />
       <Route path="/players" element={<PlayersPage />} />
+      <Route path="/npcs" element={<NpcsPage />} />
       <Route path="/comms" element={<CommsPage />} />
       <Route path="/exchanges" element={<ExchangesPage />} />
       <Route path="/profile" element={<ProfilePage />} />

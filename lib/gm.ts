@@ -1463,7 +1463,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
         system,
         timeout_ms: providerBudget(55_000),
         sourceQuery: action || String(currentSnapshot.gameState.location || "opening scene"),
-        max_tokens: mode === "ooc" ? 768 : 2400,
+        max_tokens: mode === "ooc" ? 768 : Math.min(4096, Math.max(1200, Math.round(Number(process.env.NVIDIA_GM_MAX_TOKENS) || 3072)) + (attempt > 0 ? 512 : 0)),
         messages: [...history, { role: "user", content: userMessage }, ...(correction ? [correction] : [])],
       });
     } catch (error) {
