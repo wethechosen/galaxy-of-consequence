@@ -15,6 +15,7 @@ vi.mock('./original-provider', async (importOriginal) => ({
 const databases: ReturnType<typeof openStorage>[] = [];
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   provider.mockReset();
   databases.splice(0).forEach((db) => db.close());
 });
@@ -120,6 +121,76 @@ function contextFrom(request: NvidiaRequest) {
 }
 
 describe('authoritative GM continuity and unavailable drafting', () => {
+  it.skipIf(process.env.GOC_LIVE_NVIDIA !== '1')('live NVIDIA arrival commits and reloads in an isolated fixture', async () => {
+    vi.stubEnv('CAMPAIGN_DB_PATH', ':memory:');
+    const { actor, db, initial } = setup();
+    const location = 'Taris → Bonadan — aboard the YT-1300 freighter';
+    initial.gameState.location = location;
+    initial.gameState.tradeOffers = [];
+    initial.gameState.journey = { confirmed: true, origin: 'Taris', destination: 'Bonadan', status: 'in_transit' };
+    initial.gameState.scene = { location, summary: 'You are aboard a passenger freighter in hyperspace from Taris to Bonadan. Passage is already authorized. You are resting on the bunk. Arrival is the next scheduled event.', beat: 4 };
+    initial.messages = [];
+    saveAuthoritativeDatapad(actor, null, 1, initial, db);
+    const actual = await vi.importActual<typeof import('./original-provider')>('./original-provider');
+    provider.mockImplementation(actual.invokeNvidia);
+    const result = await runGmTurn(actor, { turnId: 'live-bonadan-fixture', revision: 2, action: 'I sleep until we arrive.' });
+    expect(result.snapshot.gameState.location).toMatch(/^Bonadan\b/);
+    expect(Number(result.snapshot.gameState.campaignTimeMinutes)).toBeGreaterThan(125);
+    expect(result.snapshot.gameState.journey).toMatchObject({ status: 'arrived' });
+    expect(result.snapshot.gameState.credits).toBe(5000);
+    expect(readDatapad(actor, null, db).snapshot).toEqual(result.snapshot);
+  }, 110_000);
+
+  it('rewrites the broken sleep result, commits arrival, and replays without advancing twice', async () => {
+    const { actor, db, initial } = setup();
+    const location = 'Taris → Bonadan — aboard the YT-1300 freighter';
+    initial.gameState.location = location;
+    initial.gameState.journey = { confirmed: true, origin: 'Taris', destination: 'Bonadan', status: 'in_transit' };
+    initial.gameState.scene = { location, summary: 'You are aboard the freighter departing Taris for Bonadan.', beat: 4 };
+    initial.messages = [];
+    saveAuthoritativeDatapad(actor, null, 1, initial, db);
+    let drafts = 0;
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mockProvider(() => ({ provider: 'nvidia', model: 'travel-test', finishReason: 'stop', content: ++drafts === 1
+      ? narration('You lie on your bunk in the passenger compartment, listening to the engines and the distant voices of the crew as the cabin lights fade for the journey.', 'You sleep until arrival. When you wake, the freighter is still docked, departure imminent.', {}, location)
+      : narration('The cabin lights brighten over your bunk as the engine note changes. Through the narrow port you see the industrial planet below, and the pilot announces the landing approach while you gather your belongings.', 'The freighter arrives at Bonadan. You wake as it docks at the passenger terminal.', { location: 'Bonadan — Passenger terminal', timeAdvanceMinutes: 240 }, 'Bonadan — Passenger terminal') }));
+    const input = { turnId: 'bonadan-wait-regression', revision: 2, action: 'i sleep until we arrive' };
+    const result = await runGmTurn(actor, input);
+    expect(drafts).toBe(2);
+    expect(result.snapshot.gameState.location).toBe('Bonadan — Passenger terminal');
+    expect(result.snapshot.gameState.campaignTimeMinutes).toBe(365);
+    expect(result.snapshot.gameState.journey).toMatchObject({ status: 'arrived', destination: 'Bonadan' });
+    expect(result.snapshot.gameState.credits).toBe(5000);
+    expect(readDatapad(actor, null, db).snapshot).toEqual(result.snapshot);
+    const replay = await runGmTurn(actor, input);
+    expect(replay.revision).toBe(result.revision);
+    expect(drafts).toBe(2);
+    expect(readDatapad(actor, null, db).snapshot?.gameState.campaignTimeMinutes).toBe(365);
+  });
+
+  it('answers a continuity correction without changing scene, clock, or resources', async () => {
+    const { actor, db } = setup();
+    const before = readDatapad(actor, null, db).snapshot!;
+    provider.mockResolvedValue({ provider: 'nvidia', model: 'correction-test', finishReason: 'stop', content: 'Your correction is a continuity question. The saved location remains the market; no action has been performed.' });
+    const result = await runGmTurn(actor, { turnId: 'correction-regression', revision: 1, action: 'are you broken? we were on Taris, Jax is taking me to Bonadan.' });
+    expect(result.snapshot.gameState.scene).toEqual(before.gameState.scene);
+    expect(result.snapshot.gameState.campaignTimeMinutes).toBe(before.gameState.campaignTimeMinutes);
+    expect(result.snapshot.gameState.credits).toBe(before.gameState.credits);
+    expect(result.roll).toBeNull();
+    expect(provider).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves a provider timeout without three repeated drafting requests or a save change', async () => {
+    const { actor, db } = setup();
+    const before = readDatapad(actor, null, db);
+    mockProvider(() => { throw new NvidiaProviderError('NVIDIA took too long to respond. No outcome was applied; retry the turn.', 504); });
+    await expect(runGmTurn(actor, { turnId: 'timeout-preservation-01', revision: 1, action: QUESTION })).rejects.toMatchObject({ status: 504 });
+    expect(provider).toHaveBeenCalledTimes(2); // One interpretation, one bounded draft.
+    expect(readDatapad(actor, null, db)).toEqual(before);
+    const draft = provider.mock.calls.map(([request]) => request as NvidiaRequest).find(request => request.sourceQuery);
+    expect(draft?.timeout_ms).toBeGreaterThan(24_000);
+  });
+
   it('keeps gameplay connected when the third safe draft only repeats scene framing', async () => {
     const { actor, db } = setup();
     vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -221,7 +292,7 @@ describe('authoritative GM continuity and unavailable drafting', () => {
     expect(interpretationRequests).toHaveLength(1);
     const interpretationText = interpretationRequests[0].messages[0].content;
     const interpretationContext = JSON.parse(interpretationText.split('CURRENT SCENE CONTEXT:\n')[1].split('\n\nPLAYER DECLARATION:\n')[0]);
-    expect(interpretationContext.scene.summary).toBe(GUESTHOUSE_SCENE);
+    expect(interpretationContext.scene.summary).toContain('guesthouse proprietor quotes five hundred credits');
     expect(interpretationContext.sceneMerchant).toBeNull();
     expect(interpretationContext.recentInteraction).toEqual(expect.arrayContaining([
       expect.objectContaining({ role: 'assistant', content: expect.stringContaining('guesthouse proprietor quotes five hundred credits') }),
@@ -230,14 +301,14 @@ describe('authoritative GM continuity and unavailable drafting', () => {
     expect(drafts).toHaveLength(1);
     const context = contextFrom(drafts[0]);
     expect(context.world.location).toBe(LOCATION);
-    expect(context.world.scene.summary).toBe(GUESTHOUSE_SCENE);
+    expect(context.world.scene.summary).toContain('guesthouse proprietor quotes five hundred credits');
     expect(context.world.merchant).toBeNull();
     expect(drafts[0].system).not.toContain('LEGACY OUTAGE RESET');
     expect(JSON.stringify(drafts[0].messages)).not.toContain('LEGACY OUTAGE RESET');
     expect(drafts[0].system).not.toContain('retain the stall scene');
     expect(result.narration).toContain('The proprietor says');
     expect(result.narration).not.toMatch(/clothing vendor|clothing rack|maintenance junction/i);
-    expect(result.snapshot.gameState.scene).toMatchObject({ summary: MONTHLY_SCENE });
+    expect(result.snapshot.gameState.scene).toMatchObject({ summary: expect.stringContaining('A full month is thirty nights') });
   });
 
   it('answers the unquoted monthly question as NPC dialogue and persists exact service terms without a debit', async () => {
