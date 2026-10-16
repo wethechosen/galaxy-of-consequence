@@ -1,15 +1,40 @@
-import { NextResponse } from "next/server";
-import { NPC_TEST_ROSTER } from "@/lib/npc-test-roster";
-import { CAMPAIGN_NPCS_150_ABY } from "@/lib/npc-canon-roster";
-export const dynamic = "force-dynamic";
-export async function GET() {
-  const roster = [
-    ...NPC_TEST_ROSTER.map(npc => ({ id: npc.id, name: npc.name, species: npc.species, homeworld: npc.homeworld,
-      designation: npc.role, era: npc.yearABY, category: "test", description: npc.background,
-      playthroughStatus: "unverified" })),
-    ...CAMPAIGN_NPCS_150_ABY.map(npc => ({ id: npc.id, name: npc.name, species: npc.species, homeworld: npc.birthworld,
-      designation: npc.role150, era: 150, category: "cast", description: npc.biography,
-      playthroughStatus: "unverified" })),
-  ];
-  return NextResponse.json({ roster, endingCountVerified: 0 }, {headers:{"Cache-Control":"no-store"}});
+import {NextResponse} from "next/server";
+import {requireAccount} from "@/lib/accounts";
+import {assertLocalRequest} from "@/lib/local-http";
+import {NPC_TEST_ROSTER} from "@/lib/npc-test-roster";
+import {CAMPAIGN_NPCS_150_ABY} from "@/lib/npc-canon-roster";
+import {DMIR_STORY_NPCS} from "@/lib/dmir-story-npcs";
+export const runtime="nodejs";
+export const dynamic="force-dynamic";
+/** GM PRIVATE: character containers, plots and confidential facts. */
+export async function GET(request:Request){
+  try{
+    assertLocalRequest(request);
+    requireAccount(request,true);
+    const roster=[
+      ...NPC_TEST_ROSTER.map(n=>({
+        id:n.id,name:n.name,species:n.species,homeworld:n.homeworld,
+        designation:n.role,era:n.yearABY,category:"test",description:n.background,
+        objective:n.objective,playthroughStatus:"unverified",gmOnly:true,
+      })),
+      ...CAMPAIGN_NPCS_150_ABY.map(n=>({
+        id:n.id,name:n.name,species:n.species,homeworld:n.birthworld,
+        designation:n.role150,era:150,category:"cast",description:n.biography,
+        objective:n.objective,secret:n.confidential,eraCorrection:n.revision,
+        playthroughStatus:"unverified",gmOnly:true,
+      })),
+      ...DMIR_STORY_NPCS.map(n=>({
+        id:"story-"+n.id,name:n.name,species:n.species,
+        homeworld:"GM location: "+n.locationHint,designation:n.role,era:150,
+        category:"story",description:n.background,objective:n.objective,
+        secret:n.privateKnowledge,plot:n.arc,encounterRules:n.allowedEncounter,
+        status:n.status,playthroughStatus:"unverified",gmOnly:true,
+      })),
+    ];
+    return NextResponse.json({roster,endingCountVerified:0,visibility:"gm-only"},
+      {headers:{"Cache-Control":"private, no-store"}});
+  }catch{
+    return NextResponse.json({error:"GM authorization required."},{status:403,
+      headers:{"Cache-Control":"no-store"}});
+  }
 }

@@ -29,6 +29,8 @@ import { reconcileCommittedArrival } from "./committed-arrival";
 import { EVENT_WAIT_INSTRUCTION, eventWaitFailure, isEventWait } from "./event-wait";
 import { currentTerritory } from "@/original/lib/regionalNews";
 import { canonicalNpcContext } from "./npc-canon-roster";
+import { dmirSceneNpcContext, updateDmirNpcContinuity } from "./dmir-npc-memory";
+import { recordVisibleSceneNpcs } from "./player-scene-roster";
 
 type TurnInput = { accountId?: string; revision: number; action: string; turnId: string; openScene?: boolean; statePolicy?: "committed-trade" | null };
 type Message = { role: "user" | "assistant" | "roll"; content: string; [key: string]: unknown };
@@ -1432,7 +1434,12 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
     const currentIdentity = String((currentSnapshot.character as Record<string, unknown>).name || "");
     const lore = canonicalNpcContext(currentIdentity + "\n" + action);
     if (lore.length) system += `\n\nCONFIDENTIAL GM CAST CONTINUITY (150 ABY; NOT a player-facing disclosure): ${JSON.stringify(lore)}\nThese names are GOC-specific campaign canon compatible with Star Wars Legends, not external franchise facts. Source documents describe potential 200 ABY futures; never promote anyone to a future title in 150 ABY, make unsupported secrets public, grant powers by narration, or force a cameo without an established scene. The active character's declared action and location remain the authority.`;
-  }  if (mode === "play") system += `\n\nCURRENT ACTION TO RESOLVE NOW: ${action}\n${lastConfirmedBeat}\nCURRENT ACTION PRIORITY: Follow this declaration, not any NPC demand from an earlier scene. When public movement is unopposed and access is established, resolve movement and record the new end location. When an action includes unpriced shopping or sales, present exact prices and offers rather than silently charging, granting items, or forcing an unrelated NPC confrontation; resolve the other independently executable substeps as far as the confirmed state permits. Never invent a second payment for an already receipted purchase.`;
+  }
+  if (mode === "play" && isDmirPrimaryCampaign(actor, currentSnapshot.character as Record<string, unknown>)) {
+    const storyCast = dmirSceneNpcContext(action, currentSnapshot.gameState);
+    if (storyCast.length) system += `\n\nDMIR HOMEBREW CHARACTER CONTAINERS (GM CONFIDENTIAL): ${JSON.stringify(storyCast)}\nNPCs have independent motivations; presence and contact must be confirmed through play. Never grant player knowledge of private facts, invent a meeting, resurrect a dead character, or pre-complete a future story.`;
+  }
+  if (mode === "play") system += `\n\nCURRENT ACTION TO RESOLVE NOW: ${action}\n${lastConfirmedBeat}\nCURRENT ACTION PRIORITY: Follow this declaration, not any NPC demand from an earlier scene. When public movement is unopposed and access is established, resolve movement and record the new end location. When an action includes unpriced shopping or sales, present exact prices and offers rather than silently charging, granting items, or forcing an unrelated NPC confrontation; resolve the other independently executable substeps as far as the confirmed state permits. Never invent a second payment for an already receipted purchase.`;
   if (mode === "play" && isReadOnlyGoodsInspection(action)) system += `\n\nREAD-ONLY MERCHANDISE INSPECTION: Resolve the declared examination only. Describe visible condition, seals, labels, packaging, and expiration markings supported by the scene. Do not deduct or grant credits; do not add, remove, consume, sell, equip, or transfer an item; do not narrate a completed transaction. Temporary handling remains with the current owner. Use an empty material ledger unless an authoritative mechanic supplied above requires a non-material change.`;
   if (mode === "play" && isMerchantTermsChallenge(action)) system += `\n\nPAYMENT-TERMS DISPUTE: The player is challenging why the seller changed the previously stated payment conditions. The last confirmed merchant response is history, not fresh dialogue: ${priorResult.slice(0, 900)}. Have the merchant address the change in terms directly, acknowledging the earlier instruction and giving an established or plausible explanation, or explicitly declining to explain with a concrete world reaction. The merchant may remain uncooperative; do not force acceptance, reverse past turns, create a new payment verification obstacle without grounded evidence, or repeat the previous explanation verbatim. Any actual sale must pass the authoritative trade-and-ledger checks.`;
   if (mode === "play" && isFinancialWithdrawalAction(resolvedIntent)) system += `\n\nBANKING SAFETY: Withdrawing deposited credits as physical chips is an account-to-cash conversion, not a new reward or a change of location. Respect any confirmed terminal lockout. Do not narrate a completed cash-out unless the authorized state ledger can debit bankCredits and record corresponding physical credit chips atomically. If the current ledger schema cannot represent both, explain the operational limitation in the fiction without claiming chips were dispensed, money was lost, or a new security failure was established. Ordinary use of a functioning legitimate terminal does not automatically require a Use Computer check.`;
@@ -1718,6 +1725,10 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   messages.push({ role: "assistant", content: parsed.clean, turnId: input.turnId, provider: response.provider, model: response.model, fallbackReason, fallbackDetail });
   const snapshot: DatapadSnapshot = { ...finalized, messages };
   if (mode === "play") snapshot.gameState = { ...snapshot.gameState, sceneMerchant: sceneMerchant(snapshot) };
+  if (mode === "play") snapshot.gameState = recordVisibleSceneNpcs(snapshot.gameState, parsed.clean, input.turnId);
+  if (mode === "play" && isDmirPrimaryCampaign(actor, snapshot.character as Record<string, unknown>)) {
+    snapshot.gameState = updateDmirNpcContinuity(snapshot.gameState, delta, input.turnId, action);
+  }
   enterPhase("persist");
   const persisted = saveAuthoritativeDatapad(actor, accountId, input.revision, snapshot);
   const receipt = commitTurnLifecycle(turnLifecycle, persisted.revision, persisted.updatedAt);

@@ -28,9 +28,9 @@ export default function NpcsPage() {
     <main className="flex-1 min-h-0 overflow-y-auto m-3 gc-glass rounded-2xl p-6">
       <p className="text-[10px] tracking-[0.2em] text-[#ff9b50] mb-2">GALACTIC PERSONNEL INDEX · 150 ABY</p>
       <h1 className="gc-display text-3xl font-bold text-[#f2f0ea]">NPC DOSSIERS</h1>
-      <p className="mt-2 text-sm max-w-4xl text-[#a9adb8]">35 proposed GM-controlled characters: 10 independent test subjects and 25 adapted from campaign supplements. These are cast profiles, not completed playthroughs or registered player accounts.</p>
+      <p className="mt-2 text-sm max-w-4xl text-[#a9adb8]">Private GM dossiers: 34 autonomous test PCs, Kelvek's historical flashback, and 13 D'mir-story NPCs. Includes unverified plots and confidential information. Players see only public sheets for characters actually encountered in their room.</p>
       <div className="flex flex-wrap gap-3 mt-5 mb-6">
-        <span className="rounded-lg bg-white/[.035] px-3 py-2 text-xs border border-white/10 text-[#e8e7e2]">35 DOSSIERS</span>
+        <span className="rounded-lg bg-white/[.035] px-3 py-2 text-xs border border-white/10 text-[#e8e7e2]">{roster.length} DOSSIERS</span>
         <span className="rounded-lg bg-white/[.035] px-3 py-2 text-xs border border-white/10 text-[#a9adb8]">0 FULL ENDINGS VERIFIED</span>
         <span className="rounded-lg bg-white/[.035] px-3 py-2 text-xs border border-white/10 text-[#a9adb8]">GM CONTROLLED</span>
       </div>
@@ -40,6 +40,7 @@ export default function NpcsPage() {
           <option value="all">All characters</option>
           <option value="test">Ten test characters</option>
           <option value="cast">Supplement cast</option>
+          <option value="story">Dmir storyline</option>
         </select>
       </div>
       {selected && <GlassCard className="p-5 mb-5">

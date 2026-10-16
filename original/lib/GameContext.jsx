@@ -866,6 +866,7 @@ If this is the very first message of the session, open the scene in-character ba
     if (!text.trim() || !saveReady || saveSession.current?.error || activeTurn.current || commsInFlight.current.size) return false;
     const session = saveSession.current;
     const contact = gameState.contacts?.find((item) => item.channel === channel);
+    if (!contact || !/^(npc|player):/.test(String(channel))) return false;
     const entry = { id: genId(), channel, role: "user", author: character?.name || "Player", content: text.trim(), ts: Date.now() };
     const next = [...comms, entry];
     setComms(next);

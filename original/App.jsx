@@ -41,7 +41,7 @@ function AuthenticatedApp() {
       <Route path="/player" element={<PlayerPage />} />
       <Route path="/hud" element={<HudPage />} />
       <Route path="/players" element={<PlayersPage />} />
-      <Route path="/npcs" element={<NpcsPage />} />
+      <Route path="/npcs" element={user?.role === "admin" ? <NpcsPage /> : <Navigate to="/players" replace />} />
       <Route path="/comms" element={<CommsPage />} />
       <Route path="/exchanges" element={<ExchangesPage />} />
       <Route path="/profile" element={<ProfilePage />} />

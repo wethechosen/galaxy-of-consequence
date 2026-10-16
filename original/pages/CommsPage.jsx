@@ -11,11 +11,17 @@ export default function CommsPage() {
   const [params] = useSearchParams();
   const [channel, setChannel] = useState(params.get("channel") || "npc:local-contact");
   const [text, setText] = useState("");
-  const channels = useMemo(() => [
-    ...(gameState.contacts || []).map((contact) => ({ id: contact.channel, label: contact.name, kind: "NPC", detail: `${contact.role} · ${contact.location || "unknown location"}`, portrait: contact.portrait })),
-    ...registeredUsers.filter((entry) => entry.email !== user?.email && entry.role !== "admin").map((entry) => ({ id: `player:${[user.email, entry.email].sort().join("|")}`, label: entry.email, kind: "PLAYER" })),
-  ], [gameState.contacts, registeredUsers, user?.email]);
-  const visible = comms.filter((entry) => entry.channel === channel);
+  // A name in the Players roster is not automatically a reachable comlink.
+  const channels = useMemo(() => (gameState.contacts || [])
+    .filter(contact => contact && typeof contact.channel === "string" &&
+      /^(npc|player):/.test(contact.channel))
+    .map(contact => ({
+      id: contact.channel,
+      label: contact.name || "Established contact",
+      kind: contact.channel.startsWith("player:") ? "PLAYER" : "NPC",
+      detail: [contact.role, contact.location].filter(Boolean).join(" · "),
+      portrait: contact.portrait,
+    })), [gameState.contacts]);  const visible = comms.filter((entry) => entry.channel === channel);
   useEffect(() => { if (!channels.some((entry) => entry.id === channel)) setChannel(channels[0]?.id || ""); }, [channels, channel]);
   async function submit(event) { event.preventDefault(); if (!text.trim()) return; const value = text; setText(""); await sendCommsMessage(channel, value); }
   return <Shell>
