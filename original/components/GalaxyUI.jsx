@@ -103,7 +103,7 @@ export function TopBar({ character, gameState, right }) {
           <Link to="/exchanges" className={`px-2.5 py-1.5 rounded-lg ${location.pathname === "/exchanges" ? "bg-white/10 text-[#f2f0ea]" : "text-[#8b93a3] hover:text-[#f2f0ea]"}`}>EXCHANGES</Link>
           <Link to="/syndicates" className={`px-2.5 py-1.5 rounded-lg ${location.pathname === "/syndicates" ? "bg-white/10 text-[#f2f0ea]" : "text-[#8b93a3] hover:text-[#f2f0ea]"}`}>SYNDICATES</Link>
           <Link to="/profile" className={`px-2.5 py-1.5 rounded-lg ${location.pathname === "/profile" ? "bg-white/10 text-[#f2f0ea]" : "text-[#8b93a3] hover:text-[#f2f0ea]"}`}>PROFILE</Link>
-          <Link to="/archive" className={`px-2.5 py-1.5 rounded-lg ${location.pathname === "/archive" ? "bg-white/10 text-[#f2f0ea]" : "text-[#8b93a3] hover:text-[#f2f0ea]"}`}>ARCHIVE & MAPS</Link>
+          <Link to="/archive" className={`px-2.5 py-1.5 rounded-lg ${location.pathname === "/archive" ? "bg-white/10 text-[#f2f0ea]" : "text-[#8b93a3] hover:text-[#f2f0ea]"}`}>ATLAS, TRAVEL & ARCHIVES</Link>
           {user?.role === "admin" && <>
             <Link to="/gm#overview" className="px-2.5 py-1.5 rounded-lg text-[#8b93a3] hover:text-[#f2f0ea]">CONSOLE</Link>
             <Link to="/gm#directive" className="px-2.5 py-1.5 rounded-lg text-[#8b93a3] hover:text-[#f2f0ea]">DIRECTIVE</Link>
