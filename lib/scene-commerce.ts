@@ -81,6 +81,19 @@ export function isRoutineCommerce(action: string, location: unknown) {
   return /\b(?:vendor|merchant|clothing|robe|tunic|suit|buy|purchase|price|pay|looking for free|rest|shelter|lodging|room|inn|hotel)\b/i.test(text);
 }
 
+/**
+ * Routine informational service questions are not Persuasion checks or
+ * purchase commitments. In particular, asking how to book a commission is
+ * not itself booking, paying for, or receiving the commission.
+ */
+export function isRoutineServiceInquiry(action: string) {
+  const text = positiveActionText(action).trim();
+  if (!text || !/\b(?:appointment|booking|commission|consultation|fitting|schedule|opening hours|office hours|return tomorrow)\b/i.test(text)) return false;
+  if (/\b(?:attack|shoot|steal|rob|threaten|intimidate|lie|deceive|bargain|negotiate|persuade|force|bribe|hack|forge|pay|purchase|buy|reserve now|book now|confirm my appointment)\b/i.test(text)) return false;
+  return /^(?:["'“”]?\s*)?(?:how|when|where|who|what|which|is there|are there|can i|could i|may i|do you|does|i ask|i inquire|i would like to know|i'd like to know)\b/i.test(text)
+    || /\?\s*["'”]?\s*$/.test(text);
+}
+
 /** Preserve a seller's established species in same-stall prose; not a new actor. */
 export function alignMerchantIdentity(narration: string, merchant: SceneMerchant | null) {
   if (!merchant?.species || otherInteraction(sceneText(narration)) || newMerchantInteraction(sceneText(narration))) return narration;
