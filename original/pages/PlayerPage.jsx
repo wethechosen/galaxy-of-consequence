@@ -88,7 +88,7 @@ function CreationWizard() {
       <h2 className="gc-display text-xl font-bold mb-1 text-[#f2f0ea] tracking-wide">{current.label.toUpperCase()}</h2>
       <p className="text-[#a9adb8] text-sm mb-4">{current.hint}</p>
       {current.options ? (
-        <div className="flex gap-2 mb-6">
+        <div className="flex flex-wrap gap-2 mb-6">
           {current.options.map((opt) => (
             <button key={opt} onClick={() => setVal(opt)} className="px-4 py-2 text-sm rounded-xl transition-all"
               style={val === opt ? { background: "linear-gradient(135deg, var(--sig), var(--sig2))", color: "#0a0d12", fontWeight: 700 } : { border: "1px solid rgba(255,255,255,.12)", color: "#a9adb8" }}>
