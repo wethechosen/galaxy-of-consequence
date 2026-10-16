@@ -1,0 +1,28 @@
+import { expect, it, vi, beforeEach } from "vitest";
+vi.mock("@/lib/accounts",()=>({requireAccount:vi.fn()}));
+vi.mock("@/lib/local-http",()=>({assertLocalRequest:vi.fn()}));
+import {requireAccount} from "@/lib/accounts";
+import {GET} from "@/app/api/npcs/route";
+const request=()=>new Request("http://localhost/api/npcs");
+beforeEach(()=>vi.resetAllMocks());
+it("denies the private GM NPC registry to ordinary players and signed-out users",async()=>{
+  vi.mocked(requireAccount).mockImplementation(()=>{throw Error("Administrator access required.");});
+  const response=await GET(request());
+  expect(response.status).toBe(403);
+  expect(JSON.stringify(await response.json())).not.toContain("Kelvek");
+});
+it("provides 48 private GM NPC dossier records only to the authorized GM",async()=>{
+  vi.mocked(requireAccount).mockReturnValue({id:"gm-1",username:"gm",displayName:"GM",role:"admin"});
+  const response=await GET(request());
+  expect(response.status).toBe(200);
+  expect(vi.mocked(requireAccount)).toHaveBeenCalledWith(expect.any(Request),true);
+  const result=await response.json();
+  expect(result.roster).toHaveLength(48);
+  expect(result.endingCountVerified).toBe(0);
+  expect(new Set(result.roster.map((entry:{id:string})=>entry.id)).size).toBe(48);
+  expect(result.visibility).toBe("gm-only");
+  expect(result.roster.some((n:{category:string;secret?:string})=>n.category==="story"&&n.secret)).toBe(true);
+  for(const entry of result.roster)expect(entry.playthroughStatus).toBe("unverified");
+  expect(result.roster.find((entry:{id:string})=>entry.id==="kelvek").era).toBe(147);
+  expect(result.roster.find((entry:{id:string})=>entry.id==="aliyah-fel").designation).not.toMatch(/empress/i);
+});

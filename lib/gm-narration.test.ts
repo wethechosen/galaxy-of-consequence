@@ -3,6 +3,19 @@ import { attachRepairedLedger, appendTurnEvent, assertActionConstraints, assertC
 import { planConversationTrade, reconcileConversationTradeDelta } from "./conversation-trade";
 
 describe("authoritative Saga narration", () => {
+  it("rejects the Bonadan counter move when the ledger still points to the workroom", () => {
+    const old = "Bonadan — Nuvorren Design House, rear workroom.";
+    const narration = `## LOCATION\n${old}\n## SCENE\nYou cross the showroom.\n## GAMEPLAY RESULT\nYou return to the front counter and speak with the clerk directly.`;
+    expect(() => assertMovementSceneProgress(narration, "Return to the front counter", null, { location: old }, old)).toThrow(/within the venue/);
+    expect(() => assertMovementSceneProgress(narration, "Return to the front counter", null, { location: old.slice(0, -1) }, old)).toThrow(/within the venue/);
+    expect(() => assertMovementSceneProgress(narration.replace(old, "Bonadan — Nuvorren Design House, front counter"), "Return to the front counter", null, { location: "Bonadan — Nuvorren Design House, front counter" }, old)).not.toThrow();
+  });
+  it("rejects a successful Perception check described as a failed objective without inventing a discovery", () => {
+    const roll = { outcome: "success", label: "Perception" };
+    expect(() => assertResolvedOutcome("## GAMEPLAY RESULT\nYou find nothing unusual. Your objective fails, yet the scene moves forward.", roll, {}, "Examine the garment")).toThrow(/check succeeded/);
+    expect(() => assertResolvedOutcome("## GAMEPLAY RESULT\nYour examination establishes that no hidden compartment is present.", roll, {}, "Examine the garment")).not.toThrow();
+    expect(() => assertResolvedOutcome("## GAMEPLAY RESULT\nYour attempt fails.", { ...roll, outcome: "failure" }, {}, "Examine the garment")).not.toThrow();
+  });
   it("rejects the revision-508 dock arrival without a saved destination", () => {
     const narration = "## SCENE\nYou leave the cantina.\n## GAMEPLAY RESULT\nYou successfully navigate the market district and arrive at Docking Bay 94’s Level B slip 14 without delay or incident.";
     expect(() => assertMovementSceneProgress(narration, "I head back to the docks and seek Jax out", null, {}, "Taris — Market District (inside the cantina)")).toThrow(/saving that destination/);

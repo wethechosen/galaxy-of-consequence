@@ -5,6 +5,7 @@ import { DatapadError, readDatapad, saveDatapad, saveDatapadConfig } from "@/lib
 import { hostedGet, hostedPersistenceEnabled, hydrateHostedSave, hostedPut, ensureHostedActor } from "@/lib/hosted-bridge";
 import { AdvancementRequiredError, advancementErrorBody } from "@/lib/advancement-gate";
 import { neonGetConfig, neonSaveConfig } from "@/lib/neon-campaign-store";
+import { neonQuery } from "@/lib/neon-db";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 function errorResponse(error: unknown) {
@@ -26,7 +27,15 @@ export async function GET(request: Request) {
   try {
     assertLocalRequest(request);
     const actor = requireAccount(request);
-    const requested = new URL(request.url).searchParams.get("accountId");
+    const params = new URL(request.url).searchParams;
+    const requested = params.get("accountId");
+    if (params.get("revisionOnly") === "1") {
+      const target = hostedTarget(actor, requested);
+      const revision = hostedPersistenceEnabled()
+        ? Number((await neonQuery<{ revision: string }>("SELECT revision FROM private.goc_datapad_saves WHERE account_id=$1", [target.id]))[0]?.revision || 0)
+        : readDatapad(actor, requested).revision;
+      return NextResponse.json({ revision }, { headers: { "Cache-Control": "private, no-store" } });
+    }
     if (hostedPersistenceEnabled()) {
       const target = hostedTarget(actor, requested);
       ensureHostedActor(target);
