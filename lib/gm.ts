@@ -29,6 +29,7 @@ import { reconcileCommittedArrival } from "./committed-arrival";
 import { EVENT_WAIT_INSTRUCTION, eventWaitFailure, isEventWait } from "./event-wait";
 import { currentTerritory } from "@/original/lib/regionalNews";
 import { canonicalNpcContext } from "./npc-canon-roster";
+import { npcAlienGmContinuity } from "./npc-alien-story-ratings";
 import { dmirSceneNpcContext, updateDmirNpcContinuity } from "./dmir-npc-memory";
 import { recordVisibleSceneNpcs } from "./player-scene-roster";
 
@@ -46,6 +47,7 @@ export function gmSystemForCharacter(character: Record<string, unknown>, gameSta
   const savedYear = Number(gameState.campaignYearABY);
   const campaignYear = Number.isSafeInteger(savedYear) && savedYear >= 0 && savedYear <= 300 ? savedYear : 150;
   if (/^d['’]mir holloran$/i.test(name)) return GM_SYSTEM;
+  const storyRating = npcAlienGmContinuity(name, campaignYear);
   const personal = [/^D'mir's creator /i, /^D'mir continuity anchors /i, /^PLAYER-ESTABLISHED CAMPAIGN DIRECTION:/i];
   return GM_SYSTEM.split("\n\n")
     .filter(paragraph => !personal.some(pattern => pattern.test(paragraph.trim())))
@@ -54,7 +56,8 @@ export function gmSystemForCharacter(character: Record<string, unknown>, gameSta
     .replace(/D['’]mir/gi, name)
     .replace(/150 ABY/g, `${campaignYear} ABY`)
     + `\n\nNPC TEST CAMPAIGN: ${name} is the active viewpoint. This campaign is an independent, GM-controlled NPC continuity. D'mir's history, assets, Force awareness, family and objectives do not transfer to this character. Never merge this timeline into D'mir's primary save. For flashbacks, keep knowledge and technology within the saved historical date.`
-    + (character.npcHistoricalBaselineId ? `\nNPC ORIGIN RECORD: ${name} has an audited level ${character.npcStartingLevel} 150 ABY starting career. The historical starting XP is prior life experience, not a reward for this turn; retain it without re-awarding anything. The Saga HEROIC CLASS Jedi is usable to represent a Sith or Imperial Knight Force practitioner; it does NOT imply affiliation with the Jedi Order. Faction and verified private history, not the class label, determine identity. Any Force power must exist on the actual character sheet and obey the Saga resolver.` : "");
+    + (character.npcHistoricalBaselineId ? `\nNPC ORIGIN RECORD: ${name} has an audited level ${character.npcStartingLevel} 150 ABY starting career. The historical starting XP is prior life experience, not a reward for this turn; retain it without re-awarding anything. The Saga HEROIC CLASS Jedi is usable to represent a Sith or Imperial Knight Force practitioner; it does NOT imply affiliation with the Jedi Order. Faction and verified private history, not the class label, determine identity. Any Force power must exist on the actual character sheet and obey the Saga resolver.` : "")
+    + (storyRating ? `\n\nPRIVATE NPC ORIGIN AND STORY-RATING REFERENCE: ${JSON.stringify(storyRating)}\nThe proposed ratings are editorial design targets, not automatic engine state. The character's stored level, validated species traits, Force abilities and actual GM adjudication always take precedence; never award an unearned power, hidden resource, title, or story outcome.` : "");
 }
 
 function deterministicTurnRoller(turnId: string, lane: string) {
