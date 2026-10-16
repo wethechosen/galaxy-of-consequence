@@ -1,8 +1,24 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { nvidiaModel } from "./nvidia-models";
+import { nvidiaModel, nvidiaApiKey } from "./nvidia-models";
 import { parseRetryAfter, planNvidiaSlot } from "./nvidia-rate-budget";
 afterEach(() => vi.unstubAllEnvs());
 describe("purpose routing and shared request budgeting", () => {
+  it("keeps the existing key for mechanical roles and uses a narration-only override", () => {
+    vi.stubEnv("NVIDIA_API_KEY", "existing-test-key");
+    vi.stubEnv("NVIDIA_API_KEY_GM", "narration-test-key");
+    expect(nvidiaApiKey("gm")).toBe("narration-test-key");
+    expect(nvidiaApiKey("npc")).toBe("narration-test-key");
+    expect(nvidiaApiKey("ledger")).toBe("existing-test-key");
+    expect(nvidiaApiKey("interpretation")).toBe("existing-test-key");
+  });
+  it("routes NPC dialogue to the selected GM while preserving mechanical roles", () => {
+    vi.stubEnv("NVIDIA_MODEL", "existing-model");
+    vi.stubEnv("NVIDIA_MODEL_GM", "nvidia/nemotron-3.5-super-vl-120b-a12b");
+    vi.stubEnv("NVIDIA_MODEL_NPC", "");
+    expect(nvidiaModel("npc")).toBe("nvidia/nemotron-3.5-super-vl-120b-a12b");
+    expect(nvidiaModel("interpretation")).toBe("existing-model");
+    expect(nvidiaModel("ledger")).toBe("existing-model");
+  });
   it("uses explicit role overrides without replacing other roles", () => {
     vi.stubEnv("NVIDIA_MODEL", "baseline");
     vi.stubEnv("NVIDIA_MODEL_INTERPRETATION", "fast-model");
