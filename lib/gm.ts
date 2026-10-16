@@ -14,7 +14,7 @@ import { ensureCampaignScaffold } from "@/original/lib/campaignState";
 import { appendDmirCreatorCanon, isDmirPrimaryCampaign } from "./dmir-authority";
 import { activeCombat, beginCombat, endPlayerTurn, isAttackDeclaration, isCombatMovementDeclaration, isCombatWithdrawDeclaration, isEndTurnDeclaration, resolveCombatAction, type CombatResolution } from "./saga-combat";
 import { commitConversationTradeState, conversationTradeInstruction, currentTradeOffers, isVerifiedConversationTradeDelta, planConversationTrade, reconcileConversationTradeDelta, type ConversationTrade } from "./conversation-trade";
-import { alignMerchantIdentity, isRoutineCommerce, sceneMerchant } from "./scene-commerce";
+import { alignMerchantIdentity, isRoutineCommerce, isRoutineServiceInquiry, sceneMerchant } from "./scene-commerce";
 import { buildSemanticSagaCheck, declaredForcePower, forceCapabilityConstraint, hasEarnedForcePower, interpretSagaAction, requiredForcePower } from "./saga-action-plan";
 import { buildForcePowerPlan, resolveForcePower, type ForcePowerResolution } from "./saga-force";
 import { recoverConfirmedTradeOffer } from "./trade-offer-recovery";
@@ -830,6 +830,7 @@ export function normalizeCampaignSections(
   narration: string,
   delta: Record<string, unknown> | null,
   savedLocation: unknown,
+  anchorStaticLocation = false,
 ) {
   const headings = ["LOCATION", "SCENE", "GM ADJUDICATION", "GAMEPLAY RESULT", "SAGA CHECK", "STATE UPDATE", "PLAYER OPTIONS"] as const;
   const inlineLocation = narration.replace(
@@ -843,14 +844,25 @@ export function normalizeCampaignSections(
   for (let index = 0; index < markers.length; index += 1) {
     const match = markers[index];
     const name = match[1].toUpperCase();
-    if (sections.has(name)) return narration; // Duplicate headings need a real rewrite.
+    if (sections.has(name)) {
+      // Duplicate location labels are presentation noise on a stationary turn;
+      // preserve strict rejection of duplicate outcome and rules sections.
+      if (name === "LOCATION" && anchorStaticLocation) continue;
+      return narration;
+    }
     const start = (match.index || 0) + match[0].length;
     const end = index + 1 < markers.length ? markers[index + 1].index! : inlineLocation.length;
     sections.set(name, inlineLocation.slice(start, end).trim());
   }
   // Don't silently discard arbitrary text preceding the first section.
   if (inlineLocation.slice(0, markers[0].index || 0).trim()) return narration;
-  if (!sections.has("LOCATION")) {
+  if (anchorStaticLocation) {
+    // An NPC answer cannot move the player. Repair only the displayed location;
+    // the original delta still passes through authoritative movement checks.
+    const verifiedLocation = String(savedLocation || "").trim();
+    if (!verifiedLocation) return narration;
+    sections.set("LOCATION", verifiedLocation);
+  } else if (!sections.has("LOCATION")) {
     const verifiedLocation = String(delta?.location || savedLocation || "").trim();
     if (!verifiedLocation) return narration;
     sections.set("LOCATION", verifiedLocation);
@@ -1305,7 +1317,10 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   }
   enterPhase("plan-commerce");
   const trade = ordinaryTrade ? planConversationTrade(semantic?.acceptedOfferId ? action : resolvedIntent, currentSnapshot.gameState, input.turnId, semantic?.acceptedOfferId) : null;
-  const routineCommerce = semantic ? !semantic.checkNeeded && ["commerce", "dialogue"].includes(semantic.intent) : isRoutineCommerce(action, currentSnapshot.gameState.location);
+  const routineServiceInquiry = mode === "play" && isRoutineServiceInquiry(action);
+  // Simple informational questions cannot become Persuasion rolls because an
+  // upstream intent draft mislabeled them as contested dialogue.
+  const routineCommerce = routineServiceInquiry || (semantic ? !semantic.checkNeeded && ["commerce", "dialogue"].includes(semantic.intent) : isRoutineCommerce(action, currentSnapshot.gameState.location));
   const merchant = sceneMerchant(currentSnapshot);
   // Shared by the browser and GPT controller, including historical quote repairs.
   const encounter = activeCombat(currentSnapshot.gameState as Record<string, unknown>);
@@ -1453,7 +1468,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       };
       if (mode === "play") {
         parsed = { ...parsed, clean: ensurePlayerOptions(normalizePlayerOptions(parsed.clean), currentSnapshot.gameState, currentSnapshot.character as Record<string, unknown>, action) };
-        parsed = { ...parsed, clean: normalizeCampaignSections(parsed.clean, parsed.delta as Record<string, unknown> | null, currentSnapshot.gameState.location) };
+        parsed = { ...parsed, clean: normalizeCampaignSections(parsed.clean, parsed.delta as Record<string, unknown> | null, currentSnapshot.gameState.location, !permitsLocationChange(resolvedIntent) && semantic?.intent !== "travel" && !transitArrival && !parsed.delta?.location) };
       }
       if (mode === "play") assertCampaignResponseStructure(parsed.clean);
       if (mode === "play") assertNarrativeFocus(parsed.clean, action);
@@ -1548,7 +1563,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       response = resolvedCommercialProgressNarration(currentSnapshot, resolvedIntent, roll);
       parsed = parseEngineResponse(response.content, { requireState: true });
       parsed = { ...parsed, clean: ensurePlayerOptions(normalizePlayerOptions(parsed.clean), currentSnapshot.gameState, currentSnapshot.character as Record<string, unknown>, action) };
-      parsed = { ...parsed, clean: normalizeCampaignSections(parsed.clean, parsed.delta as Record<string, unknown> | null, currentSnapshot.gameState.location) };
+      parsed = { ...parsed, clean: normalizeCampaignSections(parsed.clean, parsed.delta as Record<string, unknown> | null, currentSnapshot.gameState.location, !permitsLocationChange(resolvedIntent) && semantic?.intent !== "travel" && !transitArrival && !parsed.delta?.location) };
       assertCampaignResponseStructure(parsed.clean);
       assertNarrativeFocus(parsed.clean, action);
       assertActionConstraints(parsed.clean, resolvedIntent);
@@ -1581,7 +1596,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       parsed = { ...parsed, clean: alignMechanicalResult(sanitizeGmNarration(parsed.clean), roll) };
       if (mode === "play") {
         parsed = { ...parsed, clean: ensurePlayerOptions(normalizePlayerOptions(parsed.clean), currentSnapshot.gameState, currentSnapshot.character as Record<string, unknown>, action) };
-        parsed = { ...parsed, clean: normalizeCampaignSections(parsed.clean, parsed.delta as Record<string, unknown> | null, currentSnapshot.gameState.location) };
+        parsed = { ...parsed, clean: normalizeCampaignSections(parsed.clean, parsed.delta as Record<string, unknown> | null, currentSnapshot.gameState.location, !permitsLocationChange(resolvedIntent) && semantic?.intent !== "travel" && !transitArrival && !parsed.delta?.location) };
         assertCampaignResponseStructure(parsed.clean);
         assertNarrativeFocus(parsed.clean, action);
       }
