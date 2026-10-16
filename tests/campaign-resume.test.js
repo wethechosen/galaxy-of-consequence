@@ -10,6 +10,8 @@ describe("saved campaign return experience", () => {
     expect(result.archived).toEqual([]);
     const recap = buildCampaignRecap({ messages: [receipt], gameState: { location: "Coruscant — local market", turnEvents: [{ turnId: "paid", changes: { credits: -126000 } }] } });
     expect(recap.timeline[0].summary).toContain("126,000");
+    const commercial = { ...reply("pilot"), provider: "local-safe-fallback", model: "commercial-progress-receipt", fallbackReason: "validation" };
+    expect(campaignTranscript([{ role: "user", content: "Find a pilot." }, commercial]).latest).toMatchObject({ turnId: "pilot" });
   });
   it("archives failed turns and internal chatter without deleting saved history", () => {
     const input = [{ role: "user", turnId: "bad", content: "I follow the directions" }, { ...reply("bad"), provider: "local-safe-fallback" }, { role: "user", turnId: "good", content: "I ask about the room" }, reply("good"), { role: "system", content: "[CURRENT AUTHORITATIVE CAMPAIGN STATE]" }];

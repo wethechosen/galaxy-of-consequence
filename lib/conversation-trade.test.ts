@@ -21,6 +21,21 @@ const quotedSnapshot = () => {
 };
 
 describe("persistent conversational commerce", () => {
+  it("excludes a recovered duplicate of a paid offer without blocking a new purchase", () => {
+    const prior = quotedSnapshot();
+    const purchased = applyConversationPurchase(prior, "I'll take the suit and tunic", "paid-original");
+    const oldOffer = (purchased.gameState.tradeOffers as Array<Record<string, unknown>>)[0];
+    const duplicate = { ...oldOffer, id: "recovered-duplicate", sourceTurnId: "reconcile:quote_turn_1", status: "open", acceptedTurnId: undefined };
+    const newOffer = { ...duplicate, id: "new-quote", sourceTurnId: "new-quote" };
+    const state: Record<string, unknown> = { ...purchased.gameState, tradeOffers: [oldOffer, duplicate, newOffer] };
+    expect(currentTradeOffers(state).map(item => item.id)).toEqual(["new-quote"]);
+    expect(purchased.gameState.credits).toBe(state.credits);
+  });
+  it("does not expose an offer as open after its exact receipt committed", () => {
+    const prior = quotedSnapshot();
+    const saved = { ...prior.gameState, tradeReceipts: [{ offerId: "offer:quote_turn_1:0", turnId: "paid" }] };
+    expect(currentTradeOffers(saved)).toEqual([]);
+  });
   it("records the NPC's allowlisted quote without granting gear or spending credits", () => {
     const prior = snapshot();
     const after = commitConversationTradeState(prior.gameState, { tradeOfferAdd: [offer] }, null, "quote_turn_1");

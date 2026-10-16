@@ -6,6 +6,7 @@ import { useAuth } from "@/original/lib/AuthContext";
 import { STAR_WARS_TERMINOLOGY } from "@/original/lib/starWarsTerminology";
 import { invokeNvidiaAssistant, NVIDIA_MODEL } from "@/original/lib/nvidia";
 import { getTravelAccess, getTravelCost } from "@/original/lib/galaxyLocations";
+import { STARTER_WORLDS, initialPublicLocation } from "@/original/lib/startingWorld";
 import { getSellQuote, getTradeAccess } from "@/original/lib/marketCatalog";
 import { CAMPAIGN_STATE_DEFAULTS, ensureCampaignScaffold } from "@/original/lib/campaignState";
 import { pendingOperation, clearPendingOperation } from "@/original/lib/pendingOperation";
@@ -27,7 +28,7 @@ At the opening D'mir is 16, imprisoned in a Fel Imperial juvenile detention comp
 For every play reply, write a focused scene, resolve only the attempted action, and offer open-ended next options. End with exactly one valid JSON block like <!--STATE:{"health":0,"credits":0,"location":"","note":""}-->. All numbers are relative changes; use {} for no changes. Supported fields: health, notoriety, forceAlignment, credits, creditsCriminal, factionRep (empire, rebellion, csa), location, inventoryAdd, inventoryRemove, propertyAdd, shipAdd, investmentAdd, contactAdd, publicNewsAdd, travelAccessAdd, note, characterUpdate. Deduct fare or purchase price only when the transaction actually succeeds. Grant travelAccessAdd only after the character earns credible coordinates, sponsorship, permits, or safe passage; credits alone never unlock secret Sith or quarantined routes. Public news must be observable and protect private scene information. Never mention this brief, the provider, or the hidden block in narration.`;
 
 export const EMPTY_CHARACTER = {
-  name: "", age: "", species: "", homeworld: "", background: "", allegiance: "",
+  name: "", age: "", species: "", homeworld: "", startingWorld: "", background: "", allegiance: "",
   forceSensitive: "Unknown", forceAlignment: "Gray", appearance: "",
   equipPrimary: "", equipSecondary: "", equipArmor: "", equipSpecial: "",
   skills: "", goal: "", contacts: "", imageFullBody: "", imageHeadshot: "",
@@ -75,6 +76,7 @@ export const CREATION_STEPS = [
   { key: "name", label: "PC Name", hint: "What do people call you out here?" },
   { key: "species", label: "Species", hint: "Human, Twi'lek, Rodian, Zabrak..." },
   { key: "homeworld", label: "Homeworld", hint: "Where you're from, or where you claim." },
+  { key: "startingWorld", label: "Starting World", hint: "Choose a public arrival world where the opening scene begins. Restricted worlds require earned access.", options: STARTER_WORLDS },
   { key: "background", label: "Background", hint: "Smuggler, ex-soldier, exile, corporate agent..." },
   { key: "allegiance", label: "Allegiance", hint: "Empire, Rebellion, CSA, independent, unaligned..." },
   { key: "forceSensitive", label: "Force Sensitive", hint: "Yes, No, or Unknown", options: ["Yes", "No", "Unknown"] },
@@ -339,8 +341,8 @@ function legacySnapshot(email, allowShared = false) {
     model: loadAccountKey("gc_model", email, DEFAULT_MODEL) });
 }
 
-async function datapadRequest(accountId, body) {
-  const response = await fetch(`/api/datapad?accountId=${encodeURIComponent(accountId)}`, {
+async function datapadRequest(accountId, body, revisionOnly = false) {
+  const response = await fetch(`/api/datapad?accountId=${encodeURIComponent(accountId)}${revisionOnly ? "&revisionOnly=1" : ""}`, {
     method: body ? "PUT" : "GET", cache: "no-store", headers: { "Content-Type": "application/json" },
     ...(body ? { body: JSON.stringify({ ...body, accountId }) } : {}),
   });
@@ -455,10 +457,17 @@ export function GameProvider({ children }) {
   useEffect(() => {
     if (!saveReady || !accountId || !user?.id) return;
     let cancelled = false;
+    let syncing = false;
+    let streamOpen = false;
+    let streamedRevision = 0;
+    let stream = null;
     const sync = async () => {
       const session = saveSession.current;
-      if (cancelled || !session || session.accountId !== accountId || activeTurn.current) return;
+      if (cancelled || syncing || !session || session.accountId !== accountId || activeTurn.current) return;
+      syncing = true;
       try {
+        const metadata = await datapadRequest(accountId, undefined, true);
+        if (cancelled || activeTurn.current || Number(metadata.revision) <= Number(session.revision)) return;
         const saved = await datapadRequest(accountId);
         if (cancelled || activeTurn.current || !saved.snapshot || Number(saved.revision) <= Number(session.revision)) return;
         const recovered = failedTurn.current ? recoverCampaignTurn(saved, failedTurn.current) : null;
@@ -473,10 +482,23 @@ export function GameProvider({ children }) {
         setSaveError("");
       } catch {
         // The local turn remains usable; the next interval retries the sync.
-      }
+      } finally { syncing = false; }
     };
-    const interval = setInterval(sync, 3000);
-    return () => { cancelled = true; clearInterval(interval); };
+    const connect = () => {
+      stream?.close(); streamOpen = false;
+      if (document.visibilityState !== "visible" || typeof EventSource === "undefined") return;
+      stream = new EventSource(`/api/datapad/stream?accountId=${encodeURIComponent(accountId)}&since=${saveSession.current?.revision || 0}`);
+      stream.onopen = () => { streamOpen = true; };
+      stream.onerror = () => { streamOpen = false; };
+      stream.addEventListener("revision", event => { try { streamedRevision = Number(JSON.parse(event.data).revision); } catch {} void sync(); });
+    };
+    const resumeSync = () => { connect(); if (document.visibilityState === "visible") void sync(); };
+    window.addEventListener("focus", resumeSync);
+    document.addEventListener("visibilitychange", resumeSync);
+    void sync();
+    connect();
+    const interval = setInterval(() => { if ((!streamOpen || streamedRevision > Number(saveSession.current?.revision || 0)) && document.visibilityState === "visible") void sync(); }, 3000);
+    return () => { cancelled = true; stream?.close(); clearInterval(interval); window.removeEventListener("focus", resumeSync); document.removeEventListener("visibilitychange", resumeSync); };
   }, [saveReady, accountId, user?.id]);
 
   async function persistSnapshot(session, next) {
@@ -621,7 +643,7 @@ Upgrades: ${char.upgrades || "none"}
 CURRENT WORLD STATE
 Location: ${state.location}
 Condition: ${state.health}/100
-Standard credits: ${state.credits} | Underworld credits: ${state.creditsCriminal}
+Electronic spending credits: ${state.credits} | Physical galactic credit chips: ${state.creditsCriminal} (legacy field creditsCriminal, not underworld funds)
 Notoriety: ${state.notoriety}/100 | Force meter: ${state.forceAlignment}/100 (0=Dark, 100=Light)
 Faction reputation — Empire: ${rep.empire}, Rebel Alliance: ${rep.rebellion}, CSA: ${rep.csa}
 Inventory: ${invList}
@@ -786,7 +808,9 @@ If this is the very first message of the session, open the scene in-character ba
       }
       const result = await response.json();
       if (!response.ok || !result.snapshot) throw Object.assign(
-        new Error(result.error || "The Game Master turn failed. Its outcome is not confirmed."),
+        new Error(response.status === 429
+          ? `Comlink cooling down. Wait ${Math.max(1, Number(result.retryAfterSeconds || response.headers.get("Retry-After")) || 60)} seconds before retrying the same action. No outcome was applied.`
+          : result.error || "The Game Master turn failed. Its outcome is not confirmed."),
         { status: response.status, receipt: result.receipt || null },
       );
       if (saveSession.current !== session) return false;
@@ -844,6 +868,7 @@ If this is the very first message of the session, open the scene in-character ba
     if (!text.trim() || !saveReady || saveSession.current?.error || activeTurn.current || commsInFlight.current.size) return false;
     const session = saveSession.current;
     const contact = gameState.contacts?.find((item) => item.channel === channel);
+    if (!contact || !/^(npc|player):/.test(String(channel))) return false;
     const entry = { id: genId(), channel, role: "user", author: character?.name || "Player", content: text.trim(), ts: Date.now() };
     const next = [...comms, entry];
     setComms(next);
@@ -1039,7 +1064,9 @@ If this is the very first message of the session, open the scene in-character ba
     const created = { ...CHARACTER_BASE, ...draftChar };
     setCharacter(created);
     saveAccountKey("gc_character", characterEmail, created);
-    const fresh = { ...DEFAULT_GAME_STATE, notoriety: 10, forceAlignment: 50 };
+    const startingLocation = initialPublicLocation(draftChar.startingWorld);
+    if (!startingLocation) return false;
+    const fresh = { ...DEFAULT_GAME_STATE, location: startingLocation, notoriety: 10, forceAlignment: 50 };
     setGameState(fresh);
     saveKey("gc_gamestate", fresh);
     return sendTurn(null, [], fresh, created);

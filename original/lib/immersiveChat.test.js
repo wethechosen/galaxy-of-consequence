@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { cleanPlayerMessage, immersiveTurnError, parseImmersiveMessage, summarizeStateUpdate } from "./immersiveChat";
+it("shows the rate-limit wait without disguising it as a lost connection", () => {
+  expect(immersiveTurnError("Comlink cooling down. Wait 23 seconds before retrying the same action. No outcome was applied.")).toMatch(/Wait 23 seconds/);
+});
 
 describe("immersive chat presentation", () => {
   it("removes internal context and hidden state from player-visible prose", () => {

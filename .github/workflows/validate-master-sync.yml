@@ -3,6 +3,7 @@ name: Validate Codex Master Sync
 on:
   push:
     branches:
+      - main
       - codex-master-sync
   pull_request:
     branches:

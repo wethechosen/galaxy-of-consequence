@@ -3,6 +3,7 @@ import { rollSagaCheck, type SagaCheckPlan } from "./saga-dice";
 import { isHostileAttackDeclaration } from "./gpt-turn-intent";
 import { positiveActionText } from "./action-intent";
 import { sagaArmorDefenseAdjustments, sagaEquipmentAttackModifier } from "./saga-character";
+import { buildSagaNpc, sagaNpcRole, type SagaNpcBuild } from "./saga-npc";
 
 type RecordValue = Record<string, unknown>;
 type Roller = (min: number, max: number) => number;
@@ -19,6 +20,8 @@ export type Combatant = {
   aimTargetId?: string; recoverySwiftActions?: number; recoveryLastRound?: number;
   secondWindLastDay?: string; secondWindUsedInEncounter?: boolean;
   attackMode?: "melee" | "ranged";
+  /** Server-authored Saga class build used to derive this NPC's combat statistics. */
+  sagaBuild?: SagaNpcBuild;
   prone?: boolean;
   battleStrike?: { attackBonus: number; damageDice: number; expiresRound: number };
 };
@@ -227,14 +230,15 @@ function playerDefenses(character: RecordValue) {
 }
 
 function minorOpponent(name: string, level: number): Omit<Combatant, "initiative"> {
-  const opponentLevel = Math.max(1, Math.min(20, level));
-  const hp = 8 + opponentLevel * 4;
+  const build = buildSagaNpc({ name, level, role: sagaNpcRole(name) });
   return {
-    id: `npc-${randomUUID()}`, name, side: "opposition", level: opponentLevel,
-    hp, maxHp: hp, reflex: 11 + opponentLevel, fortitude: 11 + opponentLevel,
-    will: 10 + opponentLevel, damageThreshold: 11 + opponentLevel,
-    conditionTrack: 0, attackModifier: 1 + opponentLevel,
-    damage: { count: 1, sides: 4, modifier: 1, type: "kinetic" },
+    id: `npc-${randomUUID()}`, name, side: "opposition", level: build.characterLevel,
+    hp: build.maxHitPoints, maxHp: build.maxHitPoints,
+    reflex: build.defenses.reflex, fortitude: build.defenses.fortitude,
+    will: build.defenses.will, damageThreshold: build.damageThreshold,
+    conditionTrack: 0, initiativeModifier: build.initiativeModifier,
+    attackModifier: build.attack.modifier, attackMode: build.attack.mode,
+    damage: build.attack.damage, sagaBuild: build,
   };
 }
 

@@ -9,6 +9,43 @@ export const SAGA_XP_THRESHOLDS = Object.freeze([
   55_000, 66_000, 78_000, 91_000, 105_000, 120_000, 136_000, 153_000, 171_000, 190_000,
 ]);
 
+const CHARACTER_FEAT_LEVELS = new Set([1, 3, 6, 9, 12, 15, 18]);
+const ABILITY_INCREASE_LEVELS = new Set([4, 8, 12, 16, 20]);
+
+// Saga Edition Core Rulebook, Table 3-1. XP is cumulative and is never
+// spent. Class features, hit points and base attack advance with the class
+// level chosen at each character level; the table records benefits shared by
+// every build.
+export const SAGA_LEVEL_BREAKDOWN = Object.freeze(SAGA_XP_THRESHOLDS.map((experience, index) => {
+  const level = index + 1;
+  return Object.freeze({
+    level,
+    experience,
+    characterFeat: CHARACTER_FEAT_LEVELS.has(level),
+    abilityIncrease: ABILITY_INCREASE_LEVELS.has(level),
+    benefits: Object.freeze([
+      "one class level",
+      "class hit points and base attack progression",
+      ...(CHARACTER_FEAT_LEVELS.has(level) ? ["one character-level feat"] : []),
+      ...(ABILITY_INCREASE_LEVELS.has(level) ? ["+1 to two different ability scores"] : []),
+    ]),
+  });
+}));
+
+// Core, Chapter 12. This is explanatory metadata, not an executable class
+// catalog. A prestige class must never be inferred from biography or awarded
+// automatically by the game engine.
+export const SAGA_PRESTIGE_GUIDANCE = Object.freeze({
+  status: "reference-only",
+  examples: Object.freeze(["Ace Pilot", "Bounty Hunter", "Crime Lord", "Elite Trooper", "Force Adept", "Gunslinger", "Jedi Knight", "Jedi Master", "Officer", "Sith Apprentice", "Sith Lord"]),
+  rules: Object.freeze([
+    "Prestige classes are optional, GM-approved specializations; a character cannot begin at level 1 in one.",
+    "A prestige level is chosen during an ordinary level-up only after every printed level, attack, skill, feat, talent, Force, and story prerequisite is already satisfied.",
+    "Prestige levels use the same cumulative XP table and count toward both character level and heroic level.",
+    "This build currently explains prestige progression but does not commit prestige-class choices, so no prestige benefit is inferred or auto-granted.",
+  ]),
+});
+
 const talent = (id, name, tree, extra = {}) => ({ id, name, tree, ...extra });
 const feat = (id, name, extra = {}) => ({ id, name, ...extra });
 
@@ -94,7 +131,7 @@ export const FORCE_TALENT_TREES = Object.freeze([
 // Prestige classes, supplemental trees, and metadata-dependent feat choices
 // remain outside this supported catalog; they must not grant implied benefits.
 export const SAGA_ADVANCEMENT_LIMITATIONS = Object.freeze([
-  "The catalog covers a supported subset of core heroic-class options; prestige classes and supplement options are not implemented.",
+  "The executable catalog covers a supported subset of core heroic-class options; prestige classes are reference-only until their prerequisites and class features are implemented end to end.",
   "Weapon-group talents remain unavailable until their player-selected weapon metadata can be committed correctly.",
   "Force Training offers the executable core power suite; additional core and supplement powers need their corresponding mechanics before selection.",
   "Conditional combat talent effects require adjudication when used; learning a talent does not activate it automatically.",
@@ -239,7 +276,23 @@ export function progressionStatus(character = {}) {
   const validCharacterLevel = knownNumber(character.level) && Number.isSafeInteger(Number(character.level)) && Number(character.level) >= 1 && Number(character.level) <= 20;
   const buildConsistent = validCharacterLevel && !invalidClasses && (assignedClassLevels === level || assignedClassLevels === 0 && level === 1);
   const abilityScoresEstablished = Object.values(parseAbilityScores(character)).every(value => value != null);
-  return { level, experience, earnedLevel, assignedClassLevels, buildConsistent, abilityScoresEstablished, foundationRequired: assignedClassLevels === 0, levelsAvailable: Math.max(0, earnedLevel - level), nextLevelXp: nextLevelExperience(level), advancementAvailable: earnedLevel > level };
+  const levelFloorXp = experienceForLevel(level);
+  const nextLevelXp = nextLevelExperience(level);
+  const xpIntoLevel = Math.max(0, experience - levelFloorXp);
+  const xpToNextLevel = nextLevelXp == null ? 0 : Math.max(0, nextLevelXp - experience);
+  const progressPercent = nextLevelXp == null ? 100 : Math.max(0, Math.min(100, Math.floor((xpIntoLevel / Math.max(1, nextLevelXp - levelFloorXp)) * 100)));
+  const pendingLevels = Math.max(0, earnedLevel - level);
+  const foundationRequired = assignedClassLevels === 0;
+  const nextStep = foundationRequired
+    ? "Record the missing level-1 Saga build before applying earned levels."
+    : pendingLevels > 0
+      ? `Complete level ${level + 1}; additional earned levels remain queued one at a time.`
+      : nextLevelXp == null
+        ? "Level 20 is the Saga Edition character-level maximum."
+        : `Earn ${xpToNextLevel.toLocaleString()} more XP to reach level ${level + 1}.`;
+  return { level, experience, earnedLevel, assignedClassLevels, buildConsistent, abilityScoresEstablished,
+    foundationRequired, levelsAvailable: pendingLevels, pendingLevels, levelFloorXp, xpIntoLevel,
+    xpToNextLevel, progressPercent, nextLevelXp, nextStep, advancementAvailable: earnedLevel > level };
 }
 
 // Pausing play for pending advancement is this campaign's table policy, not
@@ -252,8 +305,8 @@ export function advancementGate(character = {}) {
     code: status.advancementAvailable ? "advancement_required" : null,
     dossierPath: "/character#advancement",
     message: status.advancementAvailable
-      ? `You have earned level ${status.level + 1} with ${status.experience.toLocaleString()} XP. ${status.foundationRequired ? "First establish your missing level-1 build, then complete advancement" : "Complete your advancement choices"} in the Dossier before the next gameplay action. Your scene, money and possessions are unchanged.`
-      : "Your recorded advancement is complete.",
+      ? `You have ${status.experience.toLocaleString()} cumulative XP and earned level ${status.level + 1}. ${status.foundationRequired ? "First establish the missing level-1 Saga build" : "Complete the next class, hit-point, feat, talent, and ability choices"} in the Dossier. Earned levels are recorded one at a time; XP is not spent, and your scene, money and possessions remain unchanged.`
+      : `Your recorded advancement is complete. ${status.nextStep}`,
   };
 }
 
