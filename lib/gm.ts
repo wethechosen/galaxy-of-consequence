@@ -26,6 +26,7 @@ import { advanceTurnLifecycle, beginTurnLifecycle, commitTurnLifecycle, failTurn
 import { pendingTransitArrival, transitArrivalFailure } from "./transit-progression";
 import { reconcileFulfilledObjectives, currentObjectiveContext } from "./objective-reconciliation";
 import { reconcileCommittedArrival } from "./committed-arrival";
+import { EVENT_WAIT_INSTRUCTION, eventWaitFailure, isEventWait } from "./event-wait";
 
 type TurnInput = { accountId?: string; revision: number; action: string; turnId: string; openScene?: boolean; statePolicy?: "committed-trade" | null };
 type Message = { role: "user" | "assistant" | "roll"; content: string; [key: string]: unknown };
@@ -189,6 +190,7 @@ function publicContext(snapshot: DatapadSnapshot) {
     location: state.location, health: state.health, conditionTrack: state.conditionTrack, conditions: state.conditions,
     forcePoints: state.forcePoints, destinyPoints: state.destinyPoints, darkSideScore: state.darkSideScore,
     campaignTimeMinutes: state.campaignTimeMinutes,
+    journey: state.journey,
     credits: state.credits, bankCredits: state.bankCredits, physicalCredits: state.creditsCriminal,
     currencyLedger: "The legacy delta field creditsCriminal stores PHYSICAL GALACTIC CREDIT CHIPS, not illegal or underworld currency. Inventory chips describe this same balance, never additional money. Debit it once when explicitly paying in physical chips.", notoriety: state.notoriety,
     properties: state.properties, ships: state.ships, investments: state.investments,
@@ -222,7 +224,12 @@ export function sanitizeGmNarration(value: string) {
 }
 
 export function safeMessages(snapshot: DatapadSnapshot): NvidiaMessage[] {
-  const messages = Array.isArray(snapshot.messages) ? snapshot.messages as Message[] : [];
+  const allMessages = Array.isArray(snapshot.messages) ? snapshot.messages as Message[] : [];
+  // An audited continuity repair can start fresh context without deleting the
+  // historical transcript. This field is server-owned, not a model delta.
+  const offset = Number(snapshot.gameState?.continuityMessageOffset);
+  const messages = Number.isSafeInteger(offset) && offset >= 0 && offset <= allMessages.length
+    ? allMessages.slice(offset) : allMessages;
   const pairs: NvidiaMessage[][] = [];
   let pendingUser: Message | null = null;
   for (const message of messages) {
@@ -271,6 +278,7 @@ export function classifyTurnMode(action: string): "ooc" | "context" | "play" {
   // Price questions are in-character conversation, with or without quotes.
   // Only explicit table talk or a specific sheet question is out of character.
   const gmQuestion = /^(?:gm|game master|ooc|out.of.character)\b/i.test(clean)
+    || /^(?:are you (?:broken|stuck)|(?:the )?(?:game|gm|controller) (?:is |seems )?(?:broken|stuck)|(?:continuity|story|location) correction|you (?:forgot|are repeating|keep repeating))\b/i.test(clean)
     || /^(?:what (?:is|are) my|show (?:me )?my)\s+(?:stats?|status|level|xp|experience|health|hit points|inventory|credits|skills|talents|feats)\b/i.test(clean)
     || /^how (?:many|much)\s+(?:credits|xp|experience|hit points|force points|destiny points)\s+(?:do|have|am|are|can)\s+i\b/i.test(clean)
     || /\b(?:remember|listen|correction)[,? ]+(?:gm|game master)\b/i.test(clean);
@@ -639,6 +647,10 @@ export function assertNoProgressLoop(
   priorResult = "",
 ) {
   const result = sectionBody(narration, "GAMEPLAY RESULT");
+  if (action && priorResult && sceneTokens(result).length >= 20 && !hasPersistentTurnProgress(delta)
+    && sceneSimilarity(result, priorResult) >= 0.9) {
+    throw new GmTurnError("The draft repeated the preceding outcome without resolving the current action. Resolve a new consequence, elapsed time, or a concrete interruption; do not save the same beat again.", 502);
+  }
   if (!hasPersistentTurnProgress(delta) && asksForAlternative(action) && priorResult
     && sceneSimilarity(result, priorResult) >= 0.55) {
     throw new GmTurnError("The player asked for a different person, place, or approach, but the draft repeated the preceding answer. Resolve the contrast directly and record a distinct lead when one is established.", 502);
@@ -686,6 +698,9 @@ export function assertCommercialCredibility(narration: string, action: string, d
 
 export function assertNarratedLocation(narration: string, delta: Record<string, unknown> | null, savedLocation: unknown) {
   const named = sectionBody(narration, "LOCATION").replace(/\*+/g, "").replace(/^location\s*:\s*/i, "").trim();
+  if (/\s[—–]\s/.test(String(savedLocation || "")) && /^(?:Docking Bay|Spaceport|aboard|inside|outside|cantina)\b/i.test(named)) {
+    throw new GmTurnError("The location dropped its planetary context. Include the current planet or established transit route in LOCATION and delta.location.", 502);
+  }
   const finalLocation = String(delta?.location || savedLocation || "").trim();
   if (named && finalLocation && named.toLocaleLowerCase() !== finalLocation.toLocaleLowerCase()) {
     throw new GmTurnError("The LOCATION and saved location disagree. If declared travel reached a new place, include that exact location in the ledger; otherwise narrate at the saved location.", 502);
@@ -1058,7 +1073,7 @@ function latestAssistantScene(snapshot: DatapadSnapshot) {
     if (!isAuthoritativeLocalReceipt(message) && (message.provider === "local-safe-fallback" || message.fallbackReason) || isRepeatedSceneTemplate(message.content)) continue;
     const location = sectionBody(message.content, "LOCATION").trim();
     if (location && location !== String(snapshot.gameState.location || "")) continue;
-    const scene = extractSceneNarration(message.content);
+    const scene = sectionBody(message.content, "GAMEPLAY RESULT") || extractSceneNarration(message.content);
     if (scene) return scene;
   }
   return "";
@@ -1093,7 +1108,9 @@ export function withSceneFrame(
   openScene = false,
   now = new Date().toISOString(),
 ) {
-  const summary = extractSceneNarration(narration).slice(0, 2800);
+  // SCENE can describe the start of an action. The resolved result is the
+  // current moment: retaining the opening resets travel and conversations.
+  const summary = (sectionBody(narration, "GAMEPLAY RESULT") || extractSceneNarration(narration)).slice(0, 2800);
   if (!summary) return snapshot;
   const previous = currentSceneFrame(snapshot);
   // Route progress records reaching a new playable boundary, not automatic
@@ -1111,7 +1128,14 @@ export function withSceneFrame(
     summary,
     updatedAt: now,
   };
-  return { ...snapshot, gameState: { ...snapshot.gameState, scene } };
+  const journey = snapshot.gameState.journey as Record<string, unknown> | undefined;
+  const destination = String(journey?.destination || "").toLocaleLowerCase();
+  const endLocation = scene.location.toLocaleLowerCase();
+  const arrived = journey?.status === "in_transit" && destination
+    && (endLocation === destination || endLocation.startsWith(destination + " —") || endLocation.startsWith(destination + " -") || endLocation.startsWith(destination + " orbit") || endLocation.startsWith(destination + " system"));
+  return { ...snapshot, gameState: { ...snapshot.gameState, scene,
+    ...(arrived ? { journey: { ...journey, status: "arrived", arrivedAt: now } } : {}),
+  } };
 }
 
 export function assertLocationIntent(delta: Record<string, unknown> | null, action: string, currentLocation?: unknown, interpretedTravel = false) {
@@ -1257,6 +1281,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   if (!priorInterpretation) db.prepare("INSERT OR IGNORE INTO gm_turn_interpretations VALUES (?, ?, ?)").run(accountId, input.turnId, JSON.stringify(interpretation));
   let semantic = interpretation.semantic;
   let resolvedIntent = semantic?.canonicalAction || action;
+  if (isEventWait(action)) resolvedIntent = action;
   const ordinaryTrade = mode === "play" && !input.openScene && !input.statePolicy && (!semantic || semantic.intent === "commerce" && !semantic.checkNeeded);
   if (ordinaryTrade && semantic?.intent === "commerce" && !currentTradeOffers(currentSnapshot.gameState).length) {
     try {
@@ -1354,7 +1379,8 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   if (mode === "play" && isFinancialWithdrawalAction(resolvedIntent)) system += `\n\nBANKING SAFETY: Withdrawing deposited credits as physical chips is an account-to-cash conversion, not a new reward or a change of location. Respect any confirmed terminal lockout. Do not narrate a completed cash-out unless the authorized state ledger can debit bankCredits and record corresponding physical credit chips atomically. If the current ledger schema cannot represent both, explain the operational limitation in the fiction without claiming chips were dispensed, money was lost, or a new security failure was established. Ordinary use of a functioning legitimate terminal does not automatically require a Use Computer check.`;
   if (semantic) system += `\n\nINTERPRETED PLAYER INTENT (not an outcome): ${JSON.stringify(semantic)}\nResolve this intent, not a keyword trigger. The original declaration below remains the player's words and choices. Ordinary competent substeps are part of the attempt; never add a new player decision. Any check is already supplied by the referee; never invent another.`;
   if (forceConstraint) system += `\n\nSAGA CAPABILITY CONSTRAINT: ${forceConstraint}`;
-  if (transitArrival) system += `\n\nCONFIRMED TRANSPORT TRANSIT — ARRIVAL REQUEST: The saved scene establishes that D'mir is aboard a freighter already underway in hyperspace; the objective "${transitArrival.objectiveTitle}" identifies the destination. The older saved Coruscant dock location is a departure-state persistence defect, NOT proof the ship never left. The player has expressly chosen to wait until arrival. Resolve this existing flight to ${transitArrival.destination} NOW, without requiring another order, recharging passage, repeating Jax's prior conversation, or inventing a skill check. Narrate the actual hyperspace exit and arrival/approach, use an end-of-turn LOCATION beginning "${transitArrival.destination}", and emit the exact same location plus a positive, plausible timeAdvanceMinutes in the hidden STATE ledger. Complete the "${transitArrival.objectiveTitle}" objective. No unrelated credits, equipment, or XP awards. A repeated in-flight scene is NOT a resolved result and will be rejected without consuming the turn.`;
+  if (mode === "play" && isEventWait(action)) system += `\n\n${EVENT_WAIT_INSTRUCTION}`;
+  if (transitArrival) system += `\n\nCONFIRMED TRANSPORT TRANSIT — ARRIVAL REQUEST: The current saved journey establishes transit to ${transitArrival.destination}. Older completed journeys and departure scenes are history. The player has chosen to wait until arrival. Resolve this existing flight to ${transitArrival.destination}, without requiring another departure order or payment. Narrate arrival/approach, use an end-of-turn LOCATION beginning "${transitArrival.destination}", and save the same location plus positive, plausible timeAdvanceMinutes. No unrelated credits, equipment, or XP awards. A repeated departure or in-flight scene is not a resolved arrival.`;
   if (mode === "play") system += `\n\n${conversationTradeInstruction(trade)}\n${routineCommerce ? "ORDINARY INTERACTION: No check is required for a normal question or stock/price inquiry. Answer the actual question as the CURRENT interlocutor in the saved scene. A broad market location does not mean a clothing stall. Resolve short follow-ups against the last exchange, including lodging duration, privacy, meals and prices. Quote new terms before charging; do not invent procedural refusal without an established reason." : ""}\nSERIALIZATION: End with exactly one HTML STATE comment containing strict JSON, with double-quoted keys and string values. Multiple merchandise items use one inventoryAdd array, never duplicate keys. A no-change example is <!--STATE:{}-->. Record every concrete priced offer in tradeOfferAdd, including services as named entitlements tagged service with the agreed duration and amenities. Quotes grant nothing yet. LOCATION names the place at the END of this action and must match delta.location when declared travel changes it, or the saved location otherwise.`;
   if (mode === "play") system += `\n${LEASE_LEDGER_INSTRUCTION}\n${QUOTE_COMPONENT_INSTRUCTION}`;
   let parsed: ReturnType<typeof parseEngineResponse> | null = null;
@@ -1450,6 +1476,10 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       delta = constrainExperienceAward(delta, roll);
       delta = reconcileConversationTradeDelta(delta, trade);
       delta = constrainReadOnlyGoodsInspectionDelta(delta, action, trade?.status === "accepted");
+      if (mode === "play") {
+        const waitError = eventWaitFailure(action, sectionBody(parsed.clean, "GAMEPLAY RESULT"), delta);
+        if (waitError) throw new GmTurnError(waitError, 502);
+      }
       delta = reconcileNarratedTravelLocation(parsed.clean, delta, resolvedIntent, roll, currentSnapshot.gameState.location, semantic?.intent === "travel" || Boolean(transitArrival));
       if (input.statePolicy === "committed-trade" && delta) {
         delta = { ...delta, credits: 0, creditsCriminal: 0, inventoryAdd: [], inventoryRemove: [] };
@@ -1459,7 +1489,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
         const arrivalError = transitArrivalFailure(transitArrival, sectionBody(parsed.clean, "GAMEPLAY RESULT"), delta);
         if (arrivalError) throw new GmTurnError(`${arrivalError} Rewrite the same transport turn with arrival, location, and elapsed campaign time.`, 502);
         const completed = Array.isArray(delta?.objectiveComplete) ? delta.objectiveComplete.map(String) : [];
-        delta = { ...(delta || {}), objectiveComplete: [...new Set([...completed, transitArrival.objectiveTitle])] };
+        delta = { ...(delta || {}), ...(transitArrival.objectiveTitle ? { objectiveComplete: [...new Set([...completed, transitArrival.objectiveTitle])] } : {}) };
       }
       assertLocationIntent(delta, resolvedIntent, currentSnapshot.gameState.location, semantic?.intent === "travel" || Boolean(transitArrival));
       if (mode === "play") assertNarratedLocation(parsed.clean, delta, currentSnapshot.gameState.location);
@@ -1574,6 +1604,15 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
     }
   }
   if (!response || !parsed) throw new GmTurnError("The GM could not produce a valid authoritative response. No outcome was saved; retry the turn.", 502);
+  // All recovery branches must satisfy the same action contract before commit.
+  if (mode === "play") {
+    const waitError = eventWaitFailure(action, sectionBody(parsed.clean, "GAMEPLAY RESULT"), delta);
+    if (waitError) throw new GmTurnError(waitError, 502);
+    if (transitArrival) {
+      const arrivalError = transitArrivalFailure(transitArrival, sectionBody(parsed.clean, "GAMEPLAY RESULT"), delta);
+      if (arrivalError) throw new GmTurnError(arrivalError, 502);
+    }
+  }
   enterPhase("finalize-state");
   let finalized = mode === "play"
     ? applyFinalizedTurn(currentSnapshot, input.turnId, action, roll, delta || {})

@@ -6,6 +6,7 @@ import type { SagaCheckPlan } from "./saga-dice";
 import { forcePowerKnown } from "../original/lib/sagaForcePowers";
 import { sagaSkillModifier } from "./saga-character";
 import { isReadOnlyGoodsInspection } from "./goods-inspection";
+import { isEventWait } from "./event-wait";
 
 type Ledger = Record<string, unknown>;
 export const SAGA_ACTION_INTENTS = ["dialogue", "commerce", "travel", "search", "manipulate", "social", "medical", "force", "attack", "physical", "rest", "wait", "goal", "other"] as const;
@@ -118,6 +119,11 @@ travelTarget is null except for explicitly declared travel, where it is the play
 /** A failed interpreter leaves the existing deterministic referee available. */
 export async function interpretSagaAction(action: string, character: Ledger, state: Ledger): Promise<SagaActionInterpretation> {
   if (!action.trim() || action.length > 2000) return { semantic: null, fallbackReason: "No valid player declaration to interpret." };
+  if (isEventWait(action)) return { semantic: {
+    intent: "wait", canonicalAction: action, declaredSpan: action, checkNeeded: false, skill: null,
+    rationale: "The player explicitly passes time until an event. Resolve the existing situation or an interruption without turning this into a spoken aspiration.",
+    travelTarget: null, acceptedOfferId: null,
+  }, fallbackReason: null };
   const reply = contextualReply(action, state);
   if (reply) return { semantic: reply, fallbackReason: null };
   try {
