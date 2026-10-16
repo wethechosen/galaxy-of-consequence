@@ -591,7 +591,7 @@ function resolvedServiceInquiryNarration(snapshot: DatapadSnapshot, action: stri
   const location = String(snapshot.gameState.location || "").trim();
   const scene = String((snapshot.gameState.scene as { summary?: unknown } | undefined)?.summary || "");
   if (!/\b(?:counter|clerk|desk|shop|lobby|atelier|design house|office|clinic|reception|workroom|guesthouse)\b/i.test(location + " " + scene)) return null;
-  const scheduling = /\b(?:appointment|booking|schedule|fitting|consultation|commission)\b/i.test(action);
+  const scheduling = /\b(?:appointments?|bookings?|schedule|fittings?|consultations?|commissions?)\b/i.test(action);
   if (!scheduling) return null;
   const result = "The attendant explains the procedure: a commission or appointment request is sent with the intended work and a preferred day to the person responsible for scheduling. That person must confirm an available time before any appointment is booked. No time, price, or acceptance is promised.";
   return {

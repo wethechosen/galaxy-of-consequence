@@ -88,7 +88,7 @@ export function isRoutineCommerce(action: string, location: unknown) {
  */
 export function isRoutineServiceInquiry(action: string) {
   const text = positiveActionText(action).trim();
-  if (!text || !/\b(?:appointment|booking|commission|consultation|fitting|schedule|opening hours|office hours|return tomorrow)\b/i.test(text)) return false;
+  if (!text || !/\b(?:appointments?|bookings?|commissions?|consultations?|fittings?|schedule|opening hours|office hours|return tomorrow)\b/i.test(text)) return false;
   if (/\b(?:attack|shoot|steal|rob|threaten|intimidate|lie|deceive|bargain|negotiate|persuade|force|bribe|hack|forge|pay|purchase|buy|reserve now|book now|confirm my appointment)\b/i.test(text)) return false;
   return /^(?:["'“”]?\s*)?(?:how|when|where|who|what|which|is there|are there|can i|could i|may i|do you|does|i ask|i inquire|i would like to know|i'd like to know)\b/i.test(text)
     || /\?\s*["'”]?\s*$/.test(text);
