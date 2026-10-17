@@ -19,12 +19,8 @@ import {applySagaFoundation,availableClassSkills,foundationRequirements,SAGA_LAN
 
 const active=process.env.GOC_AUTONOMOUS_NPCS==="1";
 const requested=(process.env.GOC_NPC_SUBJECTS||"").split(",").map(x=>x.trim()).filter(Boolean);
-// Exactly ten independent player-character stress-test campaigns. Kelvek remains story-only.
-const TEN_PLAYABLE_NPC_IDS = new Set([
-  "jena-lorr","orlan-vale","ari-vess","mirren-sol","torin-kade",
-  "lenna-fen","tesa-norr","bren-varo","sorin-pell","calen-vardex",
-]);
-const subjects=ALL_NPC_TEST_ROSTER.filter(n=>TEN_PLAYABLE_NPC_IDS.has(n.id)&&(!requested.length||requested.includes(n.id)));
+// Run all 34 isolated player-character campaigns. Kelvek and D'mir remain excluded.
+const subjects=ALL_NPC_TEST_ROSTER.filter(n=>n.id!=="kelvek"&&n.id!=="dmir-holloran"&&(!requested.length||requested.includes(n.id)));
 const limit=Math.min(200,Math.max(1,Number(process.env.GOC_NPC_MAX_TURNS)||30));
 const concurrency=Math.min(3,Math.max(1,Number(process.env.GOC_NPC_CONCURRENCY)||2));
 const pause=(ms:number)=>new Promise<void>(r=>setTimeout(r,ms));
@@ -225,11 +221,11 @@ async function run(n:NpcTestSubject){
     final.snapshot.gameState.turnEvents.length>=limit?"limit_reached":end;
 }
 describe.skipIf(!active)("Genuine multi-character NVIDIA PC playthroughs",()=>{
-  it("runs exactly ten independent playable NPC campaigns with audited receipts",async()=>{
+  it("runs 34 independent playable NPC campaigns with audited receipts",async()=>{
     expect(process.env.NVIDIA_API_KEY||process.env.NVIDIA_API_KEY_GM).toBeTruthy();
     expect(process.env.CAMPAIGN_DB_PATH).toMatch(/npc-autoplay-150\.sqlite$/i);
     expect(Object.keys(NPC_ULTIMATE_ARCS).length).toBe(34);
-    if(!requested.length)expect(subjects).toHaveLength(10);
+    if(!requested.length)expect(subjects).toHaveLength(34);
     expect(subjects.some(n=>n.id==="kelvek"||n.id==="dmir-holloran")).toBe(false);
     const remaining=new Map(subjects.map(n=>[n.id,n]));
     const failures:string[]=[],capped:string[]=[],confirmedEndings:string[]=[],otherStops:string[]=[];
