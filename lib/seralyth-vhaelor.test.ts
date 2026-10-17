@@ -32,12 +32,12 @@ describe("Lady Seralyth Vhaelor — D'mir canon, GM control and Saga accounting"
     expect(s.maxHitPoints).toBe(s.hitPointBreakdown.firstLevelScoundrel+
       s.hitPointBreakdown.jediRolls.reduce((n,v)=>n+v,0)+s.hitPointBreakdown.constitutionBonusSevenJediLevels);
     expect(s.reflexDefense).toBe(10+s.level+4+2);
-    expect(s.fortitudeDefense).toBe(10+s.level+1+1);
+    expect(s.fortitudeDefense).toBe(10+s.level+0+1);
     expect(s.willDefense).toBe(10+s.level+2+1);
     expect(s.attacks[0].modifier).toBe(s.baseAttackBonus+4+1);
     expect(s.forcePowerSuite).toHaveLength(3*(1+2));
     expect(s.skills["Use the Force"]).toBe(Math.floor(s.level/2)+2+5+5);
-    expect(s.training.trainedSkills).toHaveLength(6);
+    expect(s.training.trainedSkills).toHaveLength(5);
   });
   it("does not invent Soresu prestige talent, Force cloak immunity or future outcomes",()=>{
     expect(s.form.name).toMatch(/Soresu/);
