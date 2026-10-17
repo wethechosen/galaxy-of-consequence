@@ -8,8 +8,8 @@ export { NvidiaProviderError } from "./nvidia-errors";
 export const TEST_AI_MODEL = "nvidia/nemotron-3-super-120b-a12b";
 export function testAiStatus() {
   return { provider: "nvidia", model: nvidiaModel("gm"),
-    models: { gm: nvidiaModel("gm"), npc: nvidiaModel("npc"), interpretation: nvidiaModel("interpretation"), ledger: nvidiaModel("ledger") },
-    configured: Boolean(nvidiaApiKey("gm")), mode: "live-playtest" };
+    models: { gm: nvidiaModel("gm"), dmir: nvidiaModel("dmir"), npc: nvidiaModel("npc"), interpretation: nvidiaModel("interpretation"), ledger: nvidiaModel("ledger") },
+    configured: Boolean(nvidiaApiKey("gm") || nvidiaApiKey("dmir")), mode: "live-playtest" };
 }
 
 export type NvidiaMessage = { role: "user" | "assistant" | "system"; content: string };
