@@ -4,6 +4,7 @@ import {assertLocalRequest} from "@/lib/local-http";
 import {NPC_TEST_ROSTER} from "@/lib/npc-test-roster";
 import {CAMPAIGN_NPCS_150_ABY} from "@/lib/npc-canon-roster";
 import {DMIR_STORY_NPCS} from "@/lib/dmir-story-npcs";
+import {SERALYTH_VHAELOR_GM} from "@/lib/seralyth-vhaelor-gm";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 /** GM PRIVATE: character containers, plots and confidential facts. */
@@ -29,6 +30,7 @@ export async function GET(request:Request){
         category:"story",description:n.background,objective:n.objective,
         secret:n.privateKnowledge,plot:n.arc,encounterRules:n.allowedEncounter,
         status:n.status,playthroughStatus:"unverified",gmOnly:true,
+        gmPacket:n.id==="seralyth-vhaelor"?SERALYTH_VHAELOR_GM:null,
       })),
     ];
     return NextResponse.json({roster,endingCountVerified:0,visibility:"gm-only"},
