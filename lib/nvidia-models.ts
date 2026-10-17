@@ -1,16 +1,57 @@
-export type NvidiaPurpose = "interpretation" | "gm" | "ledger" | "npc";
-// Evaluation presets, not automatic failover: a second model still consumes the account budget.
+/**
+ * NVIDIA text-inference routing. All credentials must be stored as server-side
+ * environment variables, never committed or exposed to browser clients.
+ *
+ * NVIDIA ACE avatar / speech / animation services have different APIs; they
+ * cannot be used as chat-completion IDs without a separate adapter.
+ */
+export type NvidiaPurpose = "interpretation" | "gm" | "dmir" | "ledger" | "npc";
+
 export const NVIDIA_MODEL_CANDIDATES = {
-  interpretation: { model: "nvidia/nemotron-3.5-lightning-30b-a3b", reason: "Short, low-temperature intent classification; validate accuracy and latency before enabling." },
-  gm: { model: "nvidia/nemotron-3.5-super-vl-120b-a12b", reason: "User-selected GM/NPC model; endpoint and Python streaming access verified." },
-  ledger: { model: "nvidia/nemotron-3-super-120b-a12b", reason: "Conservative structured serialization of confirmed outcomes; no authority to grant assets." },
+  interpretation: {
+    model:"nvidia/nemotron-3-super-120b-a12b",
+    reason:"Public NIM chat endpoint. Validate structured interpretation before choosing a faster model.",
+  },
+  gm: {
+    model:"nvidia/nemotron-3-super-120b-a12b",
+    reason:"Stable NVIDIA NIM chat-completions model for world-state-constrained GM narration.",
+  },
+  npc: {
+    model:"nvidia/nemotron-3-super-120b-a12b",
+    reason:"NVIDIA NIM chat model for AI-GM-controlled NPC dialogue; no separate playable NPC mode.",
+  },
+  ledger: {
+    model:"nvidia/nemotron-3-super-120b-a12b",
+    reason:"Use constrained ledger validation; a model cannot grant an unsupported change.",
+  },
 } as const;
-export function nvidiaModel(purpose: NvidiaPurpose = "gm") {
-  const overrides = {interpretation:process.env.NVIDIA_MODEL_INTERPRETATION,gm:process.env.NVIDIA_MODEL_GM,ledger:process.env.NVIDIA_MODEL_LEDGER,npc:process.env.NVIDIA_MODEL_NPC?.trim() || process.env.NVIDIA_MODEL_GM};
-  return overrides[purpose]?.trim() || process.env.NVIDIA_MODEL?.trim() || "nvidia/nemotron-3-super-120b-a12b";
+
+const configured = (value: string | undefined) => value?.trim() || "";
+
+export function nvidiaModel(purpose: NvidiaPurpose = "gm"): string {
+  const general = configured(process.env.NVIDIA_MODEL);
+  const gm = configured(process.env.NVIDIA_MODEL_GM);
+  switch (purpose) {
+    case "dmir": return configured(process.env.NVIDIA_MODEL_DMIR) || gm || general || NVIDIA_MODEL_CANDIDATES.gm.model;
+    case "gm": return gm || general || NVIDIA_MODEL_CANDIDATES.gm.model;
+    case "npc": return configured(process.env.NVIDIA_MODEL_NPC) || gm || general || NVIDIA_MODEL_CANDIDATES.npc.model;
+    case "ledger": return configured(process.env.NVIDIA_MODEL_LEDGER) || general || NVIDIA_MODEL_CANDIDATES.ledger.model;
+    case "interpretation": return configured(process.env.NVIDIA_MODEL_INTERPRETATION) || general || NVIDIA_MODEL_CANDIDATES.interpretation.model;
+  }
 }
 
-export function nvidiaApiKey(purpose: NvidiaPurpose = "gm") {
-  return (["gm", "npc"].includes(purpose) ? process.env.NVIDIA_API_KEY_GM?.trim() : "")
-    || process.env.NVIDIA_API_KEY?.trim();
+/** Dedicated D'mir key is only selected for verified D'mir primary turns.
+ * A missing role secret gracefully falls back to the configured shared key.
+ * Different API keys do NOT imply separate NVIDIA quota pools.
+ */
+export function nvidiaApiKey(purpose: NvidiaPurpose = "gm"): string {
+  const general = configured(process.env.NVIDIA_API_KEY);
+  const gm = configured(process.env.NVIDIA_API_KEY_GM);
+  switch (purpose) {
+    case "dmir": return configured(process.env.NVIDIA_API_KEY_DMIR) || gm || general;
+    case "gm": return gm || general;
+    case "npc": return configured(process.env.NVIDIA_API_KEY_NPC) || gm || general;
+    case "ledger": return configured(process.env.NVIDIA_API_KEY_LEDGER) || general;
+    case "interpretation": return configured(process.env.NVIDIA_API_KEY_INTERPRETATION) || general;
+  }
 }
