@@ -9,9 +9,9 @@ export type NpcTestSubject = {
 export const NPC_TEST_ROSTER: NpcTestSubject[] = [
   {
     id:"kelvek", name:"Kelvek", species:"Muun", age:57, yearABY:147, homeworld:"Muunilinst",
-    background:"Former InterGalactic Banking Clan executive, later imprisoned. During an earlier confinement he works as a librarian and privately teaches credit instruments, governance and the duties of stewardship. This flashback predates his death and makes no assertion about his hidden contingencies.",
-    allegiance:"Independent; politically watched detainee", role:"Financial archivist", classId:"noble",
-    appearance:"Tall pale Muun, charcoal prison tunic, meticulous posture and a carefully repaired spectacles frame.",
+    background:"Former IGBC executive who accumulated concealed wealth by skimming financial orders before Muun displacement. Most peers took new work with IGFED; Kelvek instead worked as paid library staff at the Coruscant juvenile detention center and tutored incarcerated youths, including Dmir. He was not a prisoner. This is a historical flashback prior to his death.",
+    allegiance:"Detention-center staff librarian; politically watched former banker", role:"Financial archivist", classId:"noble",
+    appearance:"Tall pale Muun, charcoal staff cardigan, meticulous posture and carefully repaired spectacles.",
     objective:"Keep the prison library's public study rules intact without exposing confidential financial information.",
     location:"Coruscant — detention complex, prison library desk", destination:"Coruscant — detention complex, public catalogue alcove",
     subject:"approved study materials", contact:"Infirmary records clerk", talentId:"educated",
