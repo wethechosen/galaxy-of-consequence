@@ -9,7 +9,7 @@
  * game-stage context, private plot knowledge and persistent event memory.
  */
 export type StoryNpc = {
-  id:string; name:string; species:string; role:string; status:"living"|"dead"|"unknown";
+  id:string; name:string; species:string; role:string; age?:number; status:"living"|"dead"|"unknown";
   relationship:"parent"|"mentor"|"adversary"|"contact"|"unmet";
   era:"primary-150ABY"|"historic-flashback"|"possible-future";
   background:string; persona:string; objective:string; arc:string;
@@ -35,13 +35,13 @@ export const DMIR_STORY_NPCS: readonly StoryNpc[] = [
   allowedEncounter:"Flashback or authenticated memory only. No living appearance in 150 ABY.",
   privateKnowledge:"Unverified reasons for leaving Haruun Kal; not revealed as a secret combat technique."}),
  npc({id:"kelvek",name:"Kelvek",species:"Muun",role:"Former IGBC executive, prison librarian and D'mir's mentor",status:"dead",relationship:"mentor",era:"historic-flashback",
-  background:"Educated D'mir in economics, governance, credit and investment during imprisonment. D'mir refused to betray him. Kelvek died during the prison riot; exact circumstances remain unknown.",
+  background:"Former IGBC financial executive who secretly skimmed the orders he serviced before the displacement of Muun financiers. While most displaced Muuns resumed financial employment through IGFED, Kelvek became a paid staff librarian at the Coruscant juvenile detention center, not a prisoner. He taught D'mir economics, governance, credit and investment. D'mir refused to betray him. Kelvek died during the prison riot; exact circumstances remain unknown.",
   persona:"Quiet, mathematically precise; teaches by questions and refuses to simplify power.",
   objective:"Safeguard library access and pass on responsible stewardship before the established death.",
   arc:"Uncover riot evidence without assuming a secret inheritance or reversing his death.",
   firstKnownEncounter:"established",locationHint:"Coruscant detention library, historical episodes",
   allowedEncounter:"Historical memories, recordings or evidence; not alive in present day.",
-  privateKnowledge:"The riot's instigator and any financial contingencies remain unproved."}),
+  privateKnowledge:"Kelvek really skimmed IGBC orders prior to Muun displacement and held a concealed fortune. The dark-side prison gang was directed by a Sith Lord who had credible intelligence or inference of that wealth; the fortune was not fabricated. The original source of the Sith's intelligence, complete account trail, and any unproven financial contingencies remain unknown."}),
  npc({id:"jax",name:"Jax",species:"Species unconfirmed in saved canonical scene",role:"Independent transport captain and employment negotiator",status:"living",relationship:"contact",era:"primary-150ABY",
   background:"Established independent captain who negotiated passage and a possible six-month service arrangement with D'mir, involving the YT-1300 and interstellar routing through Taris toward Corporate Sector space.",
   persona:"Professional, practical and protective of his crew; wary of vague contracts.",
@@ -122,6 +122,15 @@ export const DMIR_STORY_NPCS: readonly StoryNpc[] = [
   firstKnownEncounter:"proposed",locationHint:"Bonadan customs authority district",
   allowedEncounter:"Only if the player visits a relevant office or a warranted inspection occurs.",
   privateKnowledge:"D'mir's wealth or Force sensitivity is not magically known."}),
+ npc({id:"seralyth-vhaelor",name:"Lady Seralyth Vhaelor",species:"Human (Hapan)",age:16,
+  role:"Hapan noble daughter and court-security student",status:"living",relationship:"unmet",era:"primary-150ABY",
+  background:"A sixteen-year-old Hapan noble of House Vhaelor, raised among court security and military society. Daughter of Lady Tazielle Vhaelor, a succession-adjacent noble, and Lord-Commander Rethan Vhaelor. Tall, dark-brown-skinned, flawless in complexion and regal in bearing, with a long voluminous curly afro and elegant fitted Hapan garments with practical boots. At court she is an accomplished young aristocrat, not an acknowledged Force user.",
+  persona:"Regal, observant, feminine, and ruthlessly disciplined; a cautious loyalist beginning to question those who command her.",
+  objective:"Complete her court training, maintain her family's security, and discover whom her duty ultimately serves.",
+  arc:"GM ONLY: Secret Hapan Force project and Sith-taught assassin discipline; elite single-blade Soresu. Her infiltrating master is linked to the prison gang that targeted Kelvek's real concealed IGBC wealth. D'mir and Seralyth are strangers. Alliance, Force-cloak tutelage, truth discovery and a joint confrontation remain possible story arcs only if earned through gameplay.",
+  firstKnownEncounter:"proposed",locationHint:"Hapes, House Vhaelor court-security annex",
+  allowedEncounter:"Existing on Hapes in 150 ABY but not yet encountered. Do not place her in D'mir's Bonadan/Taris/Coruscant scene without actual travel and an AI GM-adjudicated meeting. Her private opening scene is an unplayed GM seed, not a gameplay receipt.",
+  privateKnowledge:"Force-sensitive covert assassin and Soresu prodigy. Hapes does not know her Sith instructor's real identity. That Sith Lord led the dark-side prison gang that learned of Kelvek's real pre-displacement IGBC skimming and subsequent staff librarian post. The intelligence source remains unknown. Seralyth does not yet know of D'mir, the prison-gang link, or Kelvek's history. Any future trust, training, betrayal or victory must emerge in play."}),
 ];
 export const findDmirStoryNpc=(name:string)=>DMIR_STORY_NPCS.find(n=>
   n.name.toLocaleLowerCase()===name.trim().toLocaleLowerCase() ||

@@ -4,13 +4,14 @@ import { dmirSceneNpcContext, updateDmirNpcContinuity, publicDmirNpcDossiers } f
 
 describe("Dmir homebrew NPCs, personal plots and persistence", () => {
   it("keeps deceased parents and Kelvek in history, not alive at 150 ABY", () => {
-    expect(DMIR_STORY_NPCS).toHaveLength(13);
+    expect(DMIR_STORY_NPCS).toHaveLength(14);
     for(const id of ["maera-holloran","daren-holloran","kelvek"]){
       const npc=DMIR_STORY_NPCS.find(n=>n.id===id)!;
       expect(npc.status).toBe("dead");
       expect(npc.allowedEncounter).toMatch(/Flashback|Historical|recordings/i);
     }
     expect(findDmirStoryNpc("Jax")?.firstKnownEncounter).toBe("established");
+    expect(findDmirStoryNpc("Lady Seralyth Vhaelor")).toMatchObject({age:16, relationship:"unmet",status:"living",firstKnownEncounter:"proposed"});
     expect(DMIR_STORY_NPCS.every(n=>Boolean(n.objective&&n.arc&&n.allowedEncounter))).toBe(true);
   });
   it("does not produce live encounters or grant secret knowledge merely by defining a cast", () => {
@@ -40,11 +41,18 @@ describe("Dmir homebrew NPCs, personal plots and persistence", () => {
     expect(ledger.jax.moments).toHaveLength(1);
     expect(updateDmirNpcContinuity(updated,verified,"turn123456","I negotiate with Jax")).toEqual(updated);
   });
+  it("does not spawn Seralyth into Dmir’s unrelated scenes or grant knowledge",()=>{
+    expect(dmirSceneNpcContext("I ask the tailor a question",{location:"Bonadan"}).some(n=>n.id==="seralyth-vhaelor")).toBe(false);
+    expect(dmirSceneNpcContext("I wait on Taris",{location:"Taris"}).some(n=>n.id==="seralyth-vhaelor")).toBe(false);
+  });
   it("keeps GM-only plot secrets out of the public roster",()=>{
     const text=JSON.stringify(publicDmirNpcDossiers());
     expect(text).not.toContain("privateKnowledge");
     expect(text).not.toContain("sealed testimony");
     expect(text).not.toContain("riot\u0027s instigator");
-    expect(publicDmirNpcDossiers()).toHaveLength(13);
+    expect(publicDmirNpcDossiers()).toHaveLength(14);
+    expect(text).not.toContain("red lightsaber");
+    expect(text).not.toContain("the SAME Sith Lord");
+    expect(text).not.toContain("pre-displacement IGBC");
   });
 });
