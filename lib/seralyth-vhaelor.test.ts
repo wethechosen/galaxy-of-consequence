@@ -41,10 +41,10 @@ describe("Lady Seralyth Vhaelor — D'mir canon, GM control and Saga accounting"
   });
   it("does not invent Soresu prestige talent, Force cloak immunity or future outcomes",()=>{
     expect(s.form.name).toMatch(/Soresu/);
-    expect(s.talents.some(t=>t.name==="Soresu")).toBe(false);
+    expect(s.talents.some(t=>String(t.name)==="Soresu")).toBe(false);
     expect(s.classes.every(c=>!["Jedi Knight","Sith Apprentice"].includes(c.name))).toBe(true);
     expect(s.concealmentRules.optical).toContain("does not by itself mask the Force");
-    expect(s.limits||s.limitations).toBeDefined();
+    expect(s.limitations.length).toBeGreaterThan(0);
     expect(SERALYTH_HAPES_OPENING.status).toBe("prepared-not-played");
     expect(SERALYTH_GM_DOSSIER.relationalPotential.meeting).toMatch(/Neither D'mir nor Seralyth has met/);
   });
