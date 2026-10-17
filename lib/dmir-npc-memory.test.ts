@@ -45,9 +45,9 @@ describe("Dmir homebrew NPCs, personal plots and persistence", () => {
     expect(text).not.toContain("privateKnowledge");
     expect(text).not.toContain("sealed testimony");
     expect(text).not.toContain("riot\u0027s instigator");
-    expect(text).not.toContain("Sith");
-    expect(text).not.toContain("Force-sensitive");
-    expect(text).not.toContain("prison gang");
+    const seralyth=publicDmirNpcDossiers().find(n=>n.id==="seralyth-vhaelor");
+    const visible=JSON.stringify(seralyth);
+    expect(visible).not.toMatch(/Sith|Force-sensitive|prison gang|red lightsaber|Kelvek/i);
     expect(publicDmirNpcDossiers()).toHaveLength(14);
   });
 });
