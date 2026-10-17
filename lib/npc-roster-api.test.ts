@@ -11,16 +11,22 @@ it("denies the private GM NPC registry to ordinary players and signed-out users"
   expect(response.status).toBe(403);
   expect(JSON.stringify(await response.json())).not.toContain("Kelvek");
 });
-it("provides 48 private GM NPC dossier records only to the authorized GM",async()=>{
+it("provides 49 private GM NPC dossier records only to the authorized GM",async()=>{
   vi.mocked(requireAccount).mockReturnValue({id:"gm-1",username:"gm",displayName:"GM",role:"admin"});
   const response=await GET(request());
   expect(response.status).toBe(200);
   expect(vi.mocked(requireAccount)).toHaveBeenCalledWith(expect.any(Request),true);
   const result=await response.json();
-  expect(result.roster).toHaveLength(48);
+  expect(result.roster).toHaveLength(49);
   expect(result.endingCountVerified).toBe(0);
-  expect(new Set(result.roster.map((entry:{id:string})=>entry.id)).size).toBe(48);
+  expect(new Set(result.roster.map((entry:{id:string})=>entry.id)).size).toBe(49);
   expect(result.visibility).toBe("gm-only");
+  const seralyth=result.roster.find((n:{id:string})=>n.id==="story-seralyth-vhaelor");
+  expect(seralyth).toBeDefined();
+  expect(seralyth.sagaSheet.controller).toBe("ai-gm");
+  expect(seralyth.sagaSheet.talents.map((n:{name:string})=>n.name)).toContain("Block");
+  expect(seralyth.initialScene.status).toBe("prepared-not-played");
+  expect(seralyth.gmDossier.prisonGangConnection.kelvekTruth).toMatch(/skimmed/);
   expect(result.roster.some((n:{category:string;secret?:string})=>n.category==="story"&&n.secret)).toBe(true);
   for(const entry of result.roster)expect(entry.playthroughStatus).toBe("unverified");
   expect(result.roster.find((entry:{id:string})=>entry.id==="kelvek").era).toBe(147);
