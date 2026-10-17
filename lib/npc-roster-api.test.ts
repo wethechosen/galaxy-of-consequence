@@ -27,7 +27,7 @@ it("provides 48 private GM NPC dossier records only to the authorized GM",async(
   expect(seralyth.gmOnly).toBe(true);
   expect(seralyth.gmPacket.controller).toBe("ai-gm-only");
   expect(seralyth.gmPacket.introduction.encounterWithDmir).toBe(false);
-  expect(seralyth.gmPacket.saga.talents).toContain("Soresu");
+  expect(seralyth.gmPacket.saga.talents).toContain("Lightsaber Defense");
   expect(result.roster.some((n:{category:string;secret?:string})=>n.category==="story"&&n.secret)).toBe(true);
   for(const entry of result.roster)expect(entry.playthroughStatus).toBe("unverified");
   expect(result.roster.find((entry:{id:string})=>entry.id==="kelvek").era).toBe(147);
