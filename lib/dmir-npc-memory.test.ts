@@ -4,7 +4,7 @@ import { dmirSceneNpcContext, updateDmirNpcContinuity, publicDmirNpcDossiers } f
 
 describe("Dmir homebrew NPCs, personal plots and persistence", () => {
   it("keeps deceased parents and Kelvek in history, not alive at 150 ABY", () => {
-    expect(DMIR_STORY_NPCS).toHaveLength(13);
+    expect(DMIR_STORY_NPCS).toHaveLength(14);
     for(const id of ["maera-holloran","daren-holloran","kelvek"]){
       const npc=DMIR_STORY_NPCS.find(n=>n.id===id)!;
       expect(npc.status).toBe("dead");
@@ -45,6 +45,9 @@ describe("Dmir homebrew NPCs, personal plots and persistence", () => {
     expect(text).not.toContain("privateKnowledge");
     expect(text).not.toContain("sealed testimony");
     expect(text).not.toContain("riot\u0027s instigator");
-    expect(publicDmirNpcDossiers()).toHaveLength(13);
+    expect(text).not.toContain("Sith");
+    expect(text).not.toContain("Force-sensitive");
+    expect(text).not.toContain("prison gang");
+    expect(publicDmirNpcDossiers()).toHaveLength(14);
   });
 });
