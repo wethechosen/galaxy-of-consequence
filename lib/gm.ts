@@ -1642,21 +1642,6 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       assertMaterialAuthority(delta, action, null, currentSnapshot.gameState as Record<string,unknown>, null);
       assertNarrativeLedgerConsistency(parsed.clean, delta, resolvedIntent);
       validationError = null;
-    } else if (mode === "play" && !roll && !trade && !encounter && mayUseCivilianAgencyRecovery(action, currentSnapshot.gameState.location)) {
-      // Keep ordinary civilian actions playable after exhausted drafts,
-      // preserving the original refusal and offering only a possible lead.
-      const recovered = civilianAgencyRecovery(action, String(currentSnapshot.gameState.location || ""));
-      fallbackReason = "validation";
-      response = {provider:"local-safe-fallback",model:"civilian-agency-recovery",finishReason:"stop",content:recovered.content};
-      parsed = parseEngineResponse(recovered.content, {requireState:true});
-      delta = parsed.delta as unknown as Record<string,unknown>;
-      assertCampaignResponseStructure(parsed.clean);
-      assertSandboxAgency(parsed.clean, action, null, delta);
-      assertMechanicalNarration(parsed.clean, null);
-      assertNoProgressLoop(parsed.clean, action, delta, currentSnapshot.gameState.location, priorResult);
-      assertMaterialAuthority(delta, action, null, currentSnapshot.gameState as Record<string,unknown>, null);
-      assertNarrativeLedgerConsistency(parsed.clean, delta, resolvedIntent);
-      validationError = null;
     } else if (routineServiceInquiry && !roll && !trade && response?.content && response.provider !== "local-safe-fallback" && resolvedServiceInquiryNarration(currentSnapshot, action)) {
       // Three malformed GM drafts must not strand a harmless service inquiry.
       // Use only established service-desk context and a zero-mutation receipt.
@@ -1691,6 +1676,21 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       assertNarrativeLedgerConsistency(parsed.clean, delta, resolvedIntent);
       const experienceAward = routineCommerce ? 0 : deriveExperienceAward(delta, roll, currentSnapshot.gameState as Record<string, unknown>, currentSnapshot.character as Record<string, unknown>);
       delta = { ...(delta || {}), experienceAward };
+      validationError = null;
+    } else if (mode === "play" && !roll && !trade && !encounter && mayUseCivilianAgencyRecovery(action, currentSnapshot.gameState.location)) {
+      // Keep ordinary civilian actions playable after exhausted drafts,
+      // preserving the original refusal and offering only a possible lead.
+      const recovered = civilianAgencyRecovery(action, String(currentSnapshot.gameState.location || ""));
+      fallbackReason = "validation";
+      response = {provider:"local-safe-fallback",model:"civilian-agency-recovery",finishReason:"stop",content:recovered.content};
+      parsed = parseEngineResponse(recovered.content, {requireState:true});
+      delta = parsed.delta as unknown as Record<string,unknown>;
+      assertCampaignResponseStructure(parsed.clean);
+      assertSandboxAgency(parsed.clean, action, null, delta);
+      assertMechanicalNarration(parsed.clean, null);
+      assertNoProgressLoop(parsed.clean, action, delta, currentSnapshot.gameState.location, priorResult);
+      assertMaterialAuthority(delta, action, null, currentSnapshot.gameState as Record<string,unknown>, null);
+      assertNarrativeLedgerConsistency(parsed.clean, delta, resolvedIntent);
       validationError = null;
     } else {
       enterPhase("drafting-exhausted", 3);
