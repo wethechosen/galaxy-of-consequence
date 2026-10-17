@@ -52,7 +52,7 @@ export const SERALYTH_VHAELOR_GM = {
     defensesInPlay:{
       block:"Reaction; opposed Use the Force vs qualifying melee attack roll, -5 cumulative per previous Block/Deflect since last turn.",
       deflect:"Reaction; opposed Use the Force vs qualifying ranged attack roll, same cumulative penalty.",
-      soresuPractice:"Exceptional Form III Soresu technique: Block, Deflect and Lightsaber Defense plus Circle of Shelter. The Jedi Knight-only Soresu reroll talent has not been earned.",,
+      soresuPractice:"Exceptional Form III Soresu technique: Block, Deflect and Lightsaber Defense plus Circle of Shelter. The Jedi Knight-only Soresu reroll talent has not been earned.",
       forceSignature:"Conceal a Force signature by an opposed Use the Force check against Sense Force; no permanent immunity.",
       cloak:"Cloak Force power bends visible light; must be activated, checked and spent according to its power rules. Different from masking one's Force signature.",
       knack:"Limited Scoundrel skill-check reroll under the published talent rules."
