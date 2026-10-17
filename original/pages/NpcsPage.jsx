@@ -1,13 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { UsersRound, Search, ShieldCheck, Info } from "lucide-react";
+import { UsersRound, Search } from "lucide-react";
 import { useGame } from "@/original/lib/GameContext";
-import { useAuth } from "@/original/lib/AuthContext";
 import { Shell, TopBar, GlassCard } from "@/original/components/GalaxyUI";
 import NpcVisualCard from "@/original/components/NpcVisualCard";
 import NpcFullBodyCard from "@/original/components/NpcFullBodyCard";
 export default function NpcsPage() {
   const { character, gameState } = useGame();
-  const { user } = useAuth();
   const [roster, setRoster] = useState([]);
   const [query, setQuery] = useState("");
   useEffect(() => {
@@ -30,7 +28,7 @@ export default function NpcsPage() {
     <main className="flex-1 min-h-0 overflow-y-auto m-3 gc-glass rounded-2xl p-6">
       <p className="text-[10px] tracking-[0.2em] text-[#ff9b50] mb-2">GALACTIC PERSONNEL INDEX · 150 ABY</p>
       <h1 className="gc-display text-3xl font-bold text-[#f2f0ea]">NPC DOSSIERS</h1>
-      <p className="mt-2 text-sm max-w-4xl text-[#a9adb8]">Private GM dossiers: ten independent playable NPC test accounts (excluding Kelvek), the supplemental cast, Kelvek's historical flashback, and D'mir-story NPCs. Unverified plots and confidential details remain GM-only; players see only the public sheets for characters encountered in their game.</p>
+      <p className="mt-2 text-sm max-w-4xl text-[#a9adb8]">Private GM dossiers for the 150 ABY cast, isolated NPC simulation cases, and D'mir's story. All NPCs remain AI GM-controlled, never playable accounts. Hidden plots and unverified encounters remain confidential.</p>
       <div className="flex flex-wrap gap-3 mt-5 mb-6">
         <span className="rounded-lg bg-white/[.035] px-3 py-2 text-xs border border-white/10 text-[#e8e7e2]">{roster.length} DOSSIERS</span>
         <span className="rounded-lg bg-white/[.035] px-3 py-2 text-xs border border-white/10 text-[#a9adb8]">{roster.filter(n => n.auditedEnding?.status === "goal_complete").length} AUDITED LOCAL ENDING(S)</span>
@@ -40,7 +38,7 @@ export default function NpcsPage() {
         <label className="relative flex-1 min-w-[210px] max-w-xl"><Search size={15} className="absolute left-3 top-3 text-[#8b93a3]" /><input aria-label="Search NPC roster" value={query} onChange={event=>setQuery(event.target.value)} placeholder="Search name, species, world, affiliation..." className="gc-input w-full pl-9 pr-3 py-2.5 text-sm" /></label>
         <select aria-label="Filter NPC type" className="gc-input px-3 py-2.5 text-sm" value={group} onChange={event=>setGroup(event.target.value)}>
           <option value="all">All characters</option>
-          <option value="test">Ten test characters</option>
+          <option value="test">GM simulation scenarios</option>
           <option value="cast">Supplement cast</option>
           <option value="story">Dmir storyline</option>
         </select>

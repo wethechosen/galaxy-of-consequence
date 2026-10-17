@@ -1640,6 +1640,10 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   }
   if (validationError) {
     const proposalRecovery = mode === "play" ? resolvedProposalDiscussion(currentSnapshot, action, semantic?.intent, roll) : null;
+    const interiorRecovery = mode === "play" && !roll && !trade && !encounter
+      ? planInteriorMovement(resolvedIntent, currentSnapshot.gameState.location) : null;
+    const serviceRecovery = routineServiceInquiry && !roll && !trade && response?.content && response.provider !== "local-safe-fallback"
+      ? resolvedServiceInquiryNarration(currentSnapshot, action) : null;
     if (mode === "play" && isReadOnlyGoodsInspection(action)) {
       fallbackReason = "validation";
       response = resolvedGoodsInspectionNarration(currentSnapshot, action);
@@ -1655,11 +1659,10 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       assertMechanicalNarration(parsed.clean, null);
       assertMaterialAuthority(delta, action, null, currentSnapshot.gameState as Record<string, unknown>, null);
       validationError = null;
-    } else if (mode === "play" && !roll && !trade && !encounter && planInteriorMovement(resolvedIntent, currentSnapshot.gameState.location)) {
+    } else if (interiorRecovery) {
       // A safely reachable public interior waypoint must not cause a terminal 503
       // merely because all provider drafts kept the character in the old room.
-      const interior = planInteriorMovement(resolvedIntent, currentSnapshot.gameState.location)!;
-      const recovered = recoverInteriorMovement(interior);
+      const recovered = recoverInteriorMovement(interiorRecovery);
       fallbackReason = "validation";
       response = {provider:"local-safe-fallback",model:"interior-movement-receipt",finishReason:"stop",content:recovered.content};
       parsed = parseEngineResponse(recovered.content, {requireState:true});
@@ -1686,10 +1689,10 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       assertMaterialAuthority(delta, action, null, currentSnapshot.gameState as Record<string, unknown>, null);
       assertNarrativeLedgerConsistency(parsed.clean, delta, resolvedIntent);
       validationError = null;
-    } else if (routineServiceInquiry && !roll && !trade && response?.content && response.provider !== "local-safe-fallback" && resolvedServiceInquiryNarration(currentSnapshot, action)) {
+    } else if (serviceRecovery) {
       // Three malformed GM drafts must not strand a harmless service inquiry.
       // Use only established service-desk context and a zero-mutation receipt.
-      const recovered = resolvedServiceInquiryNarration(currentSnapshot, action)!;
+      const recovered = serviceRecovery;
       fallbackReason = "validation";
       response = recovered;
       parsed = parseEngineResponse(recovered.content, { requireState: true });
