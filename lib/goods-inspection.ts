@@ -9,10 +9,17 @@ type Ledger = Record<string, unknown>;
  */
 export function isReadOnlyGoodsInspection(action: string) {
   const text = positiveActionText(action).replace(/[’]/g, "'");
-  const inspection = /\b(?:inspect|examine|look\s+(?:at|over)|check(?:\s+the)?|read)\b/i.test(text);
-  const goods = /\b(?:item|merchandise|goods?|wares?|medpacs?|med[- ]?packs?|seal|label|expiration|expiry|condition|package|packaging|weapon|armor|clothing|outfit|robe|coat|suit|gear|device|datapad|droid|vehicle|ship)\b/i.test(text);
+  // Only a direct physical merchandise examination qualifies. Do not
+  // reclassify "check a database on my datapad" or "check seed condition"
+  // as a retail action merely because they contain generic inspection words.
+  const physicalGoods = /\b(?:item|merchandise|goods?|wares?|medpacs?|med[- ]?packs?|weapon|armor|clothing|outfit|robe|coat|suit|gear|device|datapad|droid|vehicle|ship)\b/i;
+  const inspectionTarget = /\b(?:inspect|examine|look\s+(?:at|over)|check(?:\s+the)?)\b[^.!?]{0,90}?\b(?:item|merchandise|goods?|wares?|medpacs?|med[- ]?packs?|weapon|armor|clothing|outfit|robe|coat|suit|gear|device|datapad|droid|vehicle|ship)\b/i.test(text);
+  const retailDetails = /\b(?:seal|label|expiration|expiry|package|packaging)\b/i.test(text)
+    && /\b(?:vendor|seller|merchant|offered|on display|on a shelf|on the shelf|for sale|medpacs?|med[- ]?packs?|armor|clothing|gear|wares?|merchandise|item)\b/i.test(text);
+  const nonRetailContext = /\b(?:databases?|archives?|logs?|records?|reports?|registry|certification|clinical|diagnos(?:e|is|tic)|germination|soil|seeds?|test plots?|pressure decay|calibrat(?:e|ion)|readings|survey maps?|sensor data|research|investigat(?:e|ion)|analy[sz]e)\b/i.test(text);
   const materialAction = /\b(?:buy|purchase|pay|charge|accept\s+(?:the\s+)?(?:offer|deal)|sell|trade|keep|pocket|steal|rob|consume|use\s+(?:the|a|an|my)|equip|wear|put\s+(?:(?:it|them|the\s+\w+)\s+)?on|take\s+(?:it|them|the\s+\w+)\s+(?:away|with\s+me|home))\b/i.test(text);
-  return inspection && goods && !materialAction;
+  return (inspectionTarget && physicalGoods.test(text) || retailDetails)
+    && !nonRetailContext && !materialAction;
 }
 
 /** Inspection is observational, never an implicit account or ownership event. */

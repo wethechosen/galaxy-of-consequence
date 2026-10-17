@@ -6,6 +6,7 @@ import { hostedGet, hostedPersistenceEnabled, hydrateHostedSave, hostedPut, ensu
 import { AdvancementRequiredError, advancementErrorBody } from "@/lib/advancement-gate";
 import { neonGetConfig, neonSaveConfig } from "@/lib/neon-campaign-store";
 import { neonQuery } from "@/lib/neon-db";
+import {playerVisibleSnapshot} from "@/lib/npc-private-state";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 function errorResponse(error: unknown) {
@@ -45,10 +46,11 @@ export async function GET(request: Request) {
       const admin = listAccounts().find(account => account.role === "admin");
       if (!admin) throw new DatapadError("Campaign administrator is not configured.", 503);
       const config = await neonGetConfig(admin.id);
-      return NextResponse.json({ ...response, config: config?.config ?? null,
+      return NextResponse.json({ ...response, snapshot:playerVisibleSnapshot(response.snapshot), config: config?.config ?? null,
         configRevision: config?.revision ?? 0 }, { headers: { "Cache-Control": "no-store" } });
     }
-    return NextResponse.json(readDatapad(actor, requested), { headers: { "Cache-Control": "no-store" } });
+    const result=readDatapad(actor,requested);
+    return NextResponse.json({...result,snapshot:playerVisibleSnapshot(result.snapshot)}, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return errorResponse(error); }
 }
 export async function PUT(request: Request) {

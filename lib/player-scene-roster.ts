@@ -57,13 +57,22 @@ export function recordVisibleSceneNpcs(state:Row,narration:string,turnId:string)
     const display=displayNpc(candidate);
     if(display)participants.set(slug(display.name),{...display,location,turnId});
   };
-  const roleMatcher=/(?:a|the)?\s*(clerk|attendant|captain|officer|pilot|merchant|vendor|registrar|tailor|engineer|technician|warden|receptionist|librarian|inspector|sergeant)\s+(?:named\s+)?([A-Z][a-z][A-Za-z'-]{1,24})(?=\s|[,.!:;?]|$)/g;
-  for(const match of result.matchAll(roleMatcher)){
-    if(!absent.has(match[2]))add({name:match[2],role:match[1]});
-  }
+  const roleMatcher=/(?:a|the)?\s*(clerk|attendant|captain|officer|pilot|merchant|vendor|registrar|tailor|engineer|technician|warden|receptionist|librarian|inspector|sergeant)\s+(?:named\s+)?([A-Z][a-z][A-Za-z'-]{1,24})(?=\s|[,.!:;?]|$)/gi;
   const contacts=Array.isArray(state.contacts)?state.contacts.filter(record):[];
   const already=sceneNpcRoster(state).filter(record);
   const candidates=[...canonical,...contacts,...already];
+  for(const match of result.matchAll(roleMatcher)){
+    const following=result.slice((match.index||0)+match[0].length).trimStart();
+    if(!/^(?:stands|sits|waits|responds|replies|speaks|says|asks|nods|gestures|points|looks|walks|approaches|greets|puts|hands|offers|directs|is|turns)\b/i.test(following))continue;
+    const role=match[1].toLowerCase();
+    const surname=match[2];
+    if(absent.has(surname))continue;
+    const withTitle=role.slice(0,1).toUpperCase()+role.slice(1)+" "+surname;
+    const known=candidates.find(c=>slug(String(c.name||""))===slug(withTitle))
+      ||candidates.find(c=>slug(String(c.name||""))===slug(surname));
+    const isTitle=role==="captain"||role==="sergeant";
+    add({name:known?.name|| (isTitle?withTitle:surname),role:match[1]});
+  }
   for(const raw of candidates){
     const name=text(raw.name,80);
     if(!name)continue;

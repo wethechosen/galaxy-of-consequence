@@ -4,8 +4,9 @@ export default defineConfig({
   resolve: { alias: { "@": fileURLToPath(new URL(".", import.meta.url)) } },
   test: {
     exclude: ["**/node_modules/**", "**/.next/**", "**/vendor/**", "**/.venv*/**"],
-    // Password hashing is deliberately expensive and can exceed Vitest's
-    // five-second default on constrained Windows hosts and shared CI runners.
-    testTimeout: 20_000,
+    // Deliberately expensive authentication hashes need bounded concurrency
+    // and more than 20 seconds when CI shares a two-core build machine.
+    maxWorkers: 2,
+    testTimeout: 60_000,
   },
 });

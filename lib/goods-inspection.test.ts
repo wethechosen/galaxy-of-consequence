@@ -20,6 +20,16 @@ describe("read-only merchandise inspection", () => {
     expect(isReadOnlyGoodsInspection(action)).toBe(false);
   });
 
+  it.each([
+    "I return to the test plots at dawn to check for germination, examining soil moisture and seed condition, then share my observations with the farmers.",
+    "I access the Biomedical Compliance Unit's public database on my datapad, entering the prosthesis registry number to check for certification recalls.",
+    "I examine the physical shipment manifests and their inspection logs to cross-check cargo references.",
+    "I review the public registry status on my device.",
+    "I inspect the ship's maintenance diagnostic readings before troubleshooting its pressure seal.",
+  ])("does NOT misclassify NPC investigation or technical work as merchandise inspection: %s", action => {
+    expect(isReadOnlyGoodsInspection(action)).toBe(false);
+  });
+
   it("removes an invented purchase while retaining non-material scene state", () => {
     expect(constrainReadOnlyGoodsInspectionDelta({
       credits: -5400,

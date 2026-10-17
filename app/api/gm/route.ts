@@ -8,6 +8,7 @@ import { hostedGet, hostedPersistenceEnabled, hydrateHostedSave, saveHostedResul
 import { replayHostedTurn } from "@/lib/hosted-turn-replay";
 import { AdvancementRequiredError, advancementErrorBody } from "@/lib/advancement-gate";
 import { turnLifecycleFromError } from "@/lib/turn-lifecycle";
+import {playerVisibleSnapshot} from "@/lib/npc-private-state";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
     const hosted = hostedPersistenceEnabled() ? await hostedGet(target.username) : null;
     if (hosted) {
       const replay = replayHostedTurn(hosted, typeof body.turnId === "string" ? body.turnId : "", typeof body.action === "string" ? body.action : "");
-      if (replay) return NextResponse.json(replay, { headers: { "Cache-Control": "no-store" } });
+      if (replay) return NextResponse.json({...replay,snapshot:playerVisibleSnapshot(replay.snapshot)}, { headers: { "Cache-Control": "no-store" } });
       if (typeof body.revision !== "number" || body.revision !== hosted.revision) {
         return NextResponse.json({ error: "The campaign changed elsewhere. Reload the saved game before continuing.", code: "campaign_changed", revision: hosted.revision }, { status: 409 });
       }
@@ -39,7 +40,7 @@ export async function POST(request: Request) {
       statePolicy: body.statePolicy === "committed-trade" ? "committed-trade" : null,
     });
     if (hosted) await saveHostedResult(target, hosted.revision, result.snapshot);
-    return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({...result,snapshot:playerVisibleSnapshot(result.snapshot)}, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (error instanceof AdvancementRequiredError) return NextResponse.json(advancementErrorBody(error), { status: error.status });
     const status = error instanceof GmTurnError || error instanceof NvidiaProviderError ? error.status
