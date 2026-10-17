@@ -9,6 +9,7 @@ import {runGmTurn} from "./gm";
 import {invokeNvidia} from "./original-provider";
 import {ALL_NPC_TEST_ROSTER,type NpcTestSubject} from "./npc-test-roster";
 import {NPC_ULTIMATE_ARCS,NPC_ULTIMATE_ARC_VERSION} from "./npc-ultimate-arcs";
+import {hasAuditedNpcUltimateCompletion} from "./npc-ultimate-verification";
 import {npcRepetitionRecovery} from "./npc-repetition-recovery";
 import {rebaseIsolatedNpcPendingAttempt} from "./npc-pending-revision";
 import {NPC_HISTORICAL_TIERS,advanceNpcEarnedXp} from "./npc-historical-baselines";
@@ -18,7 +19,8 @@ import {applySagaFoundation,availableClassSkills,foundationRequirements,SAGA_LAN
 
 const active=process.env.GOC_AUTONOMOUS_NPCS==="1";
 const requested=(process.env.GOC_NPC_SUBJECTS||"").split(",").map(x=>x.trim()).filter(Boolean);
-const subjects=ALL_NPC_TEST_ROSTER.filter(n=>n.id!=="kelvek"&&(!requested.length||requested.includes(n.id)));
+// Run all 34 isolated player-character campaigns. Kelvek and D'mir remain excluded.
+const subjects=ALL_NPC_TEST_ROSTER.filter(n=>n.id!=="kelvek"&&n.id!=="dmir-holloran"&&(!requested.length||requested.includes(n.id)));
 const limit=Math.min(200,Math.max(1,Number(process.env.GOC_NPC_MAX_TURNS)||30));
 const concurrency=Math.min(3,Math.max(1,Number(process.env.GOC_NPC_CONCURRENCY)||2));
 const pause=(ms:number)=>new Promise<void>(r=>setTimeout(r,ms));
@@ -57,12 +59,12 @@ function seed(n:NpcTestSubject):DatapadSnapshot{
   },"2026-10-16T00:00:00.000Z") as DatapadSnapshot;
 }
 function status(s:DatapadSnapshot,n:NpcTestSubject){
-  const goals=Array.isArray(s.gameState.objectives)?s.gameState.objectives.filter(isObj):[];
   // Completing a small initial chapter (asking a clerk, finding an anomaly)
   // does not finish the character\'s long-form campaign.
   const ultimate=NPC_ULTIMATE_ARCS[n.id]||n.objective;
-  if(goals.some(g=>String(g.title).toLowerCase()===ultimate.toLowerCase()
-      &&String(g.status).toLowerCase()==="completed"))return "goal_complete";
+  // A GM objectiveComplete is not proof that the entire ultimate arc is resolved.
+  // Require a separate evidence-linked audit before declaring a true ending.
+  if(hasAuditedNpcUltimateCompletion(s,ultimate))return "goal_complete";
   if(String(s.gameState.lifeStatus||s.character?.lifeStatus).toLowerCase()==="dead"||
       s.character?.deceased===true)return "dead";
   if(Number(s.gameState.health)<=0)return "incapacitated";
@@ -72,14 +74,15 @@ async function choose(n:NpcTestSubject,s:DatapadSnapshot,turn:number){
   const history=(s.messages as Array<Record<string,unknown>>).slice(-6)
     .map(m=>({role:m.role,content:String(m.content||"").slice(0,1100)}));
   const recent=Array.isArray(s.gameState.turnEvents)?s.gameState.turnEvents.slice(-5).map(e=>e.action):[];
-  const answer=await invokeNvidia({purpose:"npc",temperature:0.6,max_tokens:350,
-    system:"You control ONLY this playable character, not the GM. Make ONE concrete first-person Star Wars Saga Edition action that advances the actual LONG-TERM goal, not just an initial easy chapter. Respect established location, skills, known NPCs, legal access, and inventory. Do not guarantee success, award yourself levels, narrate GM outcomes, teleport or manufacture equipment. If a clerk declined or directed you to another office, go to that office rather than repeating the same question. Never repeat a recent action; change tactics using the previous confirmed result. Take proportionate risks when necessary. Return JSON with exactly one action string starting I.",
+  const answer=await invokeNvidia({purpose:"npc",temperature:0.35,max_tokens:260,
+    system:"You control ONLY this playable character, not the GM. Make ONE concrete first-person Star Wars Saga Edition action that advances the actual LONG-TERM goal, not just an initial easy chapter. Respect established location, skills, known NPCs, legal access, and inventory. Do not guarantee success, award yourself levels, narrate GM outcomes, teleport or manufacture equipment. If a clerk declined or directed you to another office, go to that office rather than repeating the same question. Never repeat a recent action; change tactics using the previous confirmed result. A completed objective flag without an independent ultimateAudit is NOT a verified ending: continue to fulfill and confirm every clause, including actual repairs and safety checks where required. Take proportionate risks when necessary. Return JSON with exactly one action string starting I, under 450 characters, without markdown.",
     messages:[{role:"user",content:JSON.stringify({name:n.name,role:n.role,
       initialObjective:n.objective,ultimateGoal:NPC_ULTIMATE_ARCS[n.id]||n.objective,
       turn,level:s.character?.level,skills:s.character?.trainedSkills,
       talents:s.character?.talents,feats:s.character?.feats,forcePowers:s.character?.forcePowers,
       location:s.gameState.location,health:s.gameState.health,
       inventory:s.gameState.inventory,objectives:s.gameState.objectives,
+      ultimateAudit:s.gameState.npcUltimateAudit||null,
       recentCommittedActions:recent,history})}]});
   let action=answer.content.trim();
   try{const parsed=JSON.parse(action);if(typeof parsed.action==="string")action=parsed.action;}catch{
@@ -87,8 +90,12 @@ async function choose(n:NpcTestSubject,s:DatapadSnapshot,turn:number){
     if(match)try{const parsed=JSON.parse(match[0]);if(typeof parsed.action==="string")action=parsed.action;}catch{}
   }
   action=action.replace(/^Action\s*:\s*/i,"").replace(/^["']|["']$/g,"").trim();
-  if(!/^I\s+/i.test(action)||action.length<12||action.length>600||
-      /STATE:|## |I automatically win/i.test(action))throw Error("Invalid PC action from NVIDIA");
+  if(!/^I\s+/i.test(action)||action.length<12||action.length>800||
+      /STATE:|## |I automatically win/i.test(action)){
+    record({id:n.id,phase:"invalid_pc_output",turn,length:action.length,
+      excerpt:action.slice(0,350)});
+    throw Error("Invalid PC action from NVIDIA");
+  }
   const lastGm=(s.messages as Array<Record<string,unknown>>).slice().reverse()
     .find(m=>m.role==="assistant");
   const recovered=npcRepetitionRecovery(n.id,recent.map(String),String(lastGm?.content||""),action);
@@ -194,8 +201,14 @@ async function run(n:NpcTestSubject){
     const events=Array.isArray(after.snapshot?.gameState.turnEvents)?after.snapshot.gameState.turnEvents:[];
     if(after.revision!==gm.revision||after.snapshot?.character?.name!==n.name||
        !events.some((e:Record<string,unknown>)=>e.turnId===turnId))throw Error("Save consistency error");
+    const careerStartingXp=Number(after.snapshot?.character?.npcStartingXp)||0;
+    const receiptEarnedXp=events.reduce((sum:number,e:Record<string,unknown>)=>
+      sum+(Number(e.experienceAward)||0),0);
+    if(Number(after.snapshot?.character?.experience)!==careerStartingXp+receiptEarnedXp)
+      throw Error("Career XP and actual committed GM XP do not reconcile");
     record({id:n.id,phase:"committed",turn,revision:after.revision,status:status(after.snapshot!,n),
-      xp:after.snapshot?.character?.experience,level:after.snapshot?.character?.level,
+      xp:after.snapshot?.character?.experience,careerStartingXp,receiptEarnedXp,
+      level:after.snapshot?.character?.level,
       location:after.snapshot?.gameState.location,
       excerpt:gm.narration.slice(0,850)});
     await pause(300);
@@ -208,10 +221,12 @@ async function run(n:NpcTestSubject){
     final.snapshot.gameState.turnEvents.length>=limit?"limit_reached":end;
 }
 describe.skipIf(!active)("Genuine multi-character NVIDIA PC playthroughs",()=>{
-  it("runs 34 independent character campaigns with audited receipts",async()=>{
+  it("runs 34 independent playable NPC campaigns with audited receipts",async()=>{
     expect(process.env.NVIDIA_API_KEY||process.env.NVIDIA_API_KEY_GM).toBeTruthy();
     expect(process.env.CAMPAIGN_DB_PATH).toMatch(/npc-autoplay-150\.sqlite$/i);
     expect(Object.keys(NPC_ULTIMATE_ARCS).length).toBe(34);
+    if(!requested.length)expect(subjects).toHaveLength(34);
+    expect(subjects.some(n=>n.id==="kelvek"||n.id==="dmir-holloran")).toBe(false);
     const remaining=new Map(subjects.map(n=>[n.id,n]));
     const failures:string[]=[],capped:string[]=[],confirmedEndings:string[]=[],otherStops:string[]=[];
     record({phase:"start",characters:remaining.size,limit,concurrency});

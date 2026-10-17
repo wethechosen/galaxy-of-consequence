@@ -47,3 +47,21 @@ it("refuses to rebase a completed turn rather than duplicating XP or material ef
   })).toThrow("unverified");
   db.close();
 });
+it("recovers the preserved first Kor-Vess turn after a setup-only revision 1 to 3",()=>{
+  const db=new DatabaseSync(":memory:");
+  db.exec("CREATE TABLE gm_turn_attempts(account_id TEXT,turn_id TEXT,base_revision INTEGER,action TEXT,roll TEXT,status TEXT)");
+  const action="I step forward into the negotiation ring and address the clan leaders.";
+  db.prepare("INSERT INTO gm_turn_attempts VALUES(?,?,?,?,?,?)")
+    .run("kor","npc-real-kor-vess-t001",1,action,null,"pending");
+  const result=rebaseIsolatedNpcPendingAttempt(db,{
+    accountId:"kor",turnId:"npc-real-kor-vess-t001",currentRevision:3,
+    existingGameTurnCount:0,expectedGameTurnCount:0,verifiedAdministrativeChange:true,
+  });
+  const after=db.prepare("SELECT * FROM gm_turn_attempts").get() as any;
+  expect(result.rebased).toBe(true);
+  expect(after.base_revision).toBe(3);
+  expect(after.action).toBe(action);
+  expect(after.roll).toBeNull();
+  expect(after.turn_id).toBe("npc-real-kor-vess-t001");
+  db.close();
+});

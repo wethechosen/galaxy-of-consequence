@@ -970,7 +970,7 @@ export function ensureStateUpdateSection(narration: string, delta: Record<string
   const bodyStart = heading.index + heading[0].length;
   const next = /^(?:#{1,6}\s*)?PLAYER OPTIONS\s*$/im.exec(narration.slice(bodyStart));
   const summary = quotedTerms.length ? [existing, ...quotedTerms].filter(Boolean).join("\n")
-    : delta && Object.keys(delta).length ? "The resolved consequences are recorded in D'mir's campaign state." : "No persistent change.";
+    : delta && Object.keys(delta).length ? "The resolved consequences are recorded in this character's campaign state." : "No persistent change.";
   const prefix = narration.slice(0, bodyStart).trimEnd();
   if (!next) return `${prefix}\n${summary}`;
   const nextStart = bodyStart + next.index;
