@@ -8,8 +8,14 @@ describe("bounded model requests", () => {
     vi.stubEnv("NVIDIA_API_KEY", "test-only-secret");
     const fetchMock = vi.fn(async () => new Response(null, { status: 429, headers: { "Retry-After": "17" } }));
     vi.stubGlobal("fetch", fetchMock);
-    await expect(invokeNvidia({ messages: [{ role: "user", content: "Talk" }] })).rejects.toMatchObject({ status: 429, retryAfterSeconds: 17 });
+    await expect(invokeNvidia({ messages: [{ role: "user", content: "Talk" }] })).rejects.toMatchObject({ status: 429, retryAfterSeconds: 17, retryAfterEstimated: false });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it("marks provider cooldowns without Retry-After as estimated", async () => {
+    vi.stubEnv("NVIDIA_API_KEY", "test-only-secret");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 429 })));
+    await expect(invokeNvidia({messages:[{role:"user",content:"Talk"}]}))
+      .rejects.toMatchObject({status:429,retryAfterSeconds:17,retryAfterEstimated:true});
   });
   it("bounds stalled response bodies and does not expose the key", async () => {
     vi.stubEnv("NVIDIA_API_KEY", "test-only-secret");

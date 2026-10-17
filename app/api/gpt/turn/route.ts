@@ -6,6 +6,7 @@ import { hostedGet, hostedPersistenceEnabled, hydrateHostedSave, saveHostedResul
 import { anchorNarrationLocation } from "@/lib/gpt-narration";
 import { replayHostedTurn } from "@/lib/hosted-turn-replay";
 import { turnLifecycleFromError } from "@/lib/turn-lifecycle";
+import { gptTurnRetryPlan } from "@/lib/gpt-turn-retry";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,6 +34,8 @@ function rewriteAssistantMessage(snapshot: RecordValue, turnId: string, narratio
 }
 
 export async function POST(request: Request) {
+  let attemptedTurnId: string | undefined;
+  let attemptedBaseRevision: number | undefined;
   try {
     const actor = authenticateGptAction(request);
     const body = await readGptActionBody(request);
@@ -42,6 +45,8 @@ export async function POST(request: Request) {
     if (!action || action.length > 2000) throw new GptActionError("Provide one player action between 1 and 2,000 characters.", 400);
     if (!/^[a-zA-Z0-9_-]{8,100}$/.test(turnId)) throw new GptActionError("turnId must contain 8–100 letters, numbers, underscores, or hyphens.", 400);
     if (!Number.isSafeInteger(revision) || revision < 0) throw new GptActionError("Provide the current campaign revision from GET /api/gpt/state.", 400);
+    attemptedTurnId = turnId;
+    attemptedBaseRevision = revision;
     const operation = controlIntent(action);
     if (operation) {
       return NextResponse.json({
@@ -117,11 +122,14 @@ export async function POST(request: Request) {
     const status = typeof rawStatus === "number" && rawStatus >= 400 && rawStatus < 600 ? rawStatus : 500;
     const currentRevision = (error as { currentRevision?: unknown })?.currentRevision;
     const receipt = turnLifecycleFromError(error);
+    const retry = gptTurnRetryPlan(error, status, attemptedTurnId, attemptedBaseRevision, receipt);
     return NextResponse.json({
       error: error instanceof Error ? error.message : "Custom GPT turn failed. No outcome was applied.",
       ...(typeof currentRevision === "number" ? { revision: currentRevision } : {}),
       ...(receipt ? { receipt } : {}),
+      ...(retry ? { turnId: attemptedTurnId, retry } : {}),
       retryAfterSeconds: error instanceof NvidiaProviderError ? error.retryAfterSeconds : undefined,
+      retryAfterEstimated: error instanceof NvidiaProviderError ? error.retryAfterEstimated : undefined,
     }, { status, headers: nvidiaRetryHeaders(error) });
   }
 }

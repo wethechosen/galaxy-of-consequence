@@ -14,7 +14,7 @@ export function nextTurnRetry(status, response, headers, attempts = 0, now = Dat
   }
   // A bounded per-attempt delay keeps the action pending during prolonged provider outages.
   seconds = Math.max(1, Math.min(86400, Math.ceil(seconds)));
-  return { retryAt: now + seconds * 1000, seconds, estimated: !header && !(Number(response?.retryAfterSeconds) > 0) };
+  return { retryAt: now + seconds * 1000, seconds, estimated: response?.retryAfterEstimated === true || headers?.get?.("X-GOC-Retry-Estimated") === "true" || (!header && !(Number(response?.retryAfterSeconds) > 0)) };
 }
 export function parsePendingTurn(raw, revision, messages) {
   let item;

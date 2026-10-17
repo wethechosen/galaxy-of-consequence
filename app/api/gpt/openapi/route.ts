@@ -10,6 +10,23 @@ const responseSchema = {
     ok: { type: "boolean" },
     revision: { type: "integer", minimum: 0 },
     message: { type: "string" },
+    turnId: { type: "string" },
+    retryAfterSeconds: { type: "integer", minimum: 1 },
+    retryAfterEstimated: { type: "boolean" },
+    retry: {
+      type: "object",
+      description: "Safe future retry of the EXACT same action and turnId; a Custom GPT cannot run automatically after its tool call ends.",
+      properties: {
+        status: { type: "string", enum: ["awaiting_retry"] },
+        turnId: { type: "string" },
+        baseRevision: revision,
+        retryAfterSeconds: { type: "integer", minimum: 1 },
+        retryAt: { type: "string", format: "date-time" },
+        estimated: { type: "boolean" },
+        gameplayAdvanced: { type: "boolean" },
+      },
+      additionalProperties: false,
+    },
     receipt: {
       type: "object",
       description: "Authoritative transaction receipt. A committed receipt proves the turn is already saved; a failed receipt proves gameplay did not advance and identifies the exact retry phase.",
@@ -155,10 +172,10 @@ export async function GET(request: Request) {
       post: {
         operationId: "submitPlayerAction",
         summary: "Resolve exactly one in-world player action",
-        description: "Gameplay only; not save, load, HUD or OOC corrections. The server owns Saga dice and persistence. Retry interrupted requests with the same turnId. A committed receipt means saved: never submit as a new turn. A failed retriable receipt means no advancement.",
+        description: "Gameplay only. Server owns dice and saves. On 429, keep the exact action, turnId, and baseRevision. Wait until retryAt (may be estimated), then retry unchanged. Never invent a GM outcome. A committed receipt proves saved progress. Custom GPT cannot resume once its tool call ends.",
         security: bearerSecurity,
         requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["revision", "action"], properties: { revision, action: { type: "string", minLength: 1, maxLength: 2000 }, turnId: { type: "string", minLength: 8, maxLength: 100, pattern: "^[a-zA-Z0-9_-]+$" } }, additionalProperties: false } } } },
-        responses: { "200": jsonResponse("Committed or safely replayed gameplay turn with a transaction receipt"), "400": { description: "Invalid action" }, "401": { description: "Unauthorized" }, "409": { description: "Revision conflict, replay, or required character advancement" }, "422": { description: "Administrative command; use the indicated control action" }, "502": jsonResponse("Draft rejected before commit; receipt identifies the failed phase"), "503": jsonResponse("GM drafting exhausted before commit; receipt confirms a safe retry") },
+        responses: { "200": jsonResponse("Committed or safely replayed gameplay turn with a transaction receipt"), "400": { description: "Invalid action" }, "401": { description: "Unauthorized" }, "409": { description: "Revision conflict, replay, or required character advancement" }, "422": { description: "Administrative command; use the indicated control action" }, "429": jsonResponse("Provider cooldown. Original action and turnId must be retried after the stated or estimated delay; no outcome applied"), "502": jsonResponse("Draft rejected before commit; receipt identifies the failed phase"), "503": jsonResponse("GM drafting exhausted before commit; receipt confirms a safe retry") },
       },
     },
   };
@@ -167,7 +184,7 @@ export async function GET(request: Request) {
     openapi: "3.1.0",
     info: {
       title: "Galaxy of Consequence Custom GPT Controller",
-      version: "2.2.0",
+      version: "2.2.1",
       description: "Authoritative GOC controller: Neon state, HUD, equipment blocks, advancement, checkpoints, and gameplay turns share one revisioned campaign.",
     },
     servers: [{ url: controllerUrl }],

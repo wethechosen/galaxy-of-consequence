@@ -15,7 +15,7 @@ export function planNvidiaSlot(now: number, next: number, cooldown: number) {
     : {waitMs:delay,nextSlot:now+delay+SPACING_MS};
 }
 function limited(seconds: number): never {
-  throw new NvidiaProviderError("NVIDIA request budget is cooling down. Your action has not advanced; retry the same turn after the indicated delay.",429,seconds,429);
+  throw new NvidiaProviderError("NVIDIA request budget is cooling down. Your action has not advanced; retry the same turn after the indicated delay.",429,seconds,429,true);
 }
 export async function reserveNvidiaSlot() {
   if (!neonConfigured()) {
