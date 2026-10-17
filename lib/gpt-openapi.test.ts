@@ -26,6 +26,22 @@ describe("Custom GPT deployment routing", () => {
     expect(schema.paths["/api/gpt/turn"].post.security).toEqual([{ bearerAuth: [] }]);
   });
 
+  it("publishes one canonical gameplay result and a read-only GPT cooldown status action", async () => {
+    const schema = await (await GET(new Request("https://galaxy-local.vercel.app/api/gpt/openapi"))).json();
+    expect(schema.info.version).toBe("2.3.0");
+    expect(schema.paths["/api/gpt/pending"].post.operationId).toBe("checkPendingPlayerAction");
+    expect(schema.paths["/api/gpt/pending"].post.security).toEqual([{ bearerAuth: [] }]);
+    const variants = schema.paths["/api/gpt/turn"].post.requestBody.content["application/json"].schema.oneOf;
+    expect(variants).toHaveLength(2);
+    expect(variants[0].required).toEqual(["revision","action","turnId"]);
+    expect(variants[1].required).toEqual(["retryTicket"]);
+    const result = schema.paths["/api/gpt/turn"].post.responses["200"].content["application/json"].schema.properties;
+    expect(result.contractVersion.enum).toContain("goc-gameplay-v1");
+    expect(result).toHaveProperty("snapshot");
+    expect(result).toHaveProperty("roll");
+    expect(result.retry.properties.retryTicket.type).toBe("string");
+  });
+
   it("allows an explicitly configured stable controller address", async () => {
     vi.stubEnv("GOC_GPT_PUBLIC_BASE_URL", "https://game.example.com");
     const response = await GET(new Request("https://preview.vercel.app/api/gpt/openapi"));
