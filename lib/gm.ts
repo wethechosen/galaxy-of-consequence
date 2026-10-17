@@ -39,6 +39,8 @@ import { canonicalNpcContext } from "./npc-canon-roster";
 import { npcAlienGmContinuity } from "./npc-alien-story-ratings";
 import { dmirSceneNpcContext, updateDmirNpcContinuity } from "./dmir-npc-memory";
 import { recordVisibleSceneNpcs } from "./player-scene-roster";
+import { sceneNpcSheets } from "./player-scene-roster";
+import { npcMechanics, recordNpcMechanics } from "./npc-mechanics";
 
 type TurnInput = { accountId?: string; revision: number; action: string; turnId: string; openScene?: boolean; statePolicy?: "committed-trade" | null };
 type Message = { role: "user" | "assistant" | "roll"; content: string; [key: string]: unknown };
@@ -235,6 +237,11 @@ function publicContext(snapshot: DatapadSnapshot) {
     forceAlignment: state.forceAlignment, factionRep: state.factionRep, inventory: state.inventory,
     itemStatBlocks: [...(Array.isArray(state.inventory) ? state.inventory : []), ...(Array.isArray(state.properties) ? state.properties : []).map(item => ({ ...item, ownership: "property" })), ...(Array.isArray(state.ships) ? state.ships : []).map(item => ({ ...item, ownership: "vehicle" }))].slice(0, 30).map(item => ({ id: item.id, ...itemStatBlock(item, snapshot.character || {}, state) })),
     contacts: state.contacts, decisions: state.decisions, relationships: state.relationships,
+    presentNpcMechanics: sceneNpcSheets(snapshot).slice(0, 8).map(person => {
+      const template = npcMechanics(person.name);
+      const registry = state.npcMechanics as Record<string, unknown> | undefined;
+      return registry?.[template.id] || template;
+    }),
     objectives: currentObjectiveContext(state),
     discoveries: state.discoveries, milestones: state.milestones, legacyAssets: state.legacyAssets,
     storyDirectives: state.storyDirectives,
@@ -1845,6 +1852,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   const snapshot: DatapadSnapshot = { ...finalized, messages };
   if (mode === "play") snapshot.gameState = { ...snapshot.gameState, sceneMerchant: sceneMerchant(snapshot) };
   if (mode === "play") snapshot.gameState = recordVisibleSceneNpcs(snapshot.gameState, parsed.clean, input.turnId);
+  if (mode === "play") snapshot.gameState = recordNpcMechanics(snapshot.gameState, sceneNpcSheets(snapshot));
   if (mode === "play") {
     // Only the current, actually committed turn can teach firsthand witnesses.
     // The old saved scene—not new GM prose—defines who could observe it.

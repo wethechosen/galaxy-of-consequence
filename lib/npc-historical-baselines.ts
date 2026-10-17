@@ -1,6 +1,8 @@
 import type { DatapadSnapshot } from "./datapad-save";
 import { applySagaFoundation, applySagaAdvancement, availableClassSkills, foundationRequirements, SAGA_LANGUAGE_OPTIONS, advancementRequirements, availableFeats, availableTalents, forcePowerChoiceRequirements, experienceForLevel, progressionStatus } from "@/original/lib/sagaAdvancement";
 import type { NpcTestSubject } from "./npc-test-roster";
+import { sagaSpecies } from "@/original/lib/sagaSpecies";
+import { GOC_ALIEN_STORY_RATINGS } from "./npc-alien-story-ratings";
 
 type Heroic = "jedi"|"noble"|"soldier"|"scoundrel"|"scout";
 type Tier = {level:number;classId:Heroic;reason:string};
@@ -37,7 +39,9 @@ function initialAbilities(cl:Heroic) {
   return {strength:10,dexterity:14,constitution:12,intelligence:13,wisdom:12,charisma:13};
 }
 function foundation(previous:DatapadSnapshot,id:string,tier:Tier):DatapadSnapshot {
-  const char={...previous.character,abilityScores:initialAbilities(tier.classId),level:1,experience:0,
+  const profile = sagaSpecies(previous.character?.species);
+  const base = initialAbilities(tier.classId);
+  const char={...previous.character,abilityScores:Object.fromEntries(Object.entries(base).map(([key,value])=>[key,value+Number(profile?.adjustments[key]||0)])),level:1,experience:0,
     forceSensitive:"Unknown"} as Record<string,unknown>;
   for(const key of ["heroicClass","classLevels","featSelections","talentSelections","forcePowerSelections",
     "feats","talents","forcePowers","trainedSkills","languages","hitPointHistory","maxHitPoints",
@@ -53,7 +57,7 @@ function foundation(previous:DatapadSnapshot,id:string,tier:Tier):DatapadSnapsho
     .filter(id=>available.some((x:{id:string})=>x.id===id))
     .slice(0,Number(foundationRequirements(char,tier.classId).trainedSkillCount));
   const choices={advancementId:"npc-origin-"+id,classId:tier.classId,
-    trainedSkillIds:skills,generalFeatId:"improved-defenses",humanBonusFeatId:"toughness",
+    trainedSkillIds:skills,generalFeatId:"improved-defenses",humanBonusFeatId:profile?.name==="Human"?"toughness":undefined,
     talentId:tier.classId==="jedi"?"force-perception":tier.classId==="soldier"?"armored-defense":
       tier.classId==="scout"?"acute-senses":tier.classId==="noble"?"educated":"knack",
     languageIds:languages(char,Number(foundationRequirements(char,tier.classId).bonusLanguageCount))};
@@ -113,11 +117,12 @@ export function advanceNpcEarnedXp(snapshot:DatapadSnapshot,npc:NpcTestSubject):
   throw Error("Exceeded maximum player advancement rounds");
 }
 /** Preserves completed story/ledger turns. Starting XP is audited separately from XP earned during tests. */
-export function reconstructHumanNpc(snapshot:DatapadSnapshot,npc:NpcTestSubject):DatapadSnapshot{
-  const tier=NPC_HISTORICAL_TIERS[npc.id];
+export function reconstructCoreNpc(snapshot:DatapadSnapshot,npc:NpcTestSubject):DatapadSnapshot{
+  const alien = GOC_ALIEN_STORY_RATINGS.find(entry=>entry.id===npc.id);
+  const tier=NPC_HISTORICAL_TIERS[npc.id] || (alien && sagaSpecies(npc.species) ? {level:alien.level,classId:alien.heroicClass.toLowerCase() as Heroic,reason:"GM-designed 150 ABY alien prior career with verified Saga Core species foundation"}:null);
   if(!tier)return snapshot;
   if(!snapshot.character)throw Error("NPC has no saved character");
-  if(npc.species!=="Human")throw Error("Nonhuman racial traits require species rules validation");
+  if(!sagaSpecies(npc.species))throw Error("Nonhuman racial traits require species rules validation");
   if((snapshot.character as Record<string,unknown>).npcHistoricalBaselineId==="150aby-"+npc.id)return snapshot;
   if(Number(snapshot.character.level)!==1)throw Error("Manual review: existing character advanced beyond level one");
   const xpEarned=Math.max(0,Number(snapshot.character.experience)||0);
@@ -142,4 +147,8 @@ export function reconstructHumanNpc(snapshot:DatapadSnapshot,npc:NpcTestSubject)
           historicalXp:targetXp,previouslyEarnedXp:xpEarned,reason:tier.reason,
           source:"GM 150 ABY prior-career reconstruction using validated Saga heroic choices"}]},
   } as DatapadSnapshot;
+}
+export function reconstructHumanNpc(snapshot:DatapadSnapshot,npc:NpcTestSubject):DatapadSnapshot{
+  if(npc.species!=="Human")throw Error("Use the verified species foundation for a nonhuman character.");
+  return reconstructCoreNpc(snapshot,npc);
 }
