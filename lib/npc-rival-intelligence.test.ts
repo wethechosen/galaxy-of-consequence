@@ -2,7 +2,7 @@ import {describe,it,expect} from "vitest";
 import {recordCommittedRivalObservation,relevantRivalGmContext} from "./npc-rival-intelligence";
 
 const key=(name:string)=>({name,role:"Imperial officer",location:"Bastion — checkpoint"});
-const make=(scene=[])=>({
+const make=(scene: Array<Record<string, unknown>>=[]):any=>({
  character:{name:"Player",level:2},
  gameState:{location:"Bastion — checkpoint",campaignTimeMinutes:100,turnEvents:[],
   sceneNpcs:scene,relationships:[{name:"Captain Vell",disposition:"hostile",status:"active"}],
