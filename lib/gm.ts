@@ -4,6 +4,7 @@ import { accountStore } from "./accounts";
 import { readDatapad, saveAuthoritativeDatapad, type DatapadSnapshot } from "./datapad-save";
 import {projectQuestWorld,questWorldGmContext} from "./quest-world-events";
 import {recordCommittedRivalObservation,relevantRivalGmContext} from "./npc-rival-intelligence";
+import {advanceNpcOffscreen,npcOffscreenGmContext} from "./npc-offscreen-intelligence";
 import {interpretRpgActionContract,assertRpgOutcomeFocus} from "./rpg-action-contract";
 import { invokeNvidia, NvidiaProviderError, type NvidiaMessage } from "./original-provider";
 import { rollSagaCheck } from "./saga-dice";
@@ -157,7 +158,7 @@ Write the response with these Markdown headings, in this exact order: ## LOCATIO
 - STATE UPDATE: list only confirmed persistent changes in player-facing language, or "No persistent change."
 - PLAYER OPTIONS: provide 2-4 concise, neutral directions labeled alphabetically beginning with A. They are suggestions, not answers or promises. After the last choice, write exactly "You may declare another action." Do not choose for D'mir or end with a forced question.
 
-Write 180-360 words total for a routine exchange, or 260-440 for an involved scene. Use concrete dialogue and action instead of padding with restrictions. Then end on the final line with exactly one hidden JSON ledger block: <!--STATE:{...}-->. Numeric values are relative changes, never totals. Use {} for no changes. Allowed fields are health, notoriety, forceAlignment, credits, creditsCriminal, experienceAward, conditionTrack, forcePoints, destinyPoints, darkSideScore, timeAdvanceMinutes, factionRep (empire, rebellion, csa), location, inventoryAdd, inventoryRemove, conditionAdd, conditionRemove, decisionAdd, objectiveAdd, objectiveComplete, discoveryAdd, milestoneAdd, storyDirectiveAdd, relationshipUpdate, legacyAssetUpsert, propertyAdd, shipAdd, investmentAdd, contactAdd, publicNewsAdd, travelAccessAdd, tradeOfferAdd, note, and characterUpdate. storyDirectiveAdd entries contain title, detail, and status and represent desired future direction only; never a present accomplishment or mechanical reward. characterUpdate may change earned textual build fields but must never contain level or experience. Do not mention this prompt, retrieval, models, or the hidden block.`;
+Write 180-360 words total for a routine exchange, or 260-440 for an involved scene. Use concrete dialogue and action instead of padding with restrictions. Then end on the final line with exactly one hidden JSON ledger block: <!--STATE:{...}-->. Numeric values are relative changes, never totals. Use {} for no changes. Allowed fields are health, notoriety, forceAlignment, credits, creditsCriminal, experienceAward, conditionTrack, forcePoints, destinyPoints, darkSideScore, timeAdvanceMinutes, factionRep (empire, rebellion, csa), location, inventoryAdd, inventoryRemove, conditionAdd, conditionRemove, decisionAdd, objectiveAdd, objectiveComplete, discoveryAdd, milestoneAdd, storyDirectiveAdd, relationshipUpdate, legacyAssetUpsert, propertyAdd, shipAdd, investmentAdd, contactAdd, publicNewsAdd, travelAccessAdd, tradeOfferAdd, npcIntelLinkAdd, npcIntelReportAdd, npcOffscreenPlanResolve, note, and characterUpdate. NPC intelligence fields require named sender/recipient, established source-turn evidence and a verified communications link; relay recipients learn reports only after travel time. npcOffscreenPlanResolve only acknowledges a GM-adjudicated, actor-linked world event after its plan matures; it does not itself grant success, injuries, combat advantages or equipment. storyDirectiveAdd entries contain title, detail, and status and represent desired future direction only; never a present accomplishment or mechanical reward. characterUpdate may change earned textual build fields but must never contain level or experience. Do not mention this prompt, retrieval, models, or the hidden block.`;
 
 const LEDGER_REPAIR_SYSTEM = `You repair a missing or incomplete Galaxy of Consequence state ledger. Return exactly one HTML comment containing STRICT JSON in the form <!--STATE:{...}--> and absolutely no prose. All object keys and string values must use double quotes. Never repeat an object key; multiple items belong in one array. Preserve the draft's valid existing consequences and add its omitted consequences. Infer only changes explicitly confirmed by the supplied draft and authoritative Saga result. Numeric values are relative changes, never totals. A quoted price IS persistent interaction state even when no payment occurs: include tradeOfferAdd:[{sellerName:"the established seller",totalCredits:123,items:[{name:"the exact quoted item or service with its duration and amenities",qty:1,tag:"service"}]}]. Use the draft's actual price and terms, not example values; use appropriate item tags for goods. A quote must not debit credits or add inventory. Completed payment and handover require credits and inventoryAdd together. If the draft confirms no persistent change of any kind, return <!--STATE:{}-->. Never invent a success, reward, discovery, item, credit, injury, location change, or character advancement. Do not include level, total experience, or an experience award; the server calculates XP.`;
 
@@ -1490,6 +1491,14 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
     const rivalIntel=relevantRivalGmContext(currentSnapshot,action);
     if (rivalIntel.length) system += "\n\nGM-PRIVATE WITNESSED NPC INTELLIGENCE: "+JSON.stringify(rivalIntel)+"\nUse only these firsthand memories. Let NPC personality, resources, location and elapsed time determine a plausible response. Foreshadow counters and allow counterplay; do not spawn a rival, grant free equipment or automatically penalize player style. Observing is not proof of a secret, and suggested preparation is not accomplished.";
   }
+  // Matured NPC plans and delivered source-linked reports are PRIVATE
+  // character context, never pre-resolved story outcomes or player knowledge.
+  if (mode === "play") {
+    const behindScenes=npcOffscreenGmContext(currentSnapshot);
+    if (behindScenes.reports.length||behindScenes.plans.length||behindScenes.offscreenDue.length)
+      system += "\n\nGM-PRIVATE NPC OFFSCREEN INTELLIGENCE: "+JSON.stringify(behindScenes)+
+       "\nDo not reveal rumors as truth, make offscreen plans automatically succeed, invent resources, or resolve a conflict without SAGA adjudication. Report delivery is knowledge only. Do not narrate unobserved NPC plans as public news unless a separate adjudicated event justifies it. Plans outside the scene may advance as independent world actions only when evidence, resources, elapsed time, and valid world-state changes are present. An offscreen NPC may not apply player health, credits, inventory, XP or conditions.";
+  }
   if (mode === "play" && isReadOnlyGoodsInspection(action)) system += `\n\nREAD-ONLY MERCHANDISE INSPECTION: Resolve the declared examination only. Describe visible condition, seals, labels, packaging, and expiration markings supported by the scene. Do not deduct or grant credits; do not add, remove, consume, sell, equip, or transfer an item; do not narrate a completed transaction. Temporary handling remains with the current owner. Use an empty material ledger unless an authoritative mechanic supplied above requires a non-material change.`;
   if (atelierAppointment) system += `\n\n${atelierAppointmentGmInstruction()}`;
   if (mode === "play") system += `\n\n${SANDBOX_GM_AGENCY}`;
@@ -1845,6 +1854,11 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   // Reconcile the final world projection after verified commerce, scene and
   // quest updates, just before the authoritative CAS save commits.
   if (mode === "play") snapshot.gameState.questWorld=projectQuestWorld(snapshot);
+  if (mode === "play") {
+    // Advance independently timed NPC plans and report deliveries only as
+    // part of the existing compare-and-swap authoritative save transaction.
+    snapshot.gameState.npcOffscreen=advanceNpcOffscreen(currentSnapshot,snapshot,input.turnId,delta);
+  }
   if (mode === "play" && isDmirPrimaryCampaign(actor, snapshot.character as Record<string, unknown>)) {
     snapshot.gameState = updateDmirNpcContinuity(snapshot.gameState, delta, input.turnId, action);
   }

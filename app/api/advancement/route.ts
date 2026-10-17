@@ -6,6 +6,7 @@ import { assertLocalRequest, readLocalObject } from "@/lib/local-http";
 import { hostedGet, hostedPersistenceEnabled, hydrateHostedSave, saveHostedResult } from "@/lib/hosted-bridge";
 import { applySagaAdvancement, applySagaFoundation } from "@/original/lib/sagaAdvancement";
 import { campaignTarget, committedOperation, operationIdentity } from "@/lib/server-operation";
+import {playerVisibleSnapshot} from "@/lib/npc-private-state";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,7 +42,7 @@ export async function POST(request: Request) {
       forcePowerIds: body.forcePowerIds,
     };
     const identity = operationIdentity(body.advancementId, body.foundation === true ? "foundation" : "advancement", { ...choices, advancementId: undefined });
-    if (committedOperation(current.snapshot, "advancementHistory", identity)) return NextResponse.json({ snapshot: current.snapshot, revision: current.revision, updatedAt: current.updatedAt, replayed: true }, { headers: { "Cache-Control": "no-store" } });
+    if (committedOperation(current.snapshot, "advancementHistory", identity)) return NextResponse.json({ snapshot: playerVisibleSnapshot(current.snapshot), revision: current.revision, updatedAt: current.updatedAt, replayed: true }, { headers: { "Cache-Control": "no-store" } });
     if (!current.snapshot || current.revision !== revision) throw Object.assign(new Error("The campaign record changed. Reload the dossier and try again."), { status: 409 });
     const snapshot = (body.foundation === true
       ? applySagaFoundation(current.snapshot, choices)
@@ -54,7 +55,7 @@ export async function POST(request: Request) {
       try { await saveHostedResult(target, hosted.revision, snapshot); }
       catch (error) { hydrateHostedSave(target, hosted); throw error; }
     }
-    return NextResponse.json({ snapshot, revision: saved.revision, updatedAt: saved.updatedAt }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ snapshot:playerVisibleSnapshot(snapshot), revision: saved.revision, updatedAt: saved.updatedAt }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const status = error && typeof error === "object" && "status" in error && Number.isInteger(Number(error.status)) ? Number(error.status)
       : error instanceof Error && /sign in/i.test(error.message) ? 401 : 500;

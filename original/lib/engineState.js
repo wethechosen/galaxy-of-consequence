@@ -118,6 +118,37 @@ function validateDelta(value) {
       return entry;
     });
   }
+  // GM-authored communication and offscreen-plan requests are inert until
+  // the authoritative NPC scheduler proves every witness/source/link.
+  if (own(value, "npcIntelLinkAdd")) {
+    if (!Array.isArray(value.npcIntelLinkAdd) || value.npcIntelLinkAdd.length > 8) invalid("npcIntelLinkAdd");
+    result.npcIntelLinkAdd = value.npcIntelLinkAdd.map((item) => {
+      if (!record(item)) invalid("npcIntelLinkAdd");
+      const entry = strings(item, ["sender", "recipient", "channel", "sourceTurnId"], "npcIntelLinkAdd");
+      if (!entry.sender || !entry.recipient || !entry.sourceTurnId ||
+          !["comlink", "courier", "in_person"].includes(entry.channel)) invalid("npcIntelLinkAdd");
+      return entry;
+    });
+  }
+  if (own(value, "npcIntelReportAdd")) {
+    if (!Array.isArray(value.npcIntelReportAdd) || value.npcIntelReportAdd.length > 8) invalid("npcIntelReportAdd");
+    result.npcIntelReportAdd = value.npcIntelReportAdd.map((item) => {
+      if (!record(item)) invalid("npcIntelReportAdd");
+      const entry = strings(item, ["sender", "recipient", "sourceTurnId", "linkId"], "npcIntelReportAdd");
+      if (!entry.sender || !entry.recipient || !entry.sourceTurnId || !entry.linkId) invalid("npcIntelReportAdd");
+      entry.transitMinutes = own(item, "transitMinutes") ? number(item.transitMinutes, "npcIntelReportAdd.transitMinutes", 1, 10080, true) : 15;
+      return entry;
+    });
+  }
+  if (own(value, "npcOffscreenPlanResolve")) {
+    if (!Array.isArray(value.npcOffscreenPlanResolve) || value.npcOffscreenPlanResolve.length > 8) invalid("npcOffscreenPlanResolve");
+    result.npcOffscreenPlanResolve = value.npcOffscreenPlanResolve.map((item) => {
+      if (!record(item)) invalid("npcOffscreenPlanResolve");
+      const entry = strings(item, ["planId", "outcome"], "npcOffscreenPlanResolve");
+      if (!entry.planId || !["adjudicated", "abandoned"].includes(entry.outcome)) invalid("npcOffscreenPlanResolve");
+      return entry;
+    });
+  }
   if (own(value, "travelAccessAdd")) {
     if (!Array.isArray(value.travelAccessAdd) || value.travelAccessAdd.length > 25) invalid("travelAccessAdd");
     result.travelAccessAdd = value.travelAccessAdd.map((item) => string(item, "travelAccessAdd", 80)).filter(Boolean);

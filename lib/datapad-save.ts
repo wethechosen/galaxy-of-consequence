@@ -2,6 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { accountStore, type Account } from "./accounts";
 import { getMarket, getSellQuote, getTradeAccess } from "@/original/lib/marketCatalog";
 import { assertAdvancementReady } from "./advancement-gate";
+import {NPC_PRIVATE_FIELDS,preserveNpcPrivateState} from "./npc-private-state";
 
 export type DatapadSnapshot = {
   character: Record<string, unknown> | null;
@@ -63,6 +64,7 @@ function validatedPublicTrade(before: DatapadSnapshot, after: DatapadSnapshot) {
   const priorInventory = priorState.inventory, nextInventory = nextState.inventory;
   const priorCredits = Number(priorState.credits), nextCredits = Number(nextState.credits);
   delete priorState.inventory; delete nextState.inventory; delete priorState.credits; delete nextState.credits;
+  for(const key of NPC_PRIVATE_FIELDS){delete priorState[key];delete nextState[key];}
   if (!same(priorState, nextState) || !Number.isFinite(priorCredits) || !Number.isFinite(nextCredits)) return false;
   const prior = inventoryCounts(priorInventory), next = inventoryCounts(nextInventory);
   if (!prior || !next) return false;
@@ -105,6 +107,9 @@ function saveSnapshot(actor: Account, requested: string | null | undefined, expe
         validated = { ...validated, character: established.character, gameState: established.gameState };
       }
     }
+    // Even a legacy public catalog transaction must preserve private NPC
+    // knowledge and plans; neither client omission nor forged data can edit it.
+    validated=preserveNpcPrivateState(established,validated);
   }
   const updatedAt = new Date().toISOString(), nextRevision = expectedRevision + 1;
   const serialized = JSON.stringify(validated);
