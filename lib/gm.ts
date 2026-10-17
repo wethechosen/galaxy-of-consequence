@@ -3,6 +3,7 @@ import type { Account } from "./accounts";
 import { accountStore } from "./accounts";
 import { readDatapad, saveAuthoritativeDatapad, type DatapadSnapshot } from "./datapad-save";
 import {projectQuestWorld,questWorldGmContext} from "./quest-world-events";
+import {recordCommittedRivalObservation,relevantRivalGmContext} from "./npc-rival-intelligence";
 import {interpretRpgActionContract,assertRpgOutcomeFocus} from "./rpg-action-contract";
 import { invokeNvidia, NvidiaProviderError, type NvidiaMessage } from "./original-provider";
 import { rollSagaCheck } from "./saga-dice";
@@ -1483,6 +1484,12 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
     if (storyCast.length) system += `\n\nDMIR HOMEBREW CHARACTER CONTAINERS (GM CONFIDENTIAL): ${JSON.stringify(storyCast)}\nNPCs have independent motivations; presence and contact must be confirmed through play. Never grant player knowledge of private facts, invent a meeting, resurrect a dead character, or pre-complete a future story.`;
   }
   if (mode === "play") system += `\n\nCURRENT ACTION TO RESOLVE NOW: ${action}\n${lastConfirmedBeat}\nCURRENT ACTION PRIORITY: Follow this declaration, not any NPC demand from an earlier scene. When public movement is unopposed and access is established, resolve movement and record the new end location. When an action includes unpriced shopping or sales, present exact prices and offers rather than silently charging, granting items, or forcing an unrelated NPC confrontation; resolve the other independently executable substeps as far as the confirmed state permits. Never invent a second payment for an already receipted purchase.`;
+  // NPC intelligence is private to the GM, scoped to current confirmed scene
+  // participants. A candidate tactic is not a granted stat bonus or an event.
+  if (mode === "play") {
+    const rivalIntel=relevantRivalGmContext(currentSnapshot,action);
+    if (rivalIntel.length) system += "\\n\\nGM-PRIVATE WITNESSED NPC INTELLIGENCE: "+JSON.stringify(rivalIntel)+"\\nUse only these firsthand memories. Let NPC personality, resources, location and elapsed time determine a plausible response. Foreshadow counters and allow counterplay; do not spawn a rival, grant free equipment or automatically penalize player style. Observing is not proof of a secret, and suggested preparation is not accomplished."; 
+  }
   if (mode === "play" && isReadOnlyGoodsInspection(action)) system += `\n\nREAD-ONLY MERCHANDISE INSPECTION: Resolve the declared examination only. Describe visible condition, seals, labels, packaging, and expiration markings supported by the scene. Do not deduct or grant credits; do not add, remove, consume, sell, equip, or transfer an item; do not narrate a completed transaction. Temporary handling remains with the current owner. Use an empty material ledger unless an authoritative mechanic supplied above requires a non-material change.`;
   if (atelierAppointment) system += `\n\n${atelierAppointmentGmInstruction()}`;
   if (mode === "play") system += `\n\n${SANDBOX_GM_AGENCY}`;
@@ -1829,6 +1836,12 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   const snapshot: DatapadSnapshot = { ...finalized, messages };
   if (mode === "play") snapshot.gameState = { ...snapshot.gameState, sceneMerchant: sceneMerchant(snapshot) };
   if (mode === "play") snapshot.gameState = recordVisibleSceneNpcs(snapshot.gameState, parsed.clean, input.turnId);
+  if (mode === "play") {
+    // Only the current, actually committed turn can teach firsthand witnesses.
+    // The old saved scene—not new GM prose—defines who could observe it.
+    const intel=recordCommittedRivalObservation(currentSnapshot,snapshot,input.turnId,action,roll);
+    if (intel.memories.length) snapshot.gameState.rivalIntelligence=intel;
+  }
   // Reconcile the final world projection after verified commerce, scene and
   // quest updates, just before the authoritative CAS save commits.
   if (mode === "play") snapshot.gameState.questWorld=projectQuestWorld(snapshot);
