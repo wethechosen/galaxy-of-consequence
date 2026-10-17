@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stableGptTurnId } from "./gpt-turn-identity";
 import { NvidiaProviderError } from "./nvidia-errors";
 const mock = vi.hoisted(() => ({ get: vi.fn(), run: vi.fn(), save: vi.fn() }));
@@ -24,6 +24,7 @@ function request(actionText=action,turnId?:string) {
   });
 }
 beforeEach(()=>{
+  vi.stubEnv("GOC_GPT_ACTION_KEY", "test-only-0123456789abcdef0123456789abcdef");
   vi.clearAllMocks();
   mock.get.mockResolvedValue({revision:4,snapshot:{
     character:{name:"Isolated fixture",level:1},
@@ -31,6 +32,7 @@ beforeEach(()=>{
     messages:[],comms:[],settings:{},
   }});
 });
+afterEach(() => vi.unstubAllEnvs());
 describe("Custom GPT missing turnId recovery",()=>{
   it("derives an id stable for one identical player action and revision",()=>{
     const id=stableGptTurnId(actorId,4,action);

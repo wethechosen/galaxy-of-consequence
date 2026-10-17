@@ -69,9 +69,56 @@ describe("durable turn replay", () => {
     expect(response.status).toBe(200);
     const result = await response.json();
     expect(result).toMatchObject({ revision: 12, replayed: true, roll, state: { credits: 3500 } });
-    expect(result).not.toHaveProperty("snapshot");
+    expect(result.snapshot).toEqual(saved().snapshot);
+    expect(result.contractVersion).toBe("goc-gameplay-v1");
     expect(mocks.run).not.toHaveBeenCalled();
     expect(mocks.save).not.toHaveBeenCalled();
+  });
+
+  it("website and GPT return precisely the same authoritative replay envelope", async () => {
+    const { POST: WEB } = await import("../app/api/gm/route");
+    const { POST: GPT } = await import("../app/api/gpt/turn/route");
+    const browser = await (await WEB(request("gm", 12))).json();
+    const chatgpt = await (await GPT(request("gpt/turn", 12))).json();
+    expect(chatgpt).toEqual(browser);
+    expect(chatgpt.roll).toEqual(roll);
+    expect(chatgpt.snapshot.gameState.credits).toBe(3500);
+    expect(mocks.run).not.toHaveBeenCalled();
+    expect(mocks.save).not.toHaveBeenCalled();
+  });
+
+  it("browser and GPT format a freshly committed action identically, before persistence", async () => {
+    const before = saved();
+    before.revision = 11;
+    before.snapshot.gameState.turnEvents = [];
+    before.snapshot.messages = [];
+    mocks.get.mockResolvedValue(before);
+    const after = saved().snapshot;
+    after.gameState.location = "Bonadan — atelier";
+    after.gameState.npcOffscreen = { privatePlan: "unseen" };
+    after.messages = [
+      { role: "user", content: action },
+      { role: "assistant", turnId, content: "## LOCATION\nStale locale\n\n## SCENE\nThe vendor confirms the purchase." },
+    ];
+    mocks.run.mockResolvedValue({
+      revision: 12, turnId, snapshot: after,
+      narration: "## LOCATION\nStale locale\n\n## SCENE\nThe vendor confirms the purchase.",
+      roll, provider: "nvidia", receipt: { status: "committed", gameplayAdvanced: true },
+    });
+    const { POST: WEB } = await import("../app/api/gm/route");
+    const { POST: GPT } = await import("../app/api/gpt/turn/route");
+    const web = await (await WEB(request("gm", 11))).json();
+    const gpt = await (await GPT(request("gpt/turn", 11))).json();
+    expect(gpt).toEqual(web);
+    expect(gpt.narration).toContain("Bonadan — atelier");
+    expect(gpt.roll).toEqual(roll);
+    expect(gpt.snapshot.gameState.npcOffscreen).toBeUndefined();
+    expect(mocks.save).toHaveBeenCalledTimes(2);
+    const webSaved = mocks.save.mock.calls[0][2];
+    const gptSaved = mocks.save.mock.calls[1][2];
+    expect(webSaved).toEqual(gptSaved);
+    expect(webSaved.gameState.npcOffscreen).toEqual({ privatePlan: "unseen" });
+    expect(webSaved.messages[1].content).toBe(gpt.narration);
   });
 
   it("a reused turn identifier with different prose fails before state changes", async () => {
