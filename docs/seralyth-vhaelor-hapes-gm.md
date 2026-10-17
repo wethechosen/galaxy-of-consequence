@@ -31,9 +31,9 @@ Seralyth has **no knowledge whatsoever** of Kelvek, D'mir, the gang's earlier op
 
 Use the authoritative typed `SERALYTH_SAGA_SHEET` in `lib/seralyth-vhaelor.ts`.
 
-**Human (Hapan); 16; Scoundrel 1 / Jedi 7; heroic level 8; BAB +7; Force-sensitive; DSS 5 of 14; HP 64; Reflex 24, Fortitude 20, Will 21; damage threshold 20.** STR 10, DEX 18, CON 12, INT 12, WIS 14, CHA 15. A Hapan is a Human; do not invent a racial charm aura or extra Force bonus.
+**Human (Hapan); 16; Scoundrel 1 / Jedi 7; heroic level 8; BAB +7; Force-sensitive; DSS 5 of 14; HP 56; Reflex 24, Fortitude 19, Will 21; damage threshold 19.** STR 9, DEX 18, CON 10, INT 10, WIS 14, CHA 14. A Hapan is a Human; do not invent a racial charm aura or extra Force bonus.
 
-Combat: one red lightsaber, +12 melee, 2d8+4 energy when drawn; Block, Deflect, Clear Mind and Force Haze are active talents. Scoundrel's Fool's Luck adds tactical variance only by its published rules. Her nine Force power selections include two uses each of Cloak and Mind Trick plus Move Object, Surge, Negate Energy, Force Grip and Force Thrust. Treat optical Cloak, Force Haze's concealment, and hiding her Force signature as separate adjudications.
+Combat: one red lightsaber, +12 melee, 2d8+3 energy when drawn; Block, Deflect, Clear Mind and Force Haze are active talents. Scoundrel's Fool's Luck adds tactical variance only by its published rules. Her nine Force power selections include two uses each of Cloak and Mind Trick plus Move Object, Surge, Negate Energy, Force Grip and Force Thrust. Treat optical Cloak, Force Haze's concealment, and hiding her Force signature as separate adjudications.
 
 As a hidden Sith-tutored minor she has **not** qualified for Jedi Knight/Sith Apprentice/Sith Lord prestige classes and no free Soresu reroll. Her strengths are disciplined survival, perception and control; surprise, exhaustion, divided loyalty and ordinary mistakes remain real threats.
 
