@@ -17,6 +17,7 @@ import { commitConversationTradeState, conversationTradeInstruction, currentTrad
 import { alignMerchantIdentity, isRoutineCommerce, isRoutineServiceInquiry, sceneMerchant } from "./scene-commerce";
 import { isAtelierAppointmentRequest, assertAtelierAppointmentProgress, atelierAppointmentGmInstruction, atelierAppointmentRecovery } from "./atelier-appointments";
 import { assertSandboxAgency, SANDBOX_GM_AGENCY, mayUseCivilianAgencyRecovery, civilianAgencyRecovery } from "./sandbox-agency";
+import {planInteriorMovement,recoverInteriorMovement} from "./interior-movement-recovery";
 import { buildSemanticSagaCheck, declaredForcePower, forceCapabilityConstraint, hasEarnedForcePower, interpretSagaAction, requiredForcePower } from "./saga-action-plan";
 import { buildForcePowerPlan, resolveForcePower, type ForcePowerResolution } from "./saga-force";
 import { recoverConfirmedTradeOffer } from "./trade-offer-recovery";
@@ -1626,6 +1627,22 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       assertCampaignResponseStructure(parsed.clean);
       assertMechanicalNarration(parsed.clean, null);
       assertMaterialAuthority(delta, action, null, currentSnapshot.gameState as Record<string, unknown>, null);
+      validationError = null;
+    } else if (mode === "play" && !roll && !trade && !encounter && planInteriorMovement(resolvedIntent, currentSnapshot.gameState.location)) {
+      // A safely reachable public interior waypoint must not cause a terminal 503
+      // merely because all provider drafts kept the character in the old room.
+      const interior = planInteriorMovement(resolvedIntent, currentSnapshot.gameState.location)!;
+      const recovered = recoverInteriorMovement(interior);
+      fallbackReason = "validation";
+      response = {provider:"local-safe-fallback",model:"interior-movement-receipt",finishReason:"stop",content:recovered.content};
+      parsed = parseEngineResponse(recovered.content, {requireState:true});
+      delta = parsed.delta as unknown as Record<string,unknown>;
+      assertCampaignResponseStructure(parsed.clean);
+      assertNarratedLocation(parsed.clean, delta, currentSnapshot.gameState.location);
+      assertMovementSceneProgress(parsed.clean, resolvedIntent, null, delta, currentSnapshot.gameState.location);
+      assertNoProgressLoop(parsed.clean, resolvedIntent, delta, currentSnapshot.gameState.location, priorResult);
+      assertMaterialAuthority(delta, action, null, currentSnapshot.gameState as Record<string,unknown>, null);
+      assertNarrativeLedgerConsistency(parsed.clean, delta, resolvedIntent);
       validationError = null;
     } else if (atelierAppointment && !roll && !trade) {
       // The GM must not strand a client at Nuvorren behind circular refusals.
