@@ -40,10 +40,10 @@ export const SERALYTH_VHAELOR_GM = {
       {characterLevel:3,career:"Jedi 2",generalFeat:"Force Training",classBonusFeat:"Weapon Finesse"},
       {characterLevel:4,career:"Jedi 3",talent:"Deflect",abilityIncreases:["Dexterity","Charisma"]},
       {characterLevel:5,career:"Jedi 4",classBonusFeat:"Weapon Focus (lightsabers)"},
-      {characterLevel:6,career:"Jedi 5",talent:"Soresu",generalFeat:"Skill Focus (Use the Force)"},
+      {characterLevel:6,career:"Jedi 5",talent:"Lightsaber Defense",generalFeat:"Skill Focus (Use the Force)"},
       {characterLevel:7,career:"Jedi 6",classBonusFeat:"Skill Focus (Stealth)"}
     ],
-    talents:["Knack","Block","Deflect","Soresu"],
+    talents:["Knack","Block","Deflect","Lightsaber Defense"],
     feats:["Point Blank Shot","Weapon Proficiency (pistols)","Weapon Proficiency (simple weapons)","Force Sensitivity","Force Training","Weapon Proficiency (lightsabers)","Weapon Finesse","Weapon Focus (lightsabers)","Skill Focus (Use the Force)","Skill Focus (Stealth)"],
     forcePowerSuite:["Cloak","Cloak","Circle of Shelter","Mind Trick","Move Object","Surge"],
     forceTrainingFeatCount:2, forcePowerCapacity:6,
@@ -52,13 +52,13 @@ export const SERALYTH_VHAELOR_GM = {
     defensesInPlay:{
       block:"Reaction; opposed Use the Force vs qualifying melee attack roll, -5 cumulative per previous Block/Deflect since last turn.",
       deflect:"Reaction; opposed Use the Force vs qualifying ranged attack roll, same cumulative penalty.",
-      soresu:"Reroll a failed Block or Deflect check; must keep the second result. It does not grant automatic immunity.",
+      soresuPractice:"Exceptional Form III Soresu technique: Block, Deflect and Lightsaber Defense plus Circle of Shelter. The Jedi Knight-only Soresu reroll talent has not been earned.",,
       forceSignature:"Conceal a Force signature by an opposed Use the Force check against Sense Force; no permanent immunity.",
       cloak:"Cloak Force power bends visible light; must be activated, checked and spent according to its power rules. Different from masking one's Force signature.",
       knack:"Limited Scoundrel skill-check reroll under the published talent rules."
     },
     gear:["single concealed red lightsaber","Hapan ceremonial clothing","practical court boots","secured comlink"],
-    restrictions:["No Sith Lord rank or prestige-class abilities.","No automatic assassinations or unverified kills.","No limitless Cloak, infinite Force points or unwarranted invisibility.","No Buried Presence talent; it belongs to a different Force tradition.","All NPC actions are chosen and resolved by the AI GM.","No rewards, encounters or XP without an authoritative gameplay receipt."]
+    restrictions:["No Sith Lord rank or prestige-class abilities.","No automatic assassinations or unverified kills.","No limitless Cloak, infinite Force points or unwarranted invisibility.","No Buried Presence talent; it belongs to a different Force tradition.","No Soresu prestige talent before legal Jedi Knight class access; mastery here is in-world training, not an automatic reroll.","All NPC actions are chosen and resolved by the AI GM.","No rewards, encounters or XP without an authoritative gameplay receipt."]
   },
   mother:"Lady Tazielle Vhaelor, Hapan noble with close access to the succession circle; not an established heir herself.",
   father:"Lord-Commander Rethan Vhaelor, senior Hapan security and military family officer.",
