@@ -12,6 +12,8 @@ import {NPC_ULTIMATE_ARCS,NPC_ULTIMATE_ARC_VERSION} from "./npc-ultimate-arcs";
 import {hasAuditedNpcUltimateCompletion} from "./npc-ultimate-verification";
 import {npcRepetitionRecovery} from "./npc-repetition-recovery";
 import {npcDecisionHistory,npcAdministrativeLoopHint} from "./npc-decision-context";
+import {npcGoalProgressPlan,npcDecisionProgressGuard,npcAdjudicationMismatch} from "./npc-progress-guard";
+import {npcUltimateReviewCandidate,npcDeathReviewCandidate,npcIsAuditedDeath} from "./npc-completion-review";
 import {rebaseIsolatedNpcPendingAttempt} from "./npc-pending-revision";
 import {npcAutoplayConcurrency,shouldDeferNpcAutoplayFailure} from "./npc-autoplay-retry";
 import {NPC_HISTORICAL_TIERS,advanceNpcEarnedXp} from "./npc-historical-baselines";
@@ -67,8 +69,9 @@ function status(s:DatapadSnapshot,n:NpcTestSubject){
   // A GM objectiveComplete is not proof that the entire ultimate arc is resolved.
   // Require a separate evidence-linked audit before declaring a true ending.
   if(hasAuditedNpcUltimateCompletion(s,ultimate))return "goal_complete";
+  if(npcIsAuditedDeath(s))return "dead";
   if(String(s.gameState.lifeStatus||s.character?.lifeStatus).toLowerCase()==="dead"||
-      s.character?.deceased===true)return "dead";
+      s.character?.deceased===true)return "death_review_required";
   if(Number(s.gameState.health)<=0)return "incapacitated";
   return "active";
 }
@@ -77,8 +80,9 @@ async function choose(n:NpcTestSubject,s:DatapadSnapshot,turn:number){
   const recent=Array.isArray(s.gameState.turnEvents)?s.gameState.turnEvents.slice(-6).map(e=>e.action):[];
   const recentGm=(s.messages as Array<Record<string,unknown>>).slice().reverse().find(m=>m.role==="assistant");
   const loopHint=npcAdministrativeLoopHint(recent.map(String),String(recentGm?.content||""));
+  const plan=npcGoalProgressPlan(NPC_ULTIMATE_ARCS[n.id]||n.objective,s.gameState.objectives);
   const answer=await invokeNvidia({purpose:"npc",temperature:0.35,max_tokens:260,
-    system:"You control ONLY this playable character, not the GM. Make ONE concrete first-person Star Wars Saga Edition action that advances the actual LONG-TERM goal, not just an initial easy chapter. Respect established location, skills, known NPCs, legal access, and inventory. Do not guarantee success, award yourself levels, narrate GM outcomes, teleport or manufacture equipment. If a clerk declined or directed you to another office, go to that office rather than repeating the same question. Never repeat a recent action; change tactics using the previous confirmed result. A completed objective flag without an independent ultimateAudit is NOT a verified ending: continue to fulfill and confirm every clause, including actual repairs and safety checks where required. Take proportionate risks when necessary. Return JSON with exactly one action string starting I, under 450 characters, without markdown.",
+    system:"You control ONLY this playable character, not the GM. This is an actual Star Wars sandbox RPG, NOT a bureaucratic compliance simulator. Make ONE concrete first-person Saga Edition action to advance the full saved LONG-TERM goal. Travel to established locations, pursue distinct leads, negotiate real agreements, resolve risks, and undertake permitted operations where grounded by saved facts. If a clerk denied access, do not repeat the same request or minor variations: use the genuine last GM result to choose a different permitted lead, action or location. Do not assume success, authority, powers, money, equipment, NPC dialogue, knowledge or earned XP. Never narrate outcomes; only declare attempts. If the ultimate goal is marked completed without independent evidence audit, verify its unresolved clauses through actual scenes. Take proportionate risks when meaningful. Return JSON with exactly one action string beginning with I, under 450 characters, without markdown.",
     messages:[{role:"user",content:JSON.stringify({name:n.name,role:n.role,
       initialObjective:n.objective,ultimateGoal:NPC_ULTIMATE_ARCS[n.id]||n.objective,
       turn,level:s.character?.level,skills:s.character?.trainedSkills,
@@ -86,7 +90,7 @@ async function choose(n:NpcTestSubject,s:DatapadSnapshot,turn:number){
       location:s.gameState.location,health:s.gameState.health,
       inventory:s.gameState.inventory,objectives:s.gameState.objectives,
       ultimateAudit:s.gameState.npcUltimateAudit||null,
-      recentCommittedActions:recent,loopHint,history})}]});
+      recentCommittedActions:recent,loopHint,goalProgressPlan:plan,history})}]});
   let action=answer.content.trim();
   try{const parsed=JSON.parse(action);if(typeof parsed.action==="string")action=parsed.action;}catch{
     const match=action.match(/\{[\s\S]*\}/);
@@ -107,13 +111,20 @@ async function choose(n:NpcTestSubject,s:DatapadSnapshot,turn:number){
       originalDecision:action,declaredInstead:recovered.action});
     return recovered.action;
   }
+  const progress=npcDecisionProgressGuard(recent.map(String),String(lastGm?.content||""),action);
+  if(progress.mustRegenerate){
+    record({id:n.id,phase:"npc_procedural_loop_rejected",turn,action,
+      matchingPriorActions:progress.similarPriorRequests,
+      recentAdministrativeRequests:progress.administrativeRequests});
+    throw Error("Repeated NPC administrative decision: choose a new concrete action based on the actual GM result");
+  }
   return action;
 }
 async function retry<T>(fn:()=>Promise<T>,id:string,phase:string):Promise<T>{
   for(let i=0;i<7;i++)try{return await fn();}catch(err){
     const error=err as Error & {status?:number;retryAfterSeconds?:number};
     const eligible=[429,502,503,504].includes(Number(error.status))||
-      /rate|cooldown|busy|unavailable|retry|quota|draft|invalid pc action/i.test(String(error.message));
+      /rate|cooldown|busy|unavailable|retry|quota|draft|invalid pc action|repeated npc administrative decision/i.test(String(error.message));
     const delay=Math.max(3000,Math.min(70000,Number(error.retryAfterSeconds||2**(i+1)*3)*1000));
     record({id,phase:"retry",stage:phase,attempt:i,error:error.message||String(err),
       delay:eligible&&i<6?delay:0});
@@ -209,6 +220,9 @@ async function run(n:NpcTestSubject){
       sum+(Number(e.experienceAward)||0),0);
     if(Number(after.snapshot?.character?.experience)!==careerStartingXp+receiptEarnedXp)
       throw Error("Career XP and actual committed GM XP do not reconcile");
+    const mismatched=npcAdjudicationMismatch(action,gm.narration);
+    if(mismatched)record({id:n.id,phase:"gm_action_result_mismatch",turn,turnId,issue:mismatched,
+      action:action.slice(0,420),result:gm.narration.slice(-450)});
     record({id:n.id,phase:"committed",turn,revision:after.revision,status:status(after.snapshot!,n),
       xp:after.snapshot?.character?.experience,careerStartingXp,receiptEarnedXp,
       level:after.snapshot?.character?.level,
@@ -218,6 +232,10 @@ async function run(n:NpcTestSubject){
   }
   const final=readDatapad(actor,null,db);
   const end=status(final.snapshot!,n);
+  const candidate=npcUltimateReviewCandidate(final.snapshot!,NPC_ULTIMATE_ARCS[n.id]||n.objective);
+  if(candidate?.canReview)record({id:n.id,phase:"ultimate_review_candidate",...candidate});
+  const deathClaim=npcDeathReviewCandidate(final.snapshot!);
+  if(deathClaim)record({id:n.id,phase:"death_review_candidate",...deathClaim});
   record({id:n.id,phase:"checkpoint",status:end,revision:final.revision,
     endingVerified:end==="dead"||end==="goal_complete"});
   return end==="active"&&Array.isArray(final.snapshot?.gameState.turnEvents)&&
