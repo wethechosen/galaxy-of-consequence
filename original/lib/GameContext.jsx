@@ -11,6 +11,7 @@ import { getSellQuote, getTradeAccess } from "@/original/lib/marketCatalog";
 import { CAMPAIGN_STATE_DEFAULTS, ensureCampaignScaffold } from "@/original/lib/campaignState";
 import { pendingOperation, clearPendingOperation } from "@/original/lib/pendingOperation";
 import { recoverCampaignTurn } from "@/original/lib/campaignSync";
+import { nextTurnRetry, parsePendingTurn, turnStorageKey } from "@/original/lib/gmCooldown";
 
 /* ---------- constants ---------- */
 
@@ -417,7 +418,7 @@ export function GameProvider({ children }) {
   useEffect(() => {
     let cancelled = false;
     saveSession.current = null;
-    setSaveReady(false); setSaveError(""); setSaveStatus("loading");
+    setSaveReady(false); setSaveError(""); setSaveStatus("loading"); setTurnCooldownUntil(0); setPendingTurnAction("");
     if (!accountId || !user) return;
     async function hydrate() {
       const saved = await datapadRequest(accountId);
@@ -444,6 +445,26 @@ export function GameProvider({ children }) {
         failedTurn.current = { userText: pendingUser.content, history: next.messages.slice(0, -2), stateOverride: next.gameState, characterOverride: next.character, roll: lastMessage.roll };
         setTurnError("The dice were rolled, but the scene response was interrupted. Retry to resolve the same roll.");
       } else { failedTurn.current = null; setTurnError(""); }
+      // Restore only the exact uncommitted action. A changed revision requires
+      // human reconciliation; never replay against an unrelated campaign state.
+      let pending = null;
+      try { pending = parsePendingTurn(localStorage.getItem(turnStorageKey(accountId)), revision, next.messages); } catch {}
+      if (pending?.committed) {
+        try { localStorage.removeItem(turnStorageKey(accountId)); } catch {}
+      } else if (pending?.turnId && !pending.changed) {
+        failedTurn.current = {
+          userText: pending.action, history: next.messages,
+          stateOverride: undefined, characterOverride: next.character,
+          turnId: pending.turnId, statePolicy: pending.statePolicy || null,
+          attempts: pending.attempts || 0,
+        };
+        setTurnError("");
+        setPendingTurnAction(pending.action);
+        setTurnCooldownEstimated(Boolean(pending.estimated));
+        setTurnCooldownUntil(Math.max(Date.now() + 500, pending.retryAt));
+      } else if (pending?.changed) {
+        setTurnError("A saved action is awaiting review because the campaign revision changed. Your previous declaration was not replayed.");
+      }
       setApiKey(loadAccountKey("gc_api_key", user.email, ""));
       setSaveStatus("saved"); setSaveReady(true);
     }
@@ -592,6 +613,17 @@ export function GameProvider({ children }) {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [turnError, setTurnError] = useState("");
+  const [turnCooldownUntil, setTurnCooldownUntil] = useState(0);
+  const [turnCooldownEstimated, setTurnCooldownEstimated] = useState(false);
+  const [pendingTurnAction, setPendingTurnAction] = useState("");
+  const [cooldownClock, setCooldownClock] = useState(Date.now());
+  const turnCooldownRemaining = Math.max(0, Math.ceil((turnCooldownUntil - cooldownClock) / 1000));
+  useEffect(() => {
+    if (!turnCooldownUntil) return;
+    setCooldownClock(Date.now());
+    const id = window.setInterval(() => setCooldownClock(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [turnCooldownUntil]);
   const activeTurn = useRef(false);
   const failedTurn = useRef(null);
   const commsInFlight = useRef(new Set());
@@ -787,7 +819,10 @@ If this is the very first message of the session, open the scene in-character ba
     const newHistory = userText ? [...history, { role: "user", content: userText }] : history;
     setMessages(newHistory);
     const turnId = turnIdOverride || crypto.randomUUID();
-    failedTurn.current = { userText, history, stateOverride, characterOverride, statePolicy, turnId };
+    const attempts = turnIdOverride ? failedTurn.current?.attempts || 0 : 0;
+    failedTurn.current = { userText, history, stateOverride, characterOverride, statePolicy, turnId, attempts };
+    setPendingTurnAction(userText || "Open current scene");
+    setTurnCooldownUntil(0);
     try {
       // The server is the turn authority. Persist any newly-created character or
       // already-committed trade first, then let /api/gm read the saved state,
@@ -797,6 +832,11 @@ If this is the very first message of the session, open the scene in-character ba
       // history. The durable turn ID lets the server return an existing result.
       if (!turnIdOverride) { session.snapshot = seed; await persistSnapshot(session, seed); }
       else await session.queue.catch(() => {});
+      // Durable before network transmission, including browser reload mid-request.
+      try { localStorage.setItem(turnStorageKey(session.accountId), JSON.stringify({
+        turnId, action: userText || "", revision: session.revision, statePolicy,
+        retryAt: Date.now() + 1000, attempts,
+      })); } catch {}
       const response = await fetch("/api/gm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -808,10 +848,9 @@ If this is the very first message of the session, open the scene in-character ba
       }
       const result = await response.json();
       if (!response.ok || !result.snapshot) throw Object.assign(
-        new Error(response.status === 429
-          ? `Comlink cooling down. Wait ${Math.max(1, Number(result.retryAfterSeconds || response.headers.get("Retry-After")) || 60)} seconds before retrying the same action. No outcome was applied.`
-          : result.error || "The Game Master turn failed. Its outcome is not confirmed."),
-        { status: response.status, receipt: result.receipt || null },
+        new Error(result.error || "The Game Master turn failed. Its outcome is not confirmed."),
+        { status: response.status, receipt: result.receipt || null,
+          retry: nextTurnRetry(response.status, result, response.headers, attempts) },
       );
       if (saveSession.current !== session) return false;
       const completed = normalizeSnapshot(result.snapshot);
@@ -824,8 +863,24 @@ If this is the very first message of the session, open the scene in-character ba
       setSaveStatus("saved");
       localStorage.removeItem(`gc_datapad_draft:${session.accountId}`);
       failedTurn.current = null;
+      setPendingTurnAction("");
+      setTurnCooldownUntil(0);
+      try { localStorage.removeItem(turnStorageKey(session.accountId)); } catch {}
       return true;
     } catch (e) {
+      if (saveSession.current === session && e.retry && failedTurn.current) {
+        // 429/temporary transport failures do not authorize narration or a
+        // state commit. Preserve the same ID and schedule a truthful retry.
+        failedTurn.current.attempts = attempts + 1;
+        setTurnCooldownEstimated(e.retry.estimated);
+        setTurnCooldownUntil(e.retry.retryAt);
+        setTurnError("");
+        try { localStorage.setItem(turnStorageKey(session.accountId), JSON.stringify({
+          turnId, action: userText || "", revision: session.revision, statePolicy,
+          retryAt: e.retry.retryAt, estimated: e.retry.estimated, attempts: attempts + 1,
+        })); } catch {}
+        return false;
+      }
       if (saveSession.current === session) {
         try {
           const recovered = recoverCampaignTurn(await datapadRequest(session.accountId), failedTurn.current);
@@ -833,7 +888,10 @@ If this is the very first message of the session, open the scene in-character ba
           applySnapshot(completed); session.snapshot = completed; session.revision = recovered.revision;
           session.lastSaved = JSON.stringify(completed); session.error = "";
           setSaveError(""); setSaveStatus("saved"); failedTurn.current = recovered.pending;
-          if (recovered.committed) { setTurnError(""); return true; }
+          if (recovered.committed) {
+            try { localStorage.removeItem(turnStorageKey(session.accountId)); } catch {}
+            setTurnCooldownUntil(0); setPendingTurnAction(""); setTurnError(""); return true;
+          }
           if (e.status === 409 || /campaign|revision|newer|changed elsewhere/i.test(e.message)) {
             setTurnError(recovered.message); return false;
           }
@@ -853,9 +911,22 @@ If this is the very first message of the session, open the scene in-character ba
 
   async function retryTurn() {
     const turn = failedTurn.current;
-    if (!turn || activeTurn.current) return false;
+    if (!turn || activeTurn.current || turnCooldownUntil > Date.now()) return false;
     return sendTurn(turn.userText, turn.history, turn.stateOverride, turn.characterOverride, null, turn.statePolicy, turn.turnId);
   }
+
+  // When the clock expires, the original action is resubmitted automatically.
+  // A pending turn is never discarded merely because the tab was refreshed.
+  useEffect(() => {
+    if (!turnCooldownUntil || !saveReady || !accountId) return;
+    const timeout = window.setTimeout(() => {
+      if (Date.now() < turnCooldownUntil || activeTurn.current || !failedTurn.current ||
+          saveSession.current?.error) return;
+      setTurnCooldownUntil(0);
+      void retryTurn();
+    }, Math.max(0, turnCooldownUntil - Date.now()) + 100);
+    return () => window.clearTimeout(timeout);
+  }, [turnCooldownUntil, saveReady, accountId]);
 
   function handleSend() {
     if (!input.trim() || activeTurn.current || !saveReady || saveSession.current?.error) return;
@@ -1083,6 +1154,8 @@ If this is the very first message of the session, open the scene in-character ba
   async function resetForNewGame(mode = "character-creation") {
     if (activeTurn.current || commsInFlight.current.size || !saveReady || saveSession.current?.error) return;
     failedTurn.current = null; setTurnError(""); setInput("");
+    setTurnCooldownUntil(0); setPendingTurnAction("");
+    try { localStorage.removeItem(turnStorageKey(accountId)); } catch {}
     const isDmirCharacter = character?.name?.toLowerCase() === "d'mir holloran";
     const nextCharacter = mode === "level-one" && character
       ? { ...(isDmirCharacter ? DEMO_CHARACTER : character), level: 1, experience: 0 }
@@ -1171,7 +1244,7 @@ If this is the very first message of the session, open the scene in-character ba
     apiKey, model, saveApiKey, saveModel,
     character, gameState, messages, comms, directive, sourcebooks, settings, toggleHud,
     creationStep, setCreationStep, draftChar, setDraftChar,
-    input, setInput, sending, scrollRef, turnError, retryTurn, sendTurn, initializeDmir,
+    input, setInput, sending, scrollRef, turnError, turnCooldownRemaining, turnCooldownEstimated, pendingTurnAction, retryTurn, sendTurn, initializeDmir,
     saveReady, saveStatus, saveError, retrySave, loadSavedVersion, selectedAccountId: accountId, selectedAccount, selectAccount, legacyDmirAvailable, importLegacyCharacter,
     handleSend, sendCommsMessage, travelToLocation, interactWithSyndicate, buyMarketGood, sellMarketGood, transferBankCredits, restAtResidence, advanceCharacter, finishCreation, resetAll, resetForNewGame,
     saveDirective, saveSettings,

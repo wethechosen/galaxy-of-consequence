@@ -201,7 +201,7 @@ function ReturnRecap({ recap, onContinue }) {
 }
 
 function PlayView() {
-  const { messages, sending, input, setInput, handleSend, scrollRef, gameState, character, saveReady, saveError, turnError, retryTurn, sendTurn, resetForNewGame, selectedAccountId } = useGame();
+  const { messages, sending, input, setInput, handleSend, scrollRef, gameState, character, saveReady, saveError, turnError, turnCooldownRemaining, turnCooldownEstimated, pendingTurnAction, retryTurn, sendTurn, resetForNewGame, selectedAccountId } = useGame();
   const transcript = useMemo(() => campaignTranscript(messages), [messages]);
   const advancement = advancementGate(character || {});
   const recap = useMemo(() => buildCampaignRecap({ messages, gameState, character }), [messages, gameState, character]);
@@ -293,14 +293,15 @@ function PlayView() {
             </div>
           </div>
         ))}
-        {!sending && messages.length > 0 && <button type="button" onClick={() => sendTurn(null)} disabled={!saveReady || Boolean(saveError) || Boolean(turnError)} className="text-xs text-[#8b93a3] hover:text-[#22d3ee] disabled:opacity-40">Take in the current scene · no time passes</button>}
+        {!sending && messages.length > 0 && <button type="button" onClick={() => sendTurn(null)} disabled={!saveReady || Boolean(saveError) || Boolean(turnError) || turnCooldownRemaining > 0} className="text-xs text-[#8b93a3] hover:text-[#22d3ee] disabled:opacity-40">Take in the current scene · no time passes</button>}
         {sending && <div className="flex items-center gap-2 text-[#8b93a3] text-[11px] tracking-widest pl-4 gc-dot-bounce">THE GALAXY RESPONDS <span>.</span><span>.</span><span>.</span></div>}
         </>}
       </div>
+      {turnCooldownRemaining > 0 && <div role="status" aria-live="off" className="flex-shrink-0 mx-4 mb-3 rounded-xl border border-[#22d3ee]/35 bg-[#22d3ee]/5 p-3 text-xs text-[#d8f9ff]"><p className="font-bold tracking-[0.18em] text-[#22d3ee]">GAME MASTER COOLDOWN</p><p className="mt-2 text-[#f2f0ea]">{pendingTurnAction}</p><p className="mt-2 text-2xl font-mono tabular-nums" aria-label="Time until next attempt">{String(Math.floor(turnCooldownRemaining / 60)).padStart(2, "0")}:{String(turnCooldownRemaining % 60).padStart(2, "0")}</p><p className="mt-2 text-[#c7d5dc]">{turnCooldownEstimated ? "Estimated next retry" : "Next retry"} when permitted. Your exact declaration and turn ID are preserved. Automatic resumption is enabled; no gameplay outcome has been invented or applied.</p></div>}
       {turnError && <div role="alert" className="flex-shrink-0 mx-4 mb-3 rounded-xl border border-[#e23b3b]/40 bg-[#e23b3b]/5 p-3 text-xs text-[#ff9b9b]"><p className="mb-1 text-[10px] font-bold tracking-[0.18em]">COMLINK STATIC</p><p className="text-[#d8d6d0]">{immersiveTurnError(turnError)}</p><button onClick={retryTurn} disabled={advancement.blocked || sending || !saveReady || Boolean(saveError)} className="gc-btn mt-2 px-3 py-2 disabled:opacity-40">RETRY SCENE</button></div>}
       <div className="flex-shrink-0 p-4 flex gap-2" style={{ borderTop: "1px solid rgba(255,255,255,.08)" }}>
-        <input aria-label="Your character's action" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && submitAction()} disabled={advancement.blocked || sending || !saveReady || Boolean(saveError)} placeholder={advancement.blocked ? "Complete your earned advancement in the Dossier" : "What do you do?"} className="gc-input flex-1 min-w-0 px-3.5 py-2.5 text-sm text-[#f2f0ea]" />
-        <button aria-label="Send action" onClick={submitAction} disabled={advancement.blocked || sending || !input.trim() || !saveReady || Boolean(saveError)} className="gc-btn px-4 py-2.5 disabled:opacity-40"><Send size={16} /></button>
+        <input aria-label="Your character's action" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && submitAction()} disabled={advancement.blocked || sending || turnCooldownRemaining > 0 || !saveReady || Boolean(saveError)} placeholder={advancement.blocked ? "Complete your earned advancement in the Dossier" : "What do you do?"} className="gc-input flex-1 min-w-0 px-3.5 py-2.5 text-sm text-[#f2f0ea]" />
+        <button aria-label="Send action" onClick={submitAction} disabled={advancement.blocked || sending || turnCooldownRemaining > 0 || !input.trim() || !saveReady || Boolean(saveError)} className="gc-btn px-4 py-2.5 disabled:opacity-40"><Send size={16} /></button>
       </div>
     </div>
   );
