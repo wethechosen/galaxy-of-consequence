@@ -1501,7 +1501,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       : null;
     try {
       response = await invokeNvidia({
-        purpose: "gm",
+        purpose: isDmirPrimaryCampaign(actor, currentSnapshot.character as Record<string, unknown>) ? "dmir" : "gm",
         system,
         timeout_ms: providerBudget(55_000),
         sourceQuery: action || String(currentSnapshot.gameState.location || "opening scene"),
