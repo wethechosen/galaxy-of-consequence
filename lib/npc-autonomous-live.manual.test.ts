@@ -11,6 +11,7 @@ import {ALL_NPC_TEST_ROSTER,type NpcTestSubject} from "./npc-test-roster";
 import {NPC_ULTIMATE_ARCS,NPC_ULTIMATE_ARC_VERSION} from "./npc-ultimate-arcs";
 import {hasAuditedNpcUltimateCompletion} from "./npc-ultimate-verification";
 import {npcRepetitionRecovery} from "./npc-repetition-recovery";
+import {npcDecisionHistory,npcAdministrativeLoopHint} from "./npc-decision-context";
 import {rebaseIsolatedNpcPendingAttempt} from "./npc-pending-revision";
 import {npcAutoplayConcurrency,shouldDeferNpcAutoplayFailure} from "./npc-autoplay-retry";
 import {NPC_HISTORICAL_TIERS,advanceNpcEarnedXp} from "./npc-historical-baselines";
@@ -72,9 +73,10 @@ function status(s:DatapadSnapshot,n:NpcTestSubject){
   return "active";
 }
 async function choose(n:NpcTestSubject,s:DatapadSnapshot,turn:number){
-  const history=(s.messages as Array<Record<string,unknown>>).slice(-6)
-    .map(m=>({role:m.role,content:String(m.content||"").slice(0,1100)}));
-  const recent=Array.isArray(s.gameState.turnEvents)?s.gameState.turnEvents.slice(-5).map(e=>e.action):[];
+  const history=npcDecisionHistory(s.messages as Array<Record<string,unknown>>,8);
+  const recent=Array.isArray(s.gameState.turnEvents)?s.gameState.turnEvents.slice(-6).map(e=>e.action):[];
+  const recentGm=(s.messages as Array<Record<string,unknown>>).slice().reverse().find(m=>m.role==="assistant");
+  const loopHint=npcAdministrativeLoopHint(recent.map(String),String(recentGm?.content||""));
   const answer=await invokeNvidia({purpose:"npc",temperature:0.35,max_tokens:260,
     system:"You control ONLY this playable character, not the GM. Make ONE concrete first-person Star Wars Saga Edition action that advances the actual LONG-TERM goal, not just an initial easy chapter. Respect established location, skills, known NPCs, legal access, and inventory. Do not guarantee success, award yourself levels, narrate GM outcomes, teleport or manufacture equipment. If a clerk declined or directed you to another office, go to that office rather than repeating the same question. Never repeat a recent action; change tactics using the previous confirmed result. A completed objective flag without an independent ultimateAudit is NOT a verified ending: continue to fulfill and confirm every clause, including actual repairs and safety checks where required. Take proportionate risks when necessary. Return JSON with exactly one action string starting I, under 450 characters, without markdown.",
     messages:[{role:"user",content:JSON.stringify({name:n.name,role:n.role,
@@ -84,7 +86,7 @@ async function choose(n:NpcTestSubject,s:DatapadSnapshot,turn:number){
       location:s.gameState.location,health:s.gameState.health,
       inventory:s.gameState.inventory,objectives:s.gameState.objectives,
       ultimateAudit:s.gameState.npcUltimateAudit||null,
-      recentCommittedActions:recent,history})}]});
+      recentCommittedActions:recent,loopHint,history})}]});
   let action=answer.content.trim();
   try{const parsed=JSON.parse(action);if(typeof parsed.action==="string")action=parsed.action;}catch{
     const match=action.match(/\{[\s\S]*\}/);
