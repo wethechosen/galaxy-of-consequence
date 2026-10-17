@@ -107,9 +107,10 @@ function observedStyle(before:Row,after:Row,action:string,roll:unknown):Observed
   return "melee";
  return null;
 }
-function observedOutcome(roll:unknown):RivalObservation["outcome"]{
+function observedOutcome(roll:unknown,style:ObservedStyle):RivalObservation["outcome"]{
  const check=row(roll),r=str(check?.outcome).toLowerCase();
- return r==="success"?"success":r==="failure"?"failure":check?"attempted":"resolved";
+ return r==="success"?"success":r==="failure"?"failure":
+   style==="mercy"||style==="retreat"?"resolved":"attempted";
 }
 
 /** Called only after finalized gameState.turnEvents includes this turn ID. */
@@ -138,7 +139,7 @@ export function recordCommittedRivalObservation(
   if(!memory){memory={id:witness.id,name:witness.name,observations:[]};memories.push(memory);}
   if(memory.observations.some(x=>x.turnId===turnId))continue;
   memory.observations.push({turnId,style,source:witness.source,scene,
-   outcome:observedOutcome(roll),campaignMinute:minute});
+   outcome:observedOutcome(roll,style),campaignMinute:minute});
   memory.observations=memory.observations.slice(-24);
  }
  return {version:1,memories:memories.slice(-50)};
