@@ -12,6 +12,7 @@ import {NPC_ULTIMATE_ARCS,NPC_ULTIMATE_ARC_VERSION} from "./npc-ultimate-arcs";
 import {hasAuditedNpcUltimateCompletion} from "./npc-ultimate-verification";
 import {npcRepetitionRecovery} from "./npc-repetition-recovery";
 import {rebaseIsolatedNpcPendingAttempt} from "./npc-pending-revision";
+import {npcAutoplayConcurrency,shouldDeferNpcAutoplayFailure} from "./npc-autoplay-retry";
 import {NPC_HISTORICAL_TIERS,advanceNpcEarnedXp} from "./npc-historical-baselines";
 import {CAMPAIGN_NPCS_150_ABY} from "./npc-canon-roster";
 import {progressionStatus} from "@/original/lib/sagaAdvancement";
@@ -22,7 +23,7 @@ const requested=(process.env.GOC_NPC_SUBJECTS||"").split(",").map(x=>x.trim()).f
 // Run all 34 isolated player-character campaigns. Kelvek and D'mir remain excluded.
 const subjects=ALL_NPC_TEST_ROSTER.filter(n=>n.id!=="kelvek"&&n.id!=="dmir-holloran"&&(!requested.length||requested.includes(n.id)));
 const limit=Math.min(200,Math.max(1,Number(process.env.GOC_NPC_MAX_TURNS)||30));
-const concurrency=Math.min(3,Math.max(1,Number(process.env.GOC_NPC_CONCURRENCY)||2));
+const concurrency=npcAutoplayConcurrency(Number(process.env.GOC_NPC_CONCURRENCY)||2);
 const pause=(ms:number)=>new Promise<void>(r=>setTimeout(r,ms));
 const record=(x:Record<string,unknown>)=>{
   mkdirSync(resolve("data"),{recursive:true});
@@ -244,9 +245,13 @@ describe.skipIf(!active)("Genuine multi-character NVIDIA PC playthroughs",()=>{
               else otherStops.push(n.id);
             }
           }catch(e){
-            record({id:n.id,phase:"blocked",round,error:e instanceof Error?e.message:String(e)});
-            failures.push(n.id);
-            remaining.delete(n.id);
+            const message=e instanceof Error?e.message:String(e);
+            const temporary=shouldDeferNpcAutoplayFailure(e);
+            record({id:n.id,phase:temporary?"deferred":"blocked",round,error:message,
+              pendingTurnRetained:true,willRetryNextRound:temporary});
+            // Never discard a character merely because NVIDIA is cooling down.
+            // The next round reloads any saved pending action, turn ID and stored roll.
+            if(!temporary){failures.push(n.id);remaining.delete(n.id);}
           }
         }
       }));
@@ -255,5 +260,5 @@ describe.skipIf(!active)("Genuine multi-character NVIDIA PC playthroughs",()=>{
     record({phase:"batch_end",failures,capped,confirmedEndings,otherStops,
       stillActive:[...remaining.keys()],allCharactersReachedGoalOrDied:confirmedEndings.length===subjects.length});
     expect(failures).toEqual([]);
-  },1000*60*60*12);
+  },1000*60*60*96);
 });
