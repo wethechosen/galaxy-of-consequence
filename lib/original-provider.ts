@@ -66,9 +66,10 @@ export async function invokeNvidia(body: NvidiaRequest) {
   }
   if (!upstream.ok) {
     if (upstream.status === 429) {
-      const seconds = parseRetryAfter(upstream.headers.get("retry-after"));
+      const suppliedRetryAfter = upstream.headers.get("retry-after");
+      const seconds = parseRetryAfter(suppliedRetryAfter);
       await recordNvidiaCooldown(seconds);
-      throw new NvidiaProviderError("NVIDIA rate limit reached. Your action has not advanced; retry the same turn after the indicated delay.", 429, seconds, 429);
+      throw new NvidiaProviderError("NVIDIA rate limit reached. No gameplay outcome was applied.", 429, seconds, 429, !suppliedRetryAfter?.trim());
     }
     const error = upstream.status === 401 || upstream.status === 403 ? "The server's NVIDIA key was rejected."
       : upstream.status === 404 || upstream.status === 410 ? "The configured NVIDIA model is unavailable or retired. Update NVIDIA_MODEL and restart the server."
@@ -93,6 +94,6 @@ export async function originalProvider(request: Request, _provider: "local" | "n
     const result = await invokeNvidia(body as NvidiaRequest);
     return Response.json({choices:[{message:{role:"assistant",content:result.content},finish_reason:result.finishReason}],provider:result.provider,model:result.model});
   } catch(error) {
-    return Response.json({error:error instanceof Error ? error.message : "Provider unavailable.", retryAfterSeconds:error instanceof NvidiaProviderError ? error.retryAfterSeconds : undefined},{status:error instanceof NvidiaProviderError ? error.status : 400, headers:nvidiaRetryHeaders(error)});
+    return Response.json({error:error instanceof Error ? error.message : "Provider unavailable.", retryAfterSeconds:error instanceof NvidiaProviderError ? error.retryAfterSeconds : undefined, retryAfterEstimated:error instanceof NvidiaProviderError ? error.retryAfterEstimated : undefined},{status:error instanceof NvidiaProviderError ? error.status : 400, headers:nvidiaRetryHeaders(error)});
   }
 }

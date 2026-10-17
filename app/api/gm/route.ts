@@ -52,6 +52,7 @@ export async function POST(request: Request) {
       error: error instanceof Error ? error.message : "The GM request failed. No outcome was applied.",
       ...(receipt ? { receipt } : {}),
       retryAfterSeconds: error instanceof NvidiaProviderError ? error.retryAfterSeconds : undefined,
+      retryAfterEstimated: error instanceof NvidiaProviderError ? error.retryAfterEstimated : undefined,
     }, { status, headers: nvidiaRetryHeaders(error) });
   }
 }
