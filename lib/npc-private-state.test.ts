@@ -7,7 +7,7 @@ import {playerVisibleSnapshot,preserveNpcPrivateState} from "./npc-private-state
 const actor:Account={id:"offscreen-fixture",username:"offscreen-fixture@invalid.test",displayName:"Fixture",role:"player"};
 const original=():DatapadSnapshot=>({
  character:{name:"Explorer",level:2,experience:200},
- gameState:{location:"Bastion",credits:1000,inventory:[],
+ gameState:{location:"Bastion",credits:1000,inventory:[],npcMechanics:{captain:{health:20,secretBuild:true}},
   rivalIntelligence:{version:1,memories:[{name:"Captain Vell",observations:[{turnId:"t1",style:"ranged"}]}]},
   npcOffscreen:{version:1,plans:[{id:"secret-plan",actor:"Captain Vell",status:"preparing",dueAtMinute:190}],
    links:[],reports:[]},
@@ -19,6 +19,7 @@ describe("NPC private state stays server-only and survives browser autosaves",()
   const source=original(),visible=playerVisibleSnapshot(source);
   expect(visible?.gameState).not.toHaveProperty("rivalIntelligence");
   expect(visible?.gameState).not.toHaveProperty("npcOffscreen");
+  expect(visible?.gameState).not.toHaveProperty("npcMechanics");
   expect(source.gameState).toHaveProperty("npcOffscreen");
   expect(visible).not.toBe(source);
  });
@@ -27,9 +28,11 @@ describe("NPC private state stays server-only and survives browser autosaves",()
   const candidate=playerVisibleSnapshot(server)!;
   candidate.gameState.rivalIntelligence={version:1,memories:[{name:"Forged"}]};
   candidate.gameState.npcOffscreen={version:1,plans:[{id:"fabricated-win"}]};
+  candidate.gameState.npcMechanics={captain:{health:999}};
   const safe=preserveNpcPrivateState(server,candidate);
   expect(safe.gameState.npcOffscreen).toEqual(server.gameState.npcOffscreen);
   expect(safe.gameState.rivalIntelligence).toEqual(server.gameState.rivalIntelligence);
+  expect(safe.gameState.npcMechanics).toEqual(server.gameState.npcMechanics);
  });
  it("retains hidden rival knowledge through an actual read/public-autosave/reload sequence",()=>{
   const db=accountStore(openStorage(":memory:"));

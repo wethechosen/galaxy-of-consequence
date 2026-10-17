@@ -4,6 +4,7 @@ import {assertLocalRequest} from "@/lib/local-http";
 import {NPC_TEST_ROSTER} from "@/lib/npc-test-roster";
 import {CAMPAIGN_NPCS_150_ABY} from "@/lib/npc-canon-roster";
 import {DMIR_STORY_NPCS} from "@/lib/dmir-story-npcs";
+import {npcMechanics} from "@/lib/npc-mechanics";
 import {SERALYTH_ID,SERALYTH_SAGA_SHEET,SERALYTH_GM_DOSSIER,SERALYTH_HAPES_OPENING} from "@/lib/seralyth-vhaelor";
 import {npcVisualReference} from "@/lib/npc-visual-reference";
 import {npcVerifiedLocalEnding,NPC_VERIFIED_LOCAL_ENDINGS} from "@/lib/npc-audited-ending-ledger";
@@ -45,7 +46,7 @@ export async function GET(request:Request){
         initialScene:n.id===SERALYTH_ID?SERALYTH_HAPES_OPENING:null,
       })),
     ];
-    return NextResponse.json({roster,
+    return NextResponse.json({roster:roster.map(n=>({...n,mechanics:npcMechanics(n.name)})),
       endingCountVerified:Object.keys(NPC_VERIFIED_LOCAL_ENDINGS).length,
       endingEvidenceScope:"audited-isolated-live-playthroughs-not-hosted-saves",visibility:"gm-only"},
       {headers:{"Cache-Control":"private, no-store"}});

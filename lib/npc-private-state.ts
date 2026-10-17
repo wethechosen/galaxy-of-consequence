@@ -4,7 +4,7 @@ import type {DatapadSnapshot} from "./datapad-save";
  * saves the full authoritative snapshot, but ordinary player endpoints never
  * disclose these fields (even after a hosted-turn replay).
  */
-export const NPC_PRIVATE_FIELDS=["rivalIntelligence","npcOffscreen"] as const;
+export const NPC_PRIVATE_FIELDS=["rivalIntelligence","npcOffscreen","npcMechanics"] as const;
 export function playerVisibleSnapshot<T extends DatapadSnapshot|null>(snapshot:T):T {
  if(!snapshot)return snapshot;
  const state={...snapshot.gameState};

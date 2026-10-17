@@ -1,4 +1,5 @@
 import { forcePowerById, forcePowerSelectionsForCharacter } from "./sagaForcePowers";
+import { sagaSpecies } from "./sagaSpecies";
 
 const ABILITIES = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"];
 const ABILITY_LABELS = { strength: "STR", dexterity: "DEX", constitution: "CON", intelligence: "INT", wisdom: "WIS", charisma: "CHA" };
@@ -319,7 +320,8 @@ export function foundationRequirements(character = {}, classId, choices = {}) {
   const startingLinguist = classId === "noble" && established && scores.intelligence >= 13 ? 1 : 0;
   const selectedLinguist = [choices.generalFeatId, choices.humanBonusFeatId].filter(id => id === "linguist").length;
   const languageTotal = established ? Math.max(0, intelligenceModifier) + (startingLinguist + selectedLinguist) * Math.max(1, 1 + intelligenceModifier) : 0;
-  const existingLanguageIds = languageIdsForCharacter(character).filter(id => id !== "basic");
+  const automaticLanguages = new Set((sagaSpecies(character.species)?.languages || ["Basic"]).map(name=>name.toLowerCase()));
+  const existingLanguageIds = languageIdsForCharacter(character).filter(id => !automaticLanguages.has(SAGA_LANGUAGE_OPTIONS.find(language=>language.id===id)?.name.toLowerCase()));
   return {
     validClass: Boolean(heroic), abilityScoresEstablished: established, human,
     trainedSkillCount: heroic && established ? Math.max(1, heroic.trainedSkillBase + intelligenceModifier + (human ? 1 : 0)) : null,
@@ -683,7 +685,9 @@ export function applySagaFoundation(snapshot, choices = {}, now = new Date().toI
   if (!heroic) throw advancementError("Choose a valid starting heroic class.");
   validateFeatSkillMetadata(choices, ["generalFeatId", "humanBonusFeatId"]);
   const human = /^human$/i.test(String(current.character.species || "").trim());
-  if (!human) throw advancementError("This foundation workflow currently verifies Human species traits. Reconstruct other species' starting traits before committing a complete build.");
+  const species = sagaSpecies(current.character.species);
+  if (!species) throw advancementError("This species requires verified starting traits before committing a complete build.");
+  if (!human && choices.humanBonusFeatId) throw advancementError("Nonhuman characters do not receive a Human bonus feat.");
   const character = { ...current.character, level: 1, classLevels: { [classId]: 1 }, baseAttackBonus: classLevelBab(classId, 1), abilityScores: scores, featSelections: [], talentSelections: [] };
   const requirements = foundationRequirements(character, classId, choices);
   const selectedSkillIds = Array.isArray(choices.trainedSkillIds) ? choices.trainedSkillIds.map(String) : [];
@@ -704,27 +708,34 @@ export function applySagaFoundation(snapshot, choices = {}, now = new Date().toI
   if (!generalFeat) throw advancementError("Choose an eligible 1st-level feat.");
   generalFeat = featSelectionForSkill(generalFeat, character, classId, choices.generalFeatSkillId);
   appendSelectedFeat(character, generalFeat, { source: "level-1-feat", classId, level: 1 });
-  let humanBonusFeat = findFeat(character, classId, String(choices.humanBonusFeatId || ""), false);
-  if (!humanBonusFeat) throw advancementError("Choose an eligible Human bonus feat; nonrepeatable feats cannot be chosen twice.");
-  humanBonusFeat = featSelectionForSkill(humanBonusFeat, character, classId, choices.humanBonusFeatSkillId);
-  appendSelectedFeat(character, humanBonusFeat, { source: "human-bonus-feat", classId, level: 1 });
+  let humanBonusFeat = null;
+  if (human) {
+    humanBonusFeat = findFeat(character, classId, String(choices.humanBonusFeatId || ""), false);
+    if (!humanBonusFeat) throw advancementError("Choose an eligible Human bonus feat; nonrepeatable feats cannot be chosen twice.");
+    humanBonusFeat = featSelectionForSkill(humanBonusFeat, character, classId, choices.humanBonusFeatSkillId);
+    appendSelectedFeat(character, humanBonusFeat, { source: "human-bonus-feat", classId, level: 1 });
+  }
+  if (species.conditionalFocus && selectedSkillIds.includes(species.conditionalFocus)) {
+    const skill = SAGA_SKILL_OPTIONS.find(item=>item.id===species.conditionalFocus);
+    featSelections.push({id:`skill-focus-${skill.id}`,featId:"skill-focus",name:`Skill Focus (${skill.name})`,skillId:skill.id,source:"species-bonus-feat",classId,level:1});
+  }
   if (selectedSkillIds.includes("use-the-force") && !ownedFeatIds(character).has("force-sensitivity")) throw advancementError("Training Use the Force requires Force Sensitivity.");
   const talentChoice = findTalent(character, classId, String(choices.talentId || ""), current.gameState);
   if (!talentChoice) throw advancementError("Choose an eligible talent from the starting class or available Force talent trees.");
   const talentSelections = [{ id: talentChoice.id, name: talentChoice.name, tree: talentChoice.tree, classId, level: 1 }];
-  character.languages = validateLanguageChoices({ ...character, languages: [...new Set(["Basic", ...cleanList(character.languages)])] }, choices, requirements.bonusLanguageCount);
+  character.languages = validateLanguageChoices({ ...character, languages: [...new Set([...species.languages, ...cleanList(character.languages)])] }, choices, requirements.bonusLanguageCount);
   const forcePowerSelections = commitForcePowerChoices(current.character, character, choices, forcePowerChoiceRequirements(current.character, choices, true), foundationId, 1);
   const maxHitPoints = Math.max(1, heroic.hitDie * 3 + abilityModifier(scores.constitution)) + (ownedFeatIds(character).has("toughness") ? 1 : 0);
   if (knownNumber(current.character.maxHitPoints) && Number(current.character.maxHitPoints) !== maxHitPoints) throw advancementError("The selected build conflicts with established maximum hit points; reconstruct the original build before recording it.");
   const improvedDefense = ownedFeatIds(character).has("improved-defenses") ? 1 : 0;
   const martialDefense = ownedFeatIds(character).has("martial-arts-1") ? 1 : 0;
   const defenses = {
-    reflex: 11 + heroic.defense.reflex + abilityModifier(scores.dexterity) + improvedDefense + martialDefense,
-    fortitude: 11 + heroic.defense.fortitude + abilityModifier(scores.constitution) + improvedDefense,
-    will: 11 + heroic.defense.will + abilityModifier(scores.wisdom) + improvedDefense,
+    reflex: 11 + heroic.defense.reflex + abilityModifier(scores.dexterity) + improvedDefense + martialDefense + (species.defenses.reflex || 0),
+    fortitude: 11 + heroic.defense.fortitude + abilityModifier(scores.constitution) + improvedDefense + (species.defenses.fortitude || 0),
+    will: 11 + heroic.defense.will + abilityModifier(scores.wisdom) + improvedDefense + (species.defenses.will || 0),
   };
   Object.assign(character, {
-    classLevels: { [classId]: 1 }, heroicClass: `${heroic.name} 1`, abilityScores: scores, sagaStats: formatAbilityScores(scores),
+    classLevels: { [classId]: 1 }, heroicClass: `${heroic.name} 1`, abilityScores: scores, sagaStats: formatAbilityScores(scores), speciesTraitsApplied: {species:species.name,source:"Saga Edition Core Rulebook",pdfPages:species.pages,version:1},
     talentSelections, featSelections, talents: talentSelections.map(item => item.name).join(", ") || "None recorded",
     feats: [...new Set(featSelections.map(item => item.name))].join(", ") || "None recorded",
     baseAttackBonus: classLevelBab(classId, 1), maxHitPoints, defenses, damageThreshold: defenses.fortitude + 5 * featCount(character, "improved-damage-threshold"),

@@ -7,6 +7,7 @@ vi.mock("@/lib/neon-db",()=>({neonQuery:vi.fn()}));
 import {requireAccount,listAccounts} from "@/lib/accounts";
 import {readDatapad} from "@/lib/datapad-save";
 import {hostedPersistenceEnabled} from "@/lib/hosted-bridge";
+import {neonQuery} from "./neon-db";
 import {GET} from "@/app/api/player/roster/route";
 const viewer={id:"one",username:"first@galaxy.local",displayName:"First",role:"player"} as const;
 const other={id:"two",username:"second@galaxy.local",displayName:"Second",role:"player"} as const;
@@ -47,4 +48,17 @@ it("rejects roster access for unauthenticated visitors",async()=>{
   vi.mocked(requireAccount).mockImplementation(()=>{throw Error("Sign in to open datapad");});
   const resp=await GET(new Request("http://localhost/api/player/roster"));
   expect(resp.status).toBe(401);
+});
+it("uses one bounded hosted projection without downloading private campaign snapshots",async()=>{
+  vi.mocked(hostedPersistenceEnabled).mockReturnValue(true);
+  vi.mocked(neonQuery).mockResolvedValue([{id:"one",character:{name:"First",species:"Human",level:3},gameState:{location:"Bonadan",sceneNpcs:[]},messages:[]}]);
+  const response=await GET(new Request("http://localhost/api/player/roster"));
+  expect(response.status).toBe(200);
+  expect(neonQuery).toHaveBeenCalledTimes(1);
+  const [sql,params]=vi.mocked(neonQuery).mock.calls[0];
+  expect(sql).toContain("LIMIT 100");
+  expect(sql).not.toMatch(/SELECT\s+(?:s\.)?snapshot\b|SELECT\s+\*/i);
+  expect(sql).not.toContain("'inventory'");
+  expect(params).toEqual(["one"]);
+  expect(readDatapad).not.toHaveBeenCalled();
 });
