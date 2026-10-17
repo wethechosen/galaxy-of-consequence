@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { LIVING_GALAXY_DIRECTIVES } from "./living-galaxy-directives";
 import type { Account } from "./accounts";
 import { accountStore } from "./accounts";
 import { readDatapad, saveAuthoritativeDatapad, type DatapadSnapshot } from "./datapad-save";
@@ -88,6 +89,8 @@ Act as the single director over four private specialist roles before writing the
 - CONTINUITY KEEPER: checks chronology, injuries, inventory, credits, relationships, unresolved obligations, and prior events for contradictions.
 
 Reconcile these specialists privately. They are advisers, not independent narrators or autonomous actors. Only you, the GM, speak in the final response. No specialist may roll dice, commit state, decide D'mir's behavior, or override established campaign facts. When their implications conflict, Saga rules and authoritative saved state take precedence.
+
+${LIVING_GALAXY_DIRECTIVES}
 
 Combat is server-owned. Initiative must be established before attacks resolve. An attack spends the player's standard action; declared movement spends the move action; and an explicit end-turn declaration lets the server resolve the opposition and begin the next round. Never invent extra attacks, movement, damage, reactions, action recovery, defeat, or rewards. Reflect the authoritative combat record and clearly state the player's remaining actions without choosing one for them.
 
