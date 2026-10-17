@@ -298,8 +298,23 @@ export function authorityWarnings(action: string) {
   return [...new Set(warnings)];
 }
 
+/**
+ * Players often address the GM while declaring an ordinary in-world action.
+ * "GM, how do I get an appointment here?" is a scene inquiry, not a
+ * request to diagnose the game engine. Do not suppress its turn ledger.
+ */
+export function isGmAddressedWorldAction(action: string) {
+  const raw = String(action || "").trim();
+  const stripped = raw.replace(/^(?:gm|game master)\s*[,;:\-]?\s+/i, "");
+  if (stripped === raw) return false;
+  if (/\b(?:bug|error|broken|crash|code|api|controller|engine|ui|interface|saved game|save file|character sheet|character stats|levels?|experience points|xp)\b/i.test(stripped)) return false;
+  if (!/^(?:(?:how|where|when|who)\s+(?:do|can|could|would|should)\s+i\b|can\s+i\b|i\s+(?:ask|go|walk|return|enter|leave|approach|buy|pay|hire|request|book|arrange|talk|speak|look|search|inspect|examine|open|take|travel)\b)/i.test(stripped)) return false;
+  return /\b(?:here|there|shop|store|counter|clerk|appointment|commission|bespoke|tailor|meeting|travel|ship|pilot|captain|market|room|hotel|inn|warehouse|location|route|road|door|house|spaceport|suit|weapon|item|purchase|buy|rent|hire|contract|character in the scene)\b/i.test(stripped);
+}
+
 export function classifyTurnMode(action: string): "ooc" | "context" | "play" {
   const clean = action.trim();
+  if (isGmAddressedWorldAction(clean)) return "play";
   const lower = clean.toLocaleLowerCase();
   const contextMarkers = ["born ", "my father", "my mother", "since i was", "my background", "i was mentored"].filter((marker) => lower.includes(marker));
   const explicitCanon = /^(?:canon|backstory|character context|history clarification)\s*:/i.test(clean);
