@@ -5,9 +5,11 @@ import { AdvancementRequiredError, advancementErrorBody } from "@/lib/advancemen
 import { hostedGet, hostedPersistenceEnabled, hydrateHostedSave, saveHostedResult } from "@/lib/hosted-bridge";
 import { alignCommittedTurn, publicCommittedTurn } from "@/lib/gameplay-contract";
 import { issuePendingTurnTicket, pendingTurnStatus, readPendingTurnTicket } from "@/lib/gpt-pending-turn";
+import { stableGptTurnId } from "@/lib/gpt-turn-identity";
 import { replayHostedTurn } from "@/lib/hosted-turn-replay";
 import { turnLifecycleFromError } from "@/lib/turn-lifecycle";
 import { gptTurnRetryPlan } from "@/lib/gpt-turn-retry";
+import { stableGptTurnId } from "@/lib/gpt-turn-identity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,8 +37,8 @@ export async function POST(request: Request) {
     }
     const pending = suppliedTicket ? readPendingTurnTicket(body.retryTicket, actor.username) : null;
     const action = pending?.action ?? (typeof body.action === "string" ? body.action.trim() : "");
-    const turnId = pending?.turnId ?? (typeof body.turnId === "string" ? body.turnId : crypto.randomUUID());
     const revision = pending?.revision ?? Number(body.revision);
+    const turnId = pending?.turnId ?? (typeof body.turnId === "string" ? body.turnId : stableGptTurnId(actor.id, revision, action));
     if (!action || action.length > 2000) throw new GptActionError("Provide one player action between 1 and 2,000 characters.", 400);
     if (!/^[a-zA-Z0-9_-]{8,100}$/.test(turnId)) throw new GptActionError("turnId must contain 8–100 letters, numbers, underscores, or hyphens.", 400);
     if (!Number.isSafeInteger(revision) || revision < 0) throw new GptActionError("Provide the current campaign revision from GET /api/gpt/state.", 400);

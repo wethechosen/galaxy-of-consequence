@@ -192,7 +192,7 @@ export async function GET(request: Request) {
       post: {
         operationId: "submitPlayerAction",
         summary: "Resolve exactly one in-world player action",
-        description: "Canonical Saga GM action, same result as browser. Use revision + action + turnId for a new action OR retryTicket alone for resumption. On 429 use checkPendingPlayerAction to track cooldown, then replay the ticket unchanged. GPT cannot schedule background tool calls.",
+        description: "One canonical Saga GM result shared with browser. New: revision/action/turnId (legacy missing ID derives a stable ID). Resume: retryTicket alone. On cooldown checkPendingPlayerAction then submit the same ticket. GPT cannot run unattended retries.",
         security: bearerSecurity,
         requestBody: { required: true, content: { "application/json": { schema: {
           oneOf: [
