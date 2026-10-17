@@ -11,15 +11,25 @@ it("denies the private GM NPC registry to ordinary players and signed-out users"
   expect(response.status).toBe(403);
   expect(JSON.stringify(await response.json())).not.toContain("Kelvek");
 });
-it("provides 49 private GM NPC dossier records only to the authorized GM",async()=>{
+it("preserves canon cast and 34-playtest roster metadata for the authorized GM",async()=>{
   vi.mocked(requireAccount).mockReturnValue({id:"gm-1",username:"gm",displayName:"GM",role:"admin"});
   const response=await GET(request());
   expect(response.status).toBe(200);
   expect(vi.mocked(requireAccount)).toHaveBeenCalledWith(expect.any(Request),true);
   const result=await response.json();
   expect(result.roster).toHaveLength(49);
-  expect(result.endingCountVerified).toBe(0);
   expect(new Set(result.roster.map((entry:{id:string})=>entry.id)).size).toBe(49);
+  const playable=result.roster.filter((n:{category:string})=>n.category==="test");
+  expect(playable).toHaveLength(10);
+  expect(playable.some((n:{id:string})=>n.id==="kelvek"||n.id==="dmir-holloran")).toBe(false);
+  expect(playable.some((n:{id:string})=>n.id==="calen-vardex")).toBe(true);
+  expect(result.endingCountVerified).toBe(1);
+  expect(result.endingEvidenceScope).toBe("audited-isolated-live-playthroughs-not-hosted-saves");
+  const bren=result.roster.find((entry:{id:string})=>entry.id==="bren-varo");
+  expect(bren.playthroughStatus).toBe("goal_complete");
+  expect(bren.auditedEnding.evidenceTurnIds).toHaveLength(5);
+  expect(bren.auditedEnding.hostedSaveMigrated).toBe(false);
+  expect(bren.visualReference).toMatch(/desert guide/i);
   expect(result.visibility).toBe("gm-only");
   const seralyth=result.roster.find((n:{id:string})=>n.id==="story-seralyth-vhaelor");
   expect(seralyth).toBeDefined();
@@ -28,7 +38,7 @@ it("provides 49 private GM NPC dossier records only to the authorized GM",async(
   expect(seralyth.initialScene.status).toBe("prepared-not-played");
   expect(seralyth.gmDossier.prisonGangConnection.kelvekTruth).toMatch(/skimmed/);
   expect(result.roster.some((n:{category:string;secret?:string})=>n.category==="story"&&n.secret)).toBe(true);
-  for(const entry of result.roster)expect(entry.playthroughStatus).toBe("unverified");
+  for(const entry of result.roster)expect(entry.playthroughStatus).toBe(entry.id==="bren-varo"?"goal_complete":"unverified");
   expect(result.roster.find((entry:{id:string})=>entry.id==="kelvek").era).toBe(147);
   expect(result.roster.find((entry:{id:string})=>entry.id==="aliyah-fel").designation).not.toMatch(/empress/i);
 });

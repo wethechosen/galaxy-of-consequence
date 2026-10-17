@@ -2,6 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Account } from "./accounts";
 import { accountStore } from "./accounts";
 import { readDatapad, saveAuthoritativeDatapad, type DatapadSnapshot } from "./datapad-save";
+import {projectQuestWorld,questWorldGmContext} from "./quest-world-events";
+import {interpretRpgActionContract,assertRpgOutcomeFocus} from "./rpg-action-contract";
 import { invokeNvidia, NvidiaProviderError, type NvidiaMessage } from "./original-provider";
 import { rollSagaCheck } from "./saga-dice";
 import { planSagaAction } from "./saga-planner";
@@ -243,6 +245,8 @@ function publicContext(snapshot: DatapadSnapshot) {
     // prevents copying it as the next turn's response.
     scene: scene ? { beat: scene.beat, location: scene.location, routeProgress: scene.routeProgress, lastAction: scene.action, summary: scene.summary } : null,
     recentTurns,
+    // Derived from committed, validated game events, never from player narration.
+    questWorld:questWorldGmContext(snapshot),
   }, preferences: snapshot.settings });
 }
 
@@ -488,7 +492,12 @@ export function applyFinalizedTurn(
     state.levelUpAvailable = true;
     state.flags = [...(Array.isArray(state.flags) ? state.flags : []), { note: `Level ${Number(character?.level || 1) + 1} advancement earned. Player class, talent, feat, and ability choices are pending.`, ts: Date.now() }];
   }
-  return { ...current, character, gameState: state } as DatapadSnapshot;
+  const finalized={ ...current, character, gameState: state } as DatapadSnapshot;
+  // Persist a deterministic, replayable quest and world-event view in the
+  // SAME authoritative transaction as the successful GM action.
+  // No NPC player declaration or unsupported prose can author this ledger.
+  finalized.gameState.questWorld=projectQuestWorld(finalized);
+  return finalized;
 }
 
 function turnStore() {
@@ -988,7 +997,7 @@ export function ensureStateUpdateSection(narration: string, delta: Record<string
   const bodyStart = heading.index + heading[0].length;
   const next = /^(?:#{1,6}\s*)?PLAYER OPTIONS\s*$/im.exec(narration.slice(bodyStart));
   const summary = quotedTerms.length ? [existing, ...quotedTerms].filter(Boolean).join("\n")
-    : delta && Object.keys(delta).length ? "The resolved consequences are recorded in D'mir's campaign state." : "No persistent change.";
+    : delta && Object.keys(delta).length ? "The resolved consequences are recorded in this character's campaign state." : "No persistent change.";
   const prefix = narration.slice(0, bodyStart).trimEnd();
   if (!next) return `${prefix}\n${summary}`;
   const nextStart = bodyStart + next.index;
@@ -1347,6 +1356,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   if (!/^[a-zA-Z0-9_-]{8,100}$/.test(input.turnId)) throw new GmTurnError("A valid turn identifier is required.");
   const action = normalizeTurnAction(input.action);
   if ((!action && !input.openScene) || action.length > 2000) throw new GmTurnError("Provide an action between 1 and 2,000 characters.");
+  const actionContract=interpretRpgActionContract(action);
 
   const db = turnStore();
   db.prepare("DELETE FROM gm_turn_attempts WHERE created_at < ?").run(new Date(Date.now() - 7 * 86400000).toISOString());
@@ -1479,6 +1489,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   if (mode === "play" && isMerchantTermsChallenge(action)) system += `\n\nPAYMENT-TERMS DISPUTE: The player is challenging why the seller changed the previously stated payment conditions. The last confirmed merchant response is history, not fresh dialogue: ${priorResult.slice(0, 900)}. Have the merchant address the change in terms directly, acknowledging the earlier instruction and giving an established or plausible explanation, or explicitly declining to explain with a concrete world reaction. The merchant may remain uncooperative; do not force acceptance, reverse past turns, create a new payment verification obstacle without grounded evidence, or repeat the previous explanation verbatim. Any actual sale must pass the authoritative trade-and-ledger checks.`;
   if (mode === "play" && isFinancialWithdrawalAction(resolvedIntent)) system += `\n\nBANKING SAFETY: Withdrawing deposited credits as physical chips is an account-to-cash conversion, not a new reward or a change of location. Respect any confirmed terminal lockout. Do not narrate a completed cash-out unless the authorized state ledger can debit bankCredits and record corresponding physical credit chips atomically. If the current ledger schema cannot represent both, explain the operational limitation in the fiction without claiming chips were dispensed, money was lost, or a new security failure was established. Ordinary use of a functioning legitimate terminal does not automatically require a Use Computer check.`;
   if (semantic) system += `\n\nINTERPRETED PLAYER INTENT (not an outcome): ${JSON.stringify(semantic)}\nResolve this intent, not a keyword trigger. The original declaration below remains the player's words and choices. Ordinary competent substeps are part of the attempt; never add a new player decision. Any check is already supplied by the referee; never invent another.`;
+  if (mode === "play") system += `\n\nDETERMINISTIC ACTION CONTRACT (classification/guard only; not a success or roll): ${JSON.stringify(actionContract)}\nDo not replace its declared research, technical or combat operation with generic shopping, forms, or unearned outcomes. Respect the Saga referee result and only emit a grounded, valid state delta.`;
   if (forceConstraint) system += `\n\nSAGA CAPABILITY CONSTRAINT: ${forceConstraint}`;
   if (mode === "play" && isEventWait(action)) system += `\n\n${EVENT_WAIT_INSTRUCTION}`;
   if (transitArrival) system += `\n\nCONFIRMED TRANSPORT TRANSIT — ARRIVAL REQUEST: The current saved journey establishes transit to ${transitArrival.destination}. Older completed journeys and departure scenes are history. The player has chosen to wait until arrival. Resolve this existing flight to ${transitArrival.destination}, without requiring another departure order or payment. Narrate arrival/approach, use an end-of-turn LOCATION beginning "${transitArrival.destination}", and save the same location plus positive, plausible timeAdvanceMinutes. No unrelated credits, equipment, or XP awards. A repeated departure or in-flight scene is not a resolved arrival.`;
@@ -1574,6 +1585,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       }
       assertMechanicalNarration(parsed.clean, roll);
       assertResolvedOutcome(parsed.clean, roll, parsed.delta as Record<string, unknown> | null, resolvedIntent);
+      if (mode === "play") assertRpgOutcomeFocus(actionContract,parsed.clean);
       delta = constrainFailedCheckDelta(parsed.delta as Record<string, unknown> | null, roll, resolvedIntent);
       delta = constrainExperienceAward(delta, roll);
       delta = reconcileConversationTradeDelta(delta, trade);
@@ -1700,6 +1712,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       assertActionConstraints(parsed.clean, resolvedIntent);
       assertMechanicalNarration(parsed.clean, roll);
       assertResolvedOutcome(parsed.clean, roll, parsed.delta as Record<string, unknown> | null, resolvedIntent);
+      if (mode === "play") assertRpgOutcomeFocus(actionContract,parsed.clean);
       delta = constrainFailedCheckDelta(parsed.delta as Record<string, unknown> | null, roll, resolvedIntent);
       delta = constrainExperienceAward(delta, roll);
       assertNoProgressLoop(parsed.clean, resolvedIntent, delta, currentSnapshot.gameState.location, priorResult);
@@ -1772,6 +1785,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   // All recovery branches must satisfy the same action contract before commit.
   if (mode === "play") {
     assertResolvedOutcome(parsed.clean, roll, delta, resolvedIntent);
+    assertRpgOutcomeFocus(actionContract,parsed.clean);
     assertNarratedLocation(parsed.clean, delta, currentSnapshot.gameState.location);
     assertMovementSceneProgress(parsed.clean, resolvedIntent, roll, delta, currentSnapshot.gameState.location);
     const waitError = eventWaitFailure(action, sectionBody(parsed.clean, "GAMEPLAY RESULT"), delta);
@@ -1812,6 +1826,9 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   const snapshot: DatapadSnapshot = { ...finalized, messages };
   if (mode === "play") snapshot.gameState = { ...snapshot.gameState, sceneMerchant: sceneMerchant(snapshot) };
   if (mode === "play") snapshot.gameState = recordVisibleSceneNpcs(snapshot.gameState, parsed.clean, input.turnId);
+  // Reconcile the final world projection after verified commerce, scene and
+  // quest updates, just before the authoritative CAS save commits.
+  if (mode === "play") snapshot.gameState.questWorld=projectQuestWorld(snapshot);
   if (mode === "play" && isDmirPrimaryCampaign(actor, snapshot.character as Record<string, unknown>)) {
     snapshot.gameState = updateDmirNpcContinuity(snapshot.gameState, delta, input.turnId, action);
   }

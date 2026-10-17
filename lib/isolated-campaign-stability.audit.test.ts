@@ -77,9 +77,13 @@ describe("isolated multi-turn sandbox survival with actual SQLite reload",()=>{
     db=openStorage(database);
     const reloaded=readDatapad(actor,null,db);
     expect(reloaded.revision).toBe(3);
-    expect(reloaded.snapshot.gameState.location).toBe(front);
-    expect(reloaded.snapshot.gameState.credits).toBe(628650006);
-    expect(reloaded.snapshot.gameState.discoveries).toEqual(second.snapshot.gameState.discoveries);
-    expect(reloaded.snapshot.gameState.inventory).toEqual([]);
+    // A successful database read must return an actual saved character;
+    // this assertion narrows the nullable type without modifying the save.
+    expect(reloaded.snapshot).not.toBeNull();
+    const restored=reloaded.snapshot!;
+    expect(restored.gameState.location).toBe(front);
+    expect(restored.gameState.credits).toBe(628650006);
+    expect(restored.gameState.discoveries).toEqual(second.snapshot.gameState.discoveries);
+    expect(restored.gameState.inventory).toEqual([]);
   });
 });

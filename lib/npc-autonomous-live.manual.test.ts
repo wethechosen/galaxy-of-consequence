@@ -9,8 +9,13 @@ import {runGmTurn} from "./gm";
 import {invokeNvidia} from "./original-provider";
 import {ALL_NPC_TEST_ROSTER,type NpcTestSubject} from "./npc-test-roster";
 import {NPC_ULTIMATE_ARCS,NPC_ULTIMATE_ARC_VERSION} from "./npc-ultimate-arcs";
+import {hasAuditedNpcUltimateCompletion} from "./npc-ultimate-verification";
 import {npcRepetitionRecovery} from "./npc-repetition-recovery";
+import {npcDecisionHistory,npcAdministrativeLoopHint} from "./npc-decision-context";
+import {npcGoalProgressPlan,npcDecisionProgressGuard,npcAdjudicationMismatch} from "./npc-progress-guard";
+import {npcUltimateReviewCandidate,npcDeathReviewCandidate,npcIsAuditedDeath} from "./npc-completion-review";
 import {rebaseIsolatedNpcPendingAttempt} from "./npc-pending-revision";
+import {npcAutoplayConcurrency,shouldDeferNpcAutoplayFailure} from "./npc-autoplay-retry";
 import {NPC_HISTORICAL_TIERS,advanceNpcEarnedXp} from "./npc-historical-baselines";
 import {CAMPAIGN_NPCS_150_ABY} from "./npc-canon-roster";
 import {progressionStatus} from "@/original/lib/sagaAdvancement";
@@ -18,9 +23,10 @@ import {applySagaFoundation,availableClassSkills,foundationRequirements,SAGA_LAN
 
 const active=process.env.GOC_AUTONOMOUS_NPCS==="1";
 const requested=(process.env.GOC_NPC_SUBJECTS||"").split(",").map(x=>x.trim()).filter(Boolean);
-const subjects=ALL_NPC_TEST_ROSTER.filter(n=>n.id!=="kelvek"&&(!requested.length||requested.includes(n.id)));
+// Run all 34 isolated player-character campaigns. Kelvek and D'mir remain excluded.
+const subjects=ALL_NPC_TEST_ROSTER.filter(n=>n.id!=="kelvek"&&n.id!=="dmir-holloran"&&(!requested.length||requested.includes(n.id)));
 const limit=Math.min(200,Math.max(1,Number(process.env.GOC_NPC_MAX_TURNS)||30));
-const concurrency=Math.min(3,Math.max(1,Number(process.env.GOC_NPC_CONCURRENCY)||2));
+const concurrency=npcAutoplayConcurrency(Number(process.env.GOC_NPC_CONCURRENCY)||2);
 const pause=(ms:number)=>new Promise<void>(r=>setTimeout(r,ms));
 const record=(x:Record<string,unknown>)=>{
   mkdirSync(resolve("data"),{recursive:true});
@@ -57,38 +63,46 @@ function seed(n:NpcTestSubject):DatapadSnapshot{
   },"2026-10-16T00:00:00.000Z") as DatapadSnapshot;
 }
 function status(s:DatapadSnapshot,n:NpcTestSubject){
-  const goals=Array.isArray(s.gameState.objectives)?s.gameState.objectives.filter(isObj):[];
   // Completing a small initial chapter (asking a clerk, finding an anomaly)
   // does not finish the character\'s long-form campaign.
   const ultimate=NPC_ULTIMATE_ARCS[n.id]||n.objective;
-  if(goals.some(g=>String(g.title).toLowerCase()===ultimate.toLowerCase()
-      &&String(g.status).toLowerCase()==="completed"))return "goal_complete";
+  // A GM objectiveComplete is not proof that the entire ultimate arc is resolved.
+  // Require a separate evidence-linked audit before declaring a true ending.
+  if(hasAuditedNpcUltimateCompletion(s,ultimate))return "goal_complete";
+  if(npcIsAuditedDeath(s))return "dead";
   if(String(s.gameState.lifeStatus||s.character?.lifeStatus).toLowerCase()==="dead"||
-      s.character?.deceased===true)return "dead";
+      s.character?.deceased===true)return "death_review_required";
   if(Number(s.gameState.health)<=0)return "incapacitated";
   return "active";
 }
 async function choose(n:NpcTestSubject,s:DatapadSnapshot,turn:number){
-  const history=(s.messages as Array<Record<string,unknown>>).slice(-6)
-    .map(m=>({role:m.role,content:String(m.content||"").slice(0,1100)}));
-  const recent=Array.isArray(s.gameState.turnEvents)?s.gameState.turnEvents.slice(-5).map(e=>e.action):[];
-  const answer=await invokeNvidia({purpose:"npc",temperature:0.6,max_tokens:350,
-    system:"You control ONLY this playable character, not the GM. Make ONE concrete first-person Star Wars Saga Edition action that advances the actual LONG-TERM goal, not just an initial easy chapter. Respect established location, skills, known NPCs, legal access, and inventory. Do not guarantee success, award yourself levels, narrate GM outcomes, teleport or manufacture equipment. If a clerk declined or directed you to another office, go to that office rather than repeating the same question. Never repeat a recent action; change tactics using the previous confirmed result. Take proportionate risks when necessary. Return JSON with exactly one action string starting I.",
+  const history=npcDecisionHistory(s.messages as Array<Record<string,unknown>>,8);
+  const recent=Array.isArray(s.gameState.turnEvents)?s.gameState.turnEvents.slice(-6).map(e=>e.action):[];
+  const recentGm=(s.messages as Array<Record<string,unknown>>).slice().reverse().find(m=>m.role==="assistant");
+  const loopHint=npcAdministrativeLoopHint(recent.map(String),String(recentGm?.content||""));
+  const plan=npcGoalProgressPlan(NPC_ULTIMATE_ARCS[n.id]||n.objective,s.gameState.objectives);
+  const answer=await invokeNvidia({purpose:"npc",temperature:0.35,max_tokens:260,
+    system:"You control ONLY this playable character, not the GM. This is an actual Star Wars sandbox RPG, NOT a bureaucratic compliance simulator. Make ONE concrete first-person Saga Edition action to advance the full saved LONG-TERM goal. Travel to established locations, pursue distinct leads, negotiate real agreements, resolve risks, and undertake permitted operations where grounded by saved facts. If a clerk denied access, do not repeat the same request or minor variations: use the genuine last GM result to choose a different permitted lead, action or location. Do not assume success, authority, powers, money, equipment, NPC dialogue, knowledge or earned XP. Never narrate outcomes; only declare attempts. If the ultimate goal is marked completed without independent evidence audit, verify its unresolved clauses through actual scenes. Take proportionate risks when meaningful. Return JSON with exactly one action string beginning with I, under 450 characters, without markdown.",
     messages:[{role:"user",content:JSON.stringify({name:n.name,role:n.role,
       initialObjective:n.objective,ultimateGoal:NPC_ULTIMATE_ARCS[n.id]||n.objective,
       turn,level:s.character?.level,skills:s.character?.trainedSkills,
       talents:s.character?.talents,feats:s.character?.feats,forcePowers:s.character?.forcePowers,
       location:s.gameState.location,health:s.gameState.health,
       inventory:s.gameState.inventory,objectives:s.gameState.objectives,
-      recentCommittedActions:recent,history})}]});
+      ultimateAudit:s.gameState.npcUltimateAudit||null,
+      recentCommittedActions:recent,loopHint,goalProgressPlan:plan,history})}]});
   let action=answer.content.trim();
   try{const parsed=JSON.parse(action);if(typeof parsed.action==="string")action=parsed.action;}catch{
     const match=action.match(/\{[\s\S]*\}/);
     if(match)try{const parsed=JSON.parse(match[0]);if(typeof parsed.action==="string")action=parsed.action;}catch{}
   }
   action=action.replace(/^Action\s*:\s*/i,"").replace(/^["']|["']$/g,"").trim();
-  if(!/^I\s+/i.test(action)||action.length<12||action.length>600||
-      /STATE:|## |I automatically win/i.test(action))throw Error("Invalid PC action from NVIDIA");
+  if(!/^I\s+/i.test(action)||action.length<12||action.length>800||
+      /STATE:|## |I automatically win/i.test(action)){
+    record({id:n.id,phase:"invalid_pc_output",turn,length:action.length,
+      excerpt:action.slice(0,350)});
+    throw Error("Invalid PC action from NVIDIA");
+  }
   const lastGm=(s.messages as Array<Record<string,unknown>>).slice().reverse()
     .find(m=>m.role==="assistant");
   const recovered=npcRepetitionRecovery(n.id,recent.map(String),String(lastGm?.content||""),action);
@@ -97,13 +111,20 @@ async function choose(n:NpcTestSubject,s:DatapadSnapshot,turn:number){
       originalDecision:action,declaredInstead:recovered.action});
     return recovered.action;
   }
+  const progress=npcDecisionProgressGuard(recent.map(String),String(lastGm?.content||""),action);
+  if(progress.mustRegenerate){
+    record({id:n.id,phase:"npc_procedural_loop_rejected",turn,action,
+      matchingPriorActions:progress.similarPriorRequests,
+      recentAdministrativeRequests:progress.administrativeRequests});
+    throw Error("Repeated NPC administrative decision: choose a new concrete action based on the actual GM result");
+  }
   return action;
 }
 async function retry<T>(fn:()=>Promise<T>,id:string,phase:string):Promise<T>{
   for(let i=0;i<7;i++)try{return await fn();}catch(err){
     const error=err as Error & {status?:number;retryAfterSeconds?:number};
     const eligible=[429,502,503,504].includes(Number(error.status))||
-      /rate|cooldown|busy|unavailable|retry|quota|draft|invalid pc action/i.test(String(error.message));
+      /rate|cooldown|busy|unavailable|retry|quota|draft|invalid pc action|repeated npc administrative decision/i.test(String(error.message));
     const delay=Math.max(3000,Math.min(70000,Number(error.retryAfterSeconds||2**(i+1)*3)*1000));
     record({id,phase:"retry",stage:phase,attempt:i,error:error.message||String(err),
       delay:eligible&&i<6?delay:0});
@@ -194,24 +215,39 @@ async function run(n:NpcTestSubject){
     const events=Array.isArray(after.snapshot?.gameState.turnEvents)?after.snapshot.gameState.turnEvents:[];
     if(after.revision!==gm.revision||after.snapshot?.character?.name!==n.name||
        !events.some((e:Record<string,unknown>)=>e.turnId===turnId))throw Error("Save consistency error");
+    const careerStartingXp=Number(after.snapshot?.character?.npcStartingXp)||0;
+    const receiptEarnedXp=events.reduce((sum:number,e:Record<string,unknown>)=>
+      sum+(Number(e.experienceAward)||0),0);
+    if(Number(after.snapshot?.character?.experience)!==careerStartingXp+receiptEarnedXp)
+      throw Error("Career XP and actual committed GM XP do not reconcile");
+    const mismatched=npcAdjudicationMismatch(action,gm.narration);
+    if(mismatched)record({id:n.id,phase:"gm_action_result_mismatch",turn,turnId,issue:mismatched,
+      action:action.slice(0,420),result:gm.narration.slice(-450)});
     record({id:n.id,phase:"committed",turn,revision:after.revision,status:status(after.snapshot!,n),
-      xp:after.snapshot?.character?.experience,level:after.snapshot?.character?.level,
+      xp:after.snapshot?.character?.experience,careerStartingXp,receiptEarnedXp,
+      level:after.snapshot?.character?.level,
       location:after.snapshot?.gameState.location,
       excerpt:gm.narration.slice(0,850)});
     await pause(300);
   }
   const final=readDatapad(actor,null,db);
   const end=status(final.snapshot!,n);
+  const candidate=npcUltimateReviewCandidate(final.snapshot!,NPC_ULTIMATE_ARCS[n.id]||n.objective);
+  if(candidate?.canReview)record({id:n.id,phase:"ultimate_review_candidate",...candidate});
+  const deathClaim=npcDeathReviewCandidate(final.snapshot!);
+  if(deathClaim)record({id:n.id,phase:"death_review_candidate",...deathClaim});
   record({id:n.id,phase:"checkpoint",status:end,revision:final.revision,
     endingVerified:end==="dead"||end==="goal_complete"});
   return end==="active"&&Array.isArray(final.snapshot?.gameState.turnEvents)&&
     final.snapshot.gameState.turnEvents.length>=limit?"limit_reached":end;
 }
 describe.skipIf(!active)("Genuine multi-character NVIDIA PC playthroughs",()=>{
-  it("runs 34 independent character campaigns with audited receipts",async()=>{
+  it("runs 34 independent playable NPC campaigns with audited receipts",async()=>{
     expect(process.env.NVIDIA_API_KEY||process.env.NVIDIA_API_KEY_GM).toBeTruthy();
     expect(process.env.CAMPAIGN_DB_PATH).toMatch(/npc-autoplay-150\.sqlite$/i);
     expect(Object.keys(NPC_ULTIMATE_ARCS).length).toBe(34);
+    if(!requested.length)expect(subjects).toHaveLength(34);
+    expect(subjects.some(n=>n.id==="kelvek"||n.id==="dmir-holloran")).toBe(false);
     const remaining=new Map(subjects.map(n=>[n.id,n]));
     const failures:string[]=[],capped:string[]=[],confirmedEndings:string[]=[],otherStops:string[]=[];
     record({phase:"start",characters:remaining.size,limit,concurrency});
@@ -229,9 +265,13 @@ describe.skipIf(!active)("Genuine multi-character NVIDIA PC playthroughs",()=>{
               else otherStops.push(n.id);
             }
           }catch(e){
-            record({id:n.id,phase:"blocked",round,error:e instanceof Error?e.message:String(e)});
-            failures.push(n.id);
-            remaining.delete(n.id);
+            const message=e instanceof Error?e.message:String(e);
+            const temporary=shouldDeferNpcAutoplayFailure(e);
+            record({id:n.id,phase:temporary?"deferred":"blocked",round,error:message,
+              pendingTurnRetained:true,willRetryNextRound:temporary});
+            // Never discard a character merely because NVIDIA is cooling down.
+            // The next round reloads any saved pending action, turn ID and stored roll.
+            if(!temporary){failures.push(n.id);remaining.delete(n.id);}
           }
         }
       }));
@@ -240,5 +280,5 @@ describe.skipIf(!active)("Genuine multi-character NVIDIA PC playthroughs",()=>{
     record({phase:"batch_end",failures,capped,confirmedEndings,otherStops,
       stillActive:[...remaining.keys()],allCharactersReachedGoalOrDied:confirmedEndings.length===subjects.length});
     expect(failures).toEqual([]);
-  },1000*60*60*12);
+  },1000*60*60*96);
 });

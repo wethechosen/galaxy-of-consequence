@@ -41,9 +41,18 @@ export function sceneDirections({ state = {}, character = {}, scene = "", action
     "Review my possessions and the facilities actually installed here.",
     "Leave my residence and choose where to go next.",
   ];
+  // A public emergency shelter route is a transit-safety problem, not a room rental.
+  // Never offer lodging terms when the player is reporting a broken shelter sign.
+  const publicSafetyRoute = /\b(?:wayfinding|shelter beta|public shelter|emergency shelter|hangar 7|route_overflow|maintenance work order|transit control)\b/i.test(context);
+  if (publicSafetyRoute) return [
+    "Ask public transit staff whether the maintenance work order has been logged and when repairs will be checked.",
+    "Confirm whether an official public warning and safe temporary route have actually been posted.",
+    "Examine the public route board for corrected shelter directions without touching restricted controls.",
+    "Follow the designated civilian path only if transit staff confirm it is safe and publicly accessible.",
+  ];
   // A broad market location does not establish a clothing seller or a guesthouse.
   // Only the visible scene establishes whom or what the player can approach.
-  const lodging = /\b(?:guesthouse|lodging|shelter|housing|accommodation|inn|hotel|rent|rental|lease|landlord)\b/i;
+  const lodging = /\b(?:guesthouse|lodging|housing|accommodation|inn|hotel|rent|rental|lease|landlord)\b/i;
   const lodgingContext = lodging.test(`${action} ${result}`) || lodging.test(evidence);
   if (lodgingContext) {
     const lodgingContact = lodging.test(evidence) && /\b(?:clerk|desk|receptionist|innkeeper|proprietor|landlord|broker|host)\b/i.test(visibleScene);
