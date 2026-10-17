@@ -15,6 +15,8 @@ import { appendDmirCreatorCanon, isDmirPrimaryCampaign } from "./dmir-authority"
 import { activeCombat, beginCombat, endPlayerTurn, isAttackDeclaration, isCombatMovementDeclaration, isCombatWithdrawDeclaration, isEndTurnDeclaration, resolveCombatAction, type CombatResolution } from "./saga-combat";
 import { commitConversationTradeState, conversationTradeInstruction, currentTradeOffers, isVerifiedConversationTradeDelta, planConversationTrade, reconcileConversationTradeDelta, type ConversationTrade } from "./conversation-trade";
 import { alignMerchantIdentity, isRoutineCommerce, isRoutineServiceInquiry, sceneMerchant } from "./scene-commerce";
+import { isAtelierAppointmentRequest, assertAtelierAppointmentProgress, atelierAppointmentGmInstruction, atelierAppointmentRecovery } from "./atelier-appointments";
+import { assertSandboxAgency, SANDBOX_GM_AGENCY, mayUseCivilianAgencyRecovery, civilianAgencyRecovery } from "./sandbox-agency";
 import { buildSemanticSagaCheck, declaredForcePower, forceCapabilityConstraint, hasEarnedForcePower, interpretSagaAction, requiredForcePower } from "./saga-action-plan";
 import { buildForcePowerPlan, resolveForcePower, type ForcePowerResolution } from "./saga-force";
 import { recoverConfirmedTradeOffer } from "./trade-offer-recovery";
@@ -1370,7 +1372,8 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   }
   enterPhase("plan-commerce");
   const trade = ordinaryTrade ? planConversationTrade(semantic?.acceptedOfferId ? action : resolvedIntent, currentSnapshot.gameState, input.turnId, semantic?.acceptedOfferId) : null;
-  const routineServiceInquiry = mode === "play" && isRoutineServiceInquiry(action);
+  const atelierAppointment = mode === "play" && isAtelierAppointmentRequest(action, currentSnapshot.gameState.location);
+  const routineServiceInquiry = mode === "play" && (isRoutineServiceInquiry(action) || atelierAppointment);
   // Simple informational questions cannot become Persuasion rolls because an
   // upstream intent draft mislabeled them as contested dialogue.
   const routineCommerce = routineServiceInquiry || (semantic ? !semantic.checkNeeded && ["commerce", "dialogue"].includes(semantic.intent) : isRoutineCommerce(action, currentSnapshot.gameState.location));
@@ -1455,6 +1458,8 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   }
   if (mode === "play") system += `\n\nCURRENT ACTION TO RESOLVE NOW: ${action}\n${lastConfirmedBeat}\nCURRENT ACTION PRIORITY: Follow this declaration, not any NPC demand from an earlier scene. When public movement is unopposed and access is established, resolve movement and record the new end location. When an action includes unpriced shopping or sales, present exact prices and offers rather than silently charging, granting items, or forcing an unrelated NPC confrontation; resolve the other independently executable substeps as far as the confirmed state permits. Never invent a second payment for an already receipted purchase.`;
   if (mode === "play" && isReadOnlyGoodsInspection(action)) system += `\n\nREAD-ONLY MERCHANDISE INSPECTION: Resolve the declared examination only. Describe visible condition, seals, labels, packaging, and expiration markings supported by the scene. Do not deduct or grant credits; do not add, remove, consume, sell, equip, or transfer an item; do not narrate a completed transaction. Temporary handling remains with the current owner. Use an empty material ledger unless an authoritative mechanic supplied above requires a non-material change.`;
+  if (atelierAppointment) system += `\n\n${atelierAppointmentGmInstruction()}`;
+  if (mode === "play") system += `\n\n${SANDBOX_GM_AGENCY}`;
   if (mode === "play" && isMerchantTermsChallenge(action)) system += `\n\nPAYMENT-TERMS DISPUTE: The player is challenging why the seller changed the previously stated payment conditions. The last confirmed merchant response is history, not fresh dialogue: ${priorResult.slice(0, 900)}. Have the merchant address the change in terms directly, acknowledging the earlier instruction and giving an established or plausible explanation, or explicitly declining to explain with a concrete world reaction. The merchant may remain uncooperative; do not force acceptance, reverse past turns, create a new payment verification obstacle without grounded evidence, or repeat the previous explanation verbatim. Any actual sale must pass the authoritative trade-and-ledger checks.`;
   if (mode === "play" && isFinancialWithdrawalAction(resolvedIntent)) system += `\n\nBANKING SAFETY: Withdrawing deposited credits as physical chips is an account-to-cash conversion, not a new reward or a change of location. Respect any confirmed terminal lockout. Do not narrate a completed cash-out unless the authorized state ledger can debit bankCredits and record corresponding physical credit chips atomically. If the current ledger schema cannot represent both, explain the operational limitation in the fiction without claiming chips were dispensed, money was lost, or a new security failure was established. Ordinary use of a functioning legitimate terminal does not automatically require a Use Computer check.`;
   if (semantic) system += `\n\nINTERPRETED PLAYER INTENT (not an outcome): ${JSON.stringify(semantic)}\nResolve this intent, not a keyword trigger. The original declaration below remains the player's words and choices. Ordinary competent substeps are part of the attempt; never add a new player decision. Any check is already supplied by the referee; never invent another.`;
@@ -1577,6 +1582,8 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       if (mode === "play") assertMovementSceneProgress(parsed.clean, resolvedIntent, roll, delta, currentSnapshot.gameState.location);
       if (mode === "play") assertNoProgressLoop(parsed.clean, resolvedIntent, delta, currentSnapshot.gameState.location, priorResult);
       if (mode === "play") assertCommercialCredibility(parsed.clean, resolvedIntent, delta);
+      if (atelierAppointment && !roll) assertAtelierAppointmentProgress(parsed.clean, action, currentSnapshot.gameState.location);
+      if (mode === "play") assertSandboxAgency(parsed.clean, action, roll, delta);
       assertMaterialAuthority(delta, action, roll, currentSnapshot.gameState as Record<string, unknown>, trade);
       assertStoryDirectiveAuthority(delta, actor, currentSnapshot.character as Record<string, unknown>);
       assertNarrativeLedgerConsistency(parsed.clean, delta, resolvedIntent);
@@ -1620,6 +1627,21 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       assertMechanicalNarration(parsed.clean, null);
       assertMaterialAuthority(delta, action, null, currentSnapshot.gameState as Record<string, unknown>, null);
       validationError = null;
+    } else if (atelierAppointment && !roll && !trade) {
+      // Routine atelier enquiries are playable even if repeated model drafts
+      // invent a shop-wide refusal. Establish one in-world intake lead only.
+      const recovered = atelierAppointmentRecovery(String(currentSnapshot.gameState.location || ""));
+      fallbackReason = "validation";
+      response = {provider:"local-safe-fallback",model:"atelier-intake-receipt",finishReason:"stop",content:recovered.content};
+      parsed = parseEngineResponse(recovered.content, {requireState:true});
+      delta = parsed.delta as unknown as Record<string,unknown>;
+      assertCampaignResponseStructure(parsed.clean);
+      assertAtelierAppointmentProgress(parsed.clean, action, currentSnapshot.gameState.location);
+      assertMechanicalNarration(parsed.clean, null);
+      assertNoProgressLoop(parsed.clean, action, delta, currentSnapshot.gameState.location, priorResult);
+      assertMaterialAuthority(delta, action, null, currentSnapshot.gameState as Record<string,unknown>, null);
+      assertNarrativeLedgerConsistency(parsed.clean, delta, resolvedIntent);
+      validationError = null;
     } else if (routineServiceInquiry && !roll && !trade && response?.content && response.provider !== "local-safe-fallback" && resolvedServiceInquiryNarration(currentSnapshot, action)) {
       // Three malformed GM drafts must not strand a harmless service inquiry.
       // Use only established service-desk context and a zero-mutation receipt.
@@ -1654,6 +1676,21 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       assertNarrativeLedgerConsistency(parsed.clean, delta, resolvedIntent);
       const experienceAward = routineCommerce ? 0 : deriveExperienceAward(delta, roll, currentSnapshot.gameState as Record<string, unknown>, currentSnapshot.character as Record<string, unknown>);
       delta = { ...(delta || {}), experienceAward };
+      validationError = null;
+    } else if (mode === "play" && !roll && !trade && !encounter && mayUseCivilianAgencyRecovery(action, currentSnapshot.gameState.location)) {
+      // Keep ordinary civilian actions playable after exhausted drafts,
+      // preserving the original refusal and offering only a possible lead.
+      const recovered = civilianAgencyRecovery(action, String(currentSnapshot.gameState.location || ""));
+      fallbackReason = "validation";
+      response = {provider:"local-safe-fallback",model:"civilian-agency-recovery",finishReason:"stop",content:recovered.content};
+      parsed = parseEngineResponse(recovered.content, {requireState:true});
+      delta = parsed.delta as unknown as Record<string,unknown>;
+      assertCampaignResponseStructure(parsed.clean);
+      assertSandboxAgency(parsed.clean, action, null, delta);
+      assertMechanicalNarration(parsed.clean, null);
+      assertNoProgressLoop(parsed.clean, action, delta, currentSnapshot.gameState.location, priorResult);
+      assertMaterialAuthority(delta, action, null, currentSnapshot.gameState as Record<string,unknown>, null);
+      assertNarrativeLedgerConsistency(parsed.clean, delta, resolvedIntent);
       validationError = null;
     } else {
       enterPhase("drafting-exhausted", 3);
