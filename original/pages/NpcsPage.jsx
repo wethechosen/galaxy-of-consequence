@@ -38,7 +38,7 @@ export default function NpcsPage() {
         <label className="relative flex-1 min-w-[210px] max-w-xl"><Search size={15} className="absolute left-3 top-3 text-[#8b93a3]" /><input aria-label="Search NPC roster" value={query} onChange={event=>setQuery(event.target.value)} placeholder="Search name, species, world, affiliation..." className="gc-input w-full pl-9 pr-3 py-2.5 text-sm" /></label>
         <select aria-label="Filter NPC type" className="gc-input px-3 py-2.5 text-sm" value={group} onChange={event=>setGroup(event.target.value)}>
           <option value="all">All characters</option>
-          <option value="test">Ten test characters</option>
+          <option value="test">Test characters</option>
           <option value="cast">Supplement cast</option>
           <option value="story">Dmir storyline</option>
         </select>
@@ -51,6 +51,32 @@ export default function NpcsPage() {
         <div className="mt-3 text-xs text-[#8b93a3]">{selected.species} · {selected.homeworld} · {selected.era} ABY</div>
         <p className="mt-3 text-sm text-[#d2d0cc]">{selected.description}</p>
         <p className="mt-3 text-xs text-[#a9adb8]">Role: {selected.designation}. No ending, XP, talents or material gains are attested by a completed game campaign.</p>
+        <section className="mt-4 border-t border-white/10 pt-4" aria-label="NPC mechanics">
+          <h3 className="text-sm text-[#21dfc8]">{selected.mechanics?.status === "validated-core-build" ? "VALIDATED SAGA CORE BUILD" : "MECHANICS PENDING VALIDATION"}</h3>
+          <p className="mt-2 text-xs text-[#a9adb8]">{selected.mechanics?.reason || selected.mechanics?.provenance}</p>
+          {selected.mechanics?.character && <>
+            <p className="mt-3 text-sm">Level {selected.mechanics.character.level} · HP {selected.mechanics.character.maxHitPoints} · BAB {selected.mechanics.character.baseAttackBonus} · Damage threshold {selected.mechanics.character.damageThreshold}</p>
+            <p className="mt-2 text-sm">Reflex {selected.mechanics.character.defenses?.reflex} · Fortitude {selected.mechanics.character.defenses?.fortitude} · Will {selected.mechanics.character.defenses?.will}</p>
+            <p className="mt-2 text-xs">{selected.mechanics.character.sagaStats}</p>
+            <p className="mt-2 text-xs">Feats: {selected.mechanics.character.feats}</p>
+            <p className="mt-2 text-xs">Talents: {selected.mechanics.character.talents}</p>
+            <p className="mt-2 text-xs">Force powers: {selected.mechanics.character.forcePowers || "None established"}</p>
+            <dl className="mt-3 grid grid-cols-2 gap-1 text-xs">{Object.entries(selected.mechanics.skillModifiers || {}).map(([skill,modifier])=><div key={skill}><dt className="inline">{skill}: </dt><dd className="inline">{modifier >= 0 ? "+" : ""}{modifier}</dd></div>)}</dl>
+          </>}
+          {selected.mechanics?.speciesTraits && <details className="mt-3 text-xs">
+            <summary className="cursor-pointer text-[#21dfc8]">Species traits · {selected.mechanics.speciesTraits.name}</summary>
+            <ul className="mt-2 space-y-1">{(selected.mechanics.speciesTraits.traits || []).map(trait => <li key={trait}>{trait}</li>)}</ul>
+            <p className="mt-2 text-[#a9adb8]">{selected.mechanics.speciesTraits.source} · pages {(selected.mechanics.speciesTraits.pages || []).join(", ")}</p>
+            <p className="mt-2 text-[#a9adb8]">{selected.mechanics.speciesTraits.mechanicalBoundary}</p>
+          </details>}
+          {selected.mechanics?.storyTraits && <details className="mt-3 text-xs">
+            <summary className="cursor-pointer text-[#21dfc8]">Story traits · not mechanical bonuses</summary>
+            <ul className="mt-2 space-y-1">{(selected.mechanics.storyTraits.traits || []).map(trait => <li key={trait}>{trait}</li>)}</ul>
+            <p className="mt-2">Flaw: {selected.mechanics.storyTraits.flaw}</p>
+            <p className="mt-2">Origin: {selected.mechanics.storyTraits.origin}</p>
+          </details>}
+          <p className="mt-3 text-xs text-[#ff9b50]">Equipment and attack loadout require a confirmed record. These statistics do not spawn the NPC or grant items.</p>
+        </section>
       </GlassCard>}
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {shown.map(item => <button type="button" key={item.id} onClick={()=>setSelected(item)} className="text-left">
@@ -65,7 +91,7 @@ export default function NpcsPage() {
         </button>)}
       </div>
       {!shown.length && <p className="text-sm text-[#a9adb8]">No NPC matches that search.</p>}
-      <p className="mt-6 text-xs text-[#737988]">The Players tab lists authenticated human-controlled accounts. NPC dossiers are kept separate from player campaigns. Hidden GM facts and combat builds are not exposed here.</p>
+      <p className="mt-6 text-xs text-[#737988]">Private GM index. Dossiers and validated builds are separate from earned campaign outcomes. Players receive only encounter-appropriate public information.</p>
     </main>
   </Shell>;
 }
