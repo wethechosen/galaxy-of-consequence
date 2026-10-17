@@ -15,16 +15,16 @@ export async function GET(request:Request){
     assertLocalRequest(request);
     requireAccount(request,true);
     const roster=[
-      ...NPC_TEST_ROSTER.map(n=>({
+      ...NPC_TEST_ROSTER.filter(n=>n.id!=="kelvek").map(n=>({
         id:n.id,name:n.name,species:n.species,homeworld:n.homeworld,
-        designation:n.role,era:n.yearABY,category:n.id==="kelvek"?"story":"test",description:n.background,
+        designation:n.role,era:n.yearABY,category:"test",description:n.background,
         objective:n.objective,appearance:n.appearance,
         visualReference:npcVisualReference(n.id,n.appearance,n.role,n.species),
         visualReferenceType:"provisional-vector-study",
         playthroughStatus:npcVerifiedLocalEnding(n.id)?"goal_complete":"unverified",
         auditedEnding:npcVerifiedLocalEnding(n.id),gmOnly:true,
       })),
-      ...CAMPAIGN_NPCS_150_ABY.map(n=>({
+      ...CAMPAIGN_NPCS_150_ABY.filter(n=>n.id!=="darth-korvalis").map(n=>({
         id:n.id,name:n.name,species:n.species,homeworld:n.birthworld,
         designation:n.role150,era:150,category:n.id==="calen-vardex"?"test":"cast",description:n.biography,
         objective:n.objective,secret:n.confidential,eraCorrection:n.revision,
@@ -34,7 +34,7 @@ export async function GET(request:Request){
       })),
       ...DMIR_STORY_NPCS.map(n=>({
         id:"story-"+n.id,name:n.name,species:n.species,
-        homeworld:"GM location: "+n.locationHint,designation:n.role,era:150,
+        homeworld:"GM location: "+n.locationHint,designation:n.role,era:n.id==="kelvek"?147:150,
         category:"story",description:n.background,objective:n.objective,
         secret:n.privateKnowledge,plot:n.arc,encounterRules:n.allowedEncounter,
         status:n.status,playthroughStatus:"unverified",gmOnly:true,

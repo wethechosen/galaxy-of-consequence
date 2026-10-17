@@ -1,14 +1,14 @@
-# Galaxy of Consequence — Autonomous PC and NPC continuity test
+# Galaxy of Consequence — Isolated NPC simulation and GM continuity tests
 
 ## Authority and timelines
-- 34 independently controlled **player characters**, one real saved campaign each; Kelvek is excluded from their concurrent campaign queue because he has a separate 147 ABY historical flashback.
+- 34 isolated **NPC scenario fixtures**, each using a temporary test-only player-account-shaped adapter because the current `runGmTurn` API requires an account. They are NOT playable NPCs in the actual game, nor are they a second player system. Kelvek is excluded from their concurrent campaign queue because he has a separate 147 ABY historical flashback.
 - 13 D'mir-centered **NPCs** have story containers with identity, goals, private knowledge, status, encounter gating and event-sourced memory. Maera Holloràn and Daren Holloràn are newly supplied names for the canonically deceased parents. Their deaths, Kelvek's death and D'mir's established age and history cannot be undone by the simulator.
 - Historical NPCs may appear alive only in appropriately dated flashbacks or authentic records. D'mir's primary live save is not used as a test harness.
 - The 25 supplemental character profiles were adapted from a source 200 ABY proposal to 150 ABY; future titles are not assigned as current authority.
 - A character goal is complete only when its exact authoritative `objectives[].status` is `completed`. **0 HP does not mean death.** Death requires an explicit authoritative `lifeStatus: dead` or `deceased: true` marker, which the engine currently may not emit. Otherwise an incapacitated PC is a blocker, not a completed ending.
 
 ## Actual game loop
-1. Create and persist an isolated player account and Saga level-one foundation if supported by the existing race/class builder.
+1. Create and persist an isolated synthetic scenario fixture and Saga level-one foundation if supported by the existing race/class builder. The fixture's account adapter must never be exposed as a playable NPC.
 2. NVIDIA NPC decision model sees only the character's verified location, objective, inventory, health and last messages; outputs exactly one first-person attempt.
 3. The *existing* `runGmTurn` adjudicates this attempt, makes all dice/ledger decisions, validates state, and commits the turn with an immutable unique turn ID.
 4. The runner rereads the saved revision and the turn ID. A failed turn does **not** award inventory, XP, advancement, skills or contact rights.
