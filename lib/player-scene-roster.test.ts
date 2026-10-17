@@ -11,6 +11,16 @@ describe("room-specific NPC visibility and public player sheets", () => {
     expect(present.map(x=>x.name)).toEqual(["Tremel"]);
     expect(present[0].role).toBe("clerk");
   });
+  it("retains a witnessed, titled captain as one NPC across repeated conversations",()=>{
+    const scene="## SCENE\nCaptain Vell stands at the public counter and answers the traveler's inquiry.\n\n## GAMEPLAY RESULT\nCaptain Vell points to the public registry.";
+    const first=recordVisibleSceneNpcs({location,sceneNpcs:[{name:"Captain Vell",role:"transit captain",location}]},scene,"titled-1");
+    expect(sceneNpcRoster(first).map(n=>n.name)).toEqual(["Captain Vell"]);
+    const second=recordVisibleSceneNpcs(first,scene,"titled-2");
+    expect(sceneNpcRoster(second).map(n=>n.name)).toEqual(["Captain Vell"]);
+    const withoutWitness=recordVisibleSceneNpcs({location,contacts:[{name:"Captain Vell",role:"captain"}]},
+      "## SCENE\nA datapad displays a message from Captain Vell, sent months ago. Nobody is present.\n\n## GAMEPLAY RESULT\nYou read the old dispatch.","remote-message");
+    expect(sceneNpcRoster(withoutWitness)).toEqual([]);
+  });
   it("does not show a contact in the room merely for knowing their name or comlink",()=>{
     const state={location,contacts:[{name:"Jax",role:"captain",channel:"npc:existing"}]};
     expect(sceneNpcRoster(state)).toEqual([]);
