@@ -17,12 +17,14 @@ describe("Seralyth Vhaelor — GM-only Saga and Dmir canon",()=>{
     const levels=s.saga.levelHistory;
     expect(levels.map(l=>l.characterLevel)).toEqual([1,2,3,4,5,6,7]);
     expect(s.saga.heroicClassLevels.scoundrel+s.saga.heroicClassLevels.jedi).toBe(s.saga.level);
-    expect(s.saga.talents).toEqual(["Knack","Block","Deflect","Soresu"]);
-    expect(levels.some(l=>"talent" in l && l.characterLevel===6 && l.talent==="Soresu")).toBe(true);
+    expect(s.saga.talents).toEqual(["Knack","Block","Deflect","Lightsaber Defense"]);
+    expect(levels.some(l=>"talent" in l && l.characterLevel===6 && l.talent==="Lightsaber Defense")).toBe(true);
     expect(levels.some(l=>"talent" in l && l.characterLevel===4 && l.talent==="Deflect")).toBe(true);
     expect(s.saga.forcePowerSuite).toHaveLength((1+mod(s.saga.abilities.wis))*s.saga.forceTrainingFeatCount);
     expect(s.saga.forcePowerSuite).toContain("Cloak");
     expect(s.saga.talents).not.toContain("Buried Presence");
+    expect(s.saga.talents).not.toContain("Soresu");
+    expect(s.saga.forcePowerSuite).toContain("Circle of Shelter");
   });
   it("reconciles ability increases, trained skills, attacks, hit points and defenses",()=>{
     const a=s.saga.abilities;const m=s.saga.modifiers;const lvl=s.saga.level;
