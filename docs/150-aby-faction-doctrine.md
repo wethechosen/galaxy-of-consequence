@@ -28,6 +28,24 @@ are not the ordinary players of this campaign.
 - Old **200 ABY** GOC design drafts are **150 ABY**, with rank and history
   reconciled against actual world events instead of assumed future promotions.
 
+## Jedi restoration correction (Legends 138–139 ABY)
+
+The New Jedi Order is **an independent founding power**, not a subordinate
+Fel or Triumvirate department and not a handful of unrecognized fugitives.
+Its Coruscant Temple was reclaimed in 138 ABY. K'Kruhk represented the Jedi
+in the founding Triumvirate, but neither his 150 ABY office nor a current
+Grand Master or High Council roster is presumed. The 139 ABY Mala crisis
+did not establish that no Sith survived. T'ra Saa and Wolf Sazen died in
+138 ABY and are historical-only; old 200 ABY Jedi leadership profiles are
+not automatically present-day promotions. The Imperial Knights' light-side
+loyalty reform was **announced** after Mala; its full administrative
+implementation remains an open GOC chronological question.
+
+See `docs/150-aby-jedi-restoration.md` and `lib/jedi-order-150aby.ts`
+for source chronology, seven offices, four Jedi sites, six missions,
+historical personnel, four existing GOC Jedi, and strict GM/player
+information separation.
+
 ## Twenty-seven institutions
 
 **Postwar settlement / Fel:** Galactic Federation Triumvirate; Galactic

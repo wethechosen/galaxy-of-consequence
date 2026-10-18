@@ -11,6 +11,7 @@ export default function FactionsPage(){
  const [factions,setFactions]=useState([]);
  const [members,setMembers]=useState([]);
  const [hiddenLinks,setHiddenLinks]=useState([]);
+ const [jediOrder,setJediOrder]=useState(null);
  const [gm,setGm]=useState(false);
  const [error,setError]=useState("");
  const [query,setQuery]=useState("");
@@ -26,7 +27,7 @@ export default function FactionsPage(){
        if(!response.ok)throw Error("Faction registry service unavailable.");
        const data=await response.json();
        if(!live)return;
-       setFactions(data.factions||[]);setMembers(data.members||[]);setHiddenLinks(data.hiddenLinks||[]);
+       setFactions(data.factions||[]);setMembers(data.members||[]);setHiddenLinks(data.hiddenLinks||[]);setJediOrder(data.jediOrder||null);
        setGm(data.visibility==="gm-only");setError("");
      }catch(e){if(live&&!controller.signal.aborted)setError(e.message||"Registry currently unavailable.");}
    };
@@ -83,6 +84,34 @@ export default function FactionsPage(){
  <h3 className="text-xs tracking-widest text-[#21dfc8] flex items-center gap-2"><Network size={14}/> DIVISIONS AND INSTITUTIONS</h3>
  <div className="mt-3 flex flex-wrap gap-2">{(selected.institutionalBranches||[]).map(x=><span key={x} className="text-xs rounded-lg border border-white/10 px-2.5 py-1.5 text-[#c6c3bc]">{x}</span>)}</div>
  </div>
+ {selected.id==="new-jedi-order"&&jediOrder&&<section className="border-t border-white/10 mt-5 pt-4" aria-label="New Jedi Order historical and institutional record">
+ <h3 className="gc-display text-xl text-[#eae5d9]">NEW JEDI ORDER · AFTER DARTH KRAYT</h3>
+ <p className="text-xs text-[#a9adb8] mt-2">{jediOrder.politicalAuthority}</p>
+ <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-4">
+ <div className="rounded-lg border border-white/10 p-3"><span className="text-xs text-[#21dfc8]">138 ABY</span><p className="text-xs mt-1 text-[#e7e2d8]">Purge ends; Temple reclaimed; Triumvirate formed</p></div>
+ <div className="rounded-lg border border-white/10 p-3"><span className="text-xs text-[#21dfc8]">139 ABY</span><p className="text-xs mt-1 text-[#e7e2d8]">Wredd insurgency and surviving Sith crisis</p></div>
+ <div className="rounded-lg border border-white/10 p-3"><span className="text-xs text-[#21dfc8]">150 ABY</span><p className="text-xs mt-1 text-[#e7e2d8]">Reconstruction, training, independent government participation</p></div>
+ </div>
+ <h4 className="mt-5 text-xs text-[#21dfc8] tracking-widest">JEDI SITES AND ACTIVITIES</h4>
+ <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">{jediOrder.sites?.map(site=><div key={site.id} className="rounded-lg border border-white/10 p-3">
+ <p className="text-sm font-medium text-[#ece8dc]">{site.name}</p>
+ <p className="text-[10px] uppercase text-[#d5ab72] mt-1">{site.world} · {site.state150}</p>
+ <p className="text-xs text-[#a9adb8] mt-2">{site.historicalStatus}</p>
+ </div>)}</div>
+ <h4 className="mt-5 text-xs text-[#21dfc8] tracking-widest">ORDER GOVERNANCE AND SERVICES</h4>
+ <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">{jediOrder.offices?.map(o=><div key={o.id} className="rounded-lg border border-white/10 p-3">
+ <p className="text-sm font-medium text-[#ece8dc]">{o.description}</p>
+ <p className="text-xs text-[#a9adb8] mt-2">{o.mandate}</p>
+ </div>)}</div>
+ {gm&&<div className="rounded-xl border border-[#d5ab72]/30 p-3 mt-4">
+ <p className="text-xs tracking-widest text-[#d5ab72]">GM-ONLY JEDI CONTINUITY</p>
+ <p className="text-xs text-[#c2beb6] mt-2">{jediOrder.council150}</p>
+ <p className="text-xs text-[#c2beb6] mt-2">Confirmed population: {jediOrder.certifiedOrderSize150??"not established"} · Current Grand Master: {jediOrder.grandMaster150??"not appointed in GOC records"}</p>
+ <div className="space-y-2 mt-3">{jediOrder.existingOriginalGocJedi?.map(p=><div key={p.id} className="text-xs text-[#d8d4c9]">{p.name}: {p.position}. <span className="text-[#a9adb8]">{p.notes}</span></div>)}</div>
+ <p className="text-xs text-[#bcb7ac] mt-3">{jediOrder.security}</p>
+ </div>}
+ <p className="text-xs text-[#a9adb8] mt-3">{jediOrder.note||"The 150 ABY Council, population and current authority require established game history."}</p>
+ </section>}
  {!!selected.relations?.length&&<section className="border-t border-white/10 mt-5 pt-4">
  <h3 className="text-xs tracking-widest text-[#21dfc8]">DIPLOMATIC AND INSTITUTIONAL LINKS</h3>
  <div className="grid sm:grid-cols-2 gap-2 mt-3">{selected.relations.map(r=><div key={r.id} className="rounded-xl p-3 border border-white/10 bg-white/[.025]">

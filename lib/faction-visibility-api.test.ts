@@ -12,6 +12,10 @@ describe("GOC faction visibility",()=>{
   expect(r.status).toBe(200);
   const result=await r.json();
   expect(result.eraABY).toBe(150);
+  expect(result.jediOrder.institutionalStatus).toBe("publicly-recognized-triumvirate-participant");
+  expect(result.jediOrder.sites.find((s:{id:string})=>s.id==="coruscant")?.state150).toBe("reclaimed");
+  expect(result.jediOrder.offices).toHaveLength(7);
+  expect(result.jediOrder).not.toHaveProperty("existingOriginalGocJedi");
   expect(result.factions.length).toBeLessThan(27);
   expect(result.factions.some((x:{id:string})=>x.id==="fel-empire")).toBe(true);
   expect(JSON.stringify(result).toLowerCase()).not.toContain("xiii");
@@ -35,6 +39,10 @@ describe("GOC faction visibility",()=>{
   const b=await r.json();
   expect(b.visibility).toBe("gm-only");
   expect(b.factions).toHaveLength(27);
+  expect(b.jediOrder.canonicalHistoricalEvents).toHaveLength(6);
+  expect(b.jediOrder.existingOriginalGocJedi).toHaveLength(4);
+  expect(b.jediOrder.grandMaster150).toBeNull();
+  expect(b.jediOrder.sites.find((s:{id:string})=>s.id==="taivas")?.state150).toBe("destroyed-historical");
   expect(b.members).toHaveLength(54);
   expect(b.hiddenLinks).toContainEqual(expect.objectContaining({personId:"seralyth-vhaelor",factionId:"sith-traditionalists"}));
   const fel=b.factions.find((x:{id:string})=>x.id==="fel-empire");
