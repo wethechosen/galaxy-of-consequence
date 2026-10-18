@@ -47,20 +47,24 @@ export async function GET(request:Request){
         initialScene:n.id===SERALYTH_ID?SERALYTH_HAPES_OPENING:null,
       })),
     ];
-    const canonicalRegistry=GOC_NPC_INDEX_150_ABY.map(n=>({
+    const canonicalRegistry=GOC_NPC_INDEX_150_ABY.map(n=>{
+      const previous=roster.find(item=>item.name.toLowerCase()===n.name.toLowerCase());
+      return ({
       id:n.id,name:n.name,species:n.species,homeworld:n.homeworld,era:n.eraABY,
       designation:n.role,description:n.biography,objective:n.objective,secret:n.privateKnowledge,
       faction:n.faction,sourceClass:n.sourceClass,category:n.sourceClass==="core-cast"?"cast":
         n.sourceClass==="personal-story"?"story":n.sourceClass==="independent-simulation"?"test":
         n.sourceClass==="documented-relative"?"family":"sourcebook",
       lifeStatus:n.lifeStatus,worldState:n.worldState,identitySource:n.identitySource,
-      design:n.design,gmOnly:true,playthroughStatus:"unverified",
+      design:n.design,gmOnly:true,
+      playthroughStatus:previous?.playthroughStatus||"unverified",
+      auditedEnding:previous?.auditedEnding,
       visualReference:npcVisualReference(n.id,n.biography,n.role,n.species),
       mechanics:n.lifeStatus==="deceased"||n.sourceClass==="sourcebook-candidate"?null:
         n.id===SERALYTH_ID?{status:"authored-saga-sheet",character:SERALYTH_SAGA_SHEET,
           provenance:"Existing GM-authored Saga Edition sheet; authoring is not validator certification."}:
         npcMechanics(n.name),
-    }));
+    });});
     return NextResponse.json({roster:roster.map(n=>({...n,mechanics:npcMechanics(n.name)})),
       canonicalRegistry,canonicalRegistrySummary:GOC_NPC_INDEX_SUMMARY,
       felLegendsBaseline:GOC_FEL_LEGENDS_BASELINE,
