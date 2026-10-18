@@ -12,8 +12,12 @@ it("validates all 17 supported Human prior careers without treating rehearsal le
     expect(mechanics.skillModifiers?.Perception).toBeTypeOf("number");
   }
 });
-it("does not convert alien proposals or unknown identities into Human builds",()=>{
-  expect(npcMechanics("Rena Salvek").status).toBe("pending-validation");
+it("uses actual alien starting traits and does not give unknown people Human builds",()=>{
+  const rena=npcMechanics("Rena Salvek");
+  expect(rena.status,rena.reason).toBe("validated-core-build");
+  expect(rena.character?.species).toBe("Zeltron");
+  expect(rena.character?.level).toBe(4);
+  expect(rena.character?.speciesTraitsApplied?.species).toBe("Zeltron");
   expect(npcMechanics("Jax").character).toBeUndefined();
   expect(npcMechanics("Kelvek").character).toBeUndefined();
 });
