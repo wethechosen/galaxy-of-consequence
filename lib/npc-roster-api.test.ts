@@ -19,6 +19,12 @@ it("preserves audited NPC progress with one GM dossier per character",async()=>{
   const result=await response.json();
   expect(result.roster).toHaveLength(47);
   expect(result.canonicalRegistry).toHaveLength(54);
+  for(const npc of result.canonicalRegistry){
+    expect(npc.definitiveDossier?.id,npc.id).toBe(npc.id);
+    expect(npc.definitiveDossier.combat.level,npc.id).toBeGreaterThan(0);
+    expect(npc.definitiveDossier.combat.feats.length,npc.id).toBeGreaterThan(0);
+    expect(npc.definitiveDossier.equipment.neverGrantAutomatically,npc.id).toBe(true);
+  }
   expect(result.canonicalRegistrySummary).toMatchObject({core:25,personal:13,simulations:9,relatives:2,pendingSourcebook:5});
   expect(new Set(result.canonicalRegistry.map((x:{id:string})=>x.id)).size).toBe(54);
   expect(result.canonicalRegistry.filter((x:{name:string})=>x.name==="Darth Korvalis")).toHaveLength(1);

@@ -5,6 +5,7 @@ import {NPC_TEST_ROSTER} from "@/lib/npc-test-roster";
 import {CAMPAIGN_NPCS_150_ABY} from "@/lib/npc-canon-roster";
 import {DMIR_STORY_NPCS} from "@/lib/dmir-story-npcs";
 import {npcMechanics} from "@/lib/npc-mechanics";
+import {npcDefinitiveDossier150ABY} from "@/lib/npc-definitive-dossiers-150aby";
 import {GOC_NPC_INDEX_150_ABY,GOC_NPC_INDEX_SUMMARY,GOC_FEL_LEGENDS_BASELINE} from "@/lib/npc-canonical-index";
 import {SERALYTH_ID,SERALYTH_SAGA_SHEET,SERALYTH_GM_DOSSIER,SERALYTH_HAPES_OPENING} from "@/lib/seralyth-vhaelor";
 import {npcVisualReference} from "@/lib/npc-visual-reference";
@@ -58,6 +59,7 @@ export async function GET(request:Request){
         n.sourceClass==="documented-relative"?"family":"sourcebook",
       lifeStatus:n.lifeStatus,worldState:n.worldState,identitySource:n.identitySource,
       design:n.design,gmOnly:true,
+      definitiveDossier:npcDefinitiveDossier150ABY(n.id),
       playthroughStatus:previous?.playthroughStatus||"unverified",
       auditedEnding:previous?.auditedEnding,
       visualReference:npcVisualReference(n.id,n.biography,n.role,n.species),

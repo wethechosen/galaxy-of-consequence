@@ -51,11 +51,43 @@ export default function NpcsPage() {
           <button className="gc-btn px-3 py-1.5 text-xs" onClick={()=>setSelected(null)}>CLOSE</button>
         </div>
         <div className="mt-3 text-xs text-[#8b93a3]">{selected.species} · {selected.homeworld} · {selected.era} ABY · {selected.faction || "Unaffiliated"} · {selected.lifeStatus || "Unconfirmed status"}</div>
-        <p className="mt-3 text-sm text-[#d2d0cc]">{selected.description}</p>
-        <p className="mt-3 text-xs text-[#a9adb8]">Prior-career statistics are GM build choices, not evidence of earned campaign rewards.</p>
+        <p className="mt-3 text-sm text-[#d2d0cc]">{selected.definitiveDossier?.biography || selected.description}</p>
+        {selected.definitiveDossier && <div className="mt-4 rounded-xl border border-white/10 p-4 text-sm text-[#d2d0cc]" aria-label="Complete private 150 ABY character history">
+          <h3 className="font-semibold text-[#21dfc8]">LIFE RECORD · {selected.definitiveDossier.birthplace} · BORN {selected.definitiveDossier.bornABY} ABY</h3>
+          <p className="mt-2">Age in 150 ABY: {selected.definitiveDossier.ageIn150} · {selected.definitiveDossier.worldPresence}</p>
+          <p className="mt-2"><strong>Appearance:</strong> {selected.definitiveDossier.appearance}</p>
+          <p className="mt-2"><strong>Personality:</strong> {selected.definitiveDossier.personality}</p>
+          <p className="mt-2"><strong>Weakness:</strong> {selected.definitiveDossier.flaw}</p>
+          <p className="mt-2"><strong>Relationships:</strong> {selected.definitiveDossier.importantRelationships}</p>
+          <p className="mt-2"><strong>Autonomous objective:</strong> {selected.definitiveDossier.objective}</p>
+          <details className="mt-3"><summary className="cursor-pointer text-[#e9a873]">GM-only secrets and sources</summary>
+            <p className="mt-2">{selected.definitiveDossier.gmPrivateKnowledge || "No established undisclosed information."}</p>
+            <p className="mt-2 text-xs">{selected.definitiveDossier.canonProvenance}</p>
+          </details>
+        </div>}
+        <p className="mt-3 text-xs text-[#a9adb8]">Prior-career XP and GM loadouts are baselines, not player-earned rewards or committed inventories.</p>
         <section className="mt-4 border-t border-white/10 pt-4" aria-label="NPC mechanics">
-          <h3 className="text-sm text-[#21dfc8]">{selected.mechanics?.status === "validated-core-build" ? "VALIDATED SAGA CORE BUILD" : selected.mechanics?.status === "authored-saga-sheet" ? "AUTHORED SAGA SHEET · NOT YET ENGINE-CERTIFIED" : "MECHANICS PENDING VALIDATION"}</h3>
-          <p className="mt-2 text-xs text-[#a9adb8]">{selected.mechanics?.reason || selected.mechanics?.provenance || selected.design?.caveat || "A rules-validated character sheet is not yet recorded."}</p>
+          <h3 className="text-sm text-[#21dfc8]">{selected.definitiveDossier ? "COMPLETE 150 ABY SAGA CAREER SHEET · GM PRIVATE" : selected.mechanics?.status === "validated-core-build" ? "VALIDATED SAGA CORE BUILD" : selected.mechanics?.status === "authored-saga-sheet" ? "AUTHORED SAGA SHEET · NOT YET ENGINE-CERTIFIED" : "MECHANICS PENDING VALIDATION"}</h3>
+          {selected.definitiveDossier && <div className="mt-3 rounded-xl border border-white/10 p-4 text-sm" aria-label="Saga Edition definitive NPC abilities and inventory plan">
+            <p><strong>Classes:</strong> {Object.entries(selected.definitiveDossier.combat.classLevels).map(([k,v])=>k+" "+v).join(" / ")} · Level {selected.definitiveDossier.combat.level} · Prior-career XP {selected.definitiveDossier.combat.careerXp.toLocaleString()}</p>
+            <p className="mt-2">HP {selected.definitiveDossier.combat.maxHitPoints} · BAB {selected.definitiveDossier.combat.baseAttackBonus} · DT {selected.definitiveDossier.combat.damageThreshold} · Melee +{selected.definitiveDossier.combat.meleeAttack} · Ranged +{selected.definitiveDossier.combat.rangedAttack}</p>
+            <p className="mt-2">Reflex {selected.definitiveDossier.combat.defenses.reflex} · Fortitude {selected.definitiveDossier.combat.defenses.fortitude} · Will {selected.definitiveDossier.combat.defenses.will}</p>
+            <p className="mt-2">Abilities: {Object.entries(selected.definitiveDossier.combat.abilities).map(([k,v])=>k.toUpperCase()+" "+v).join(" · ")}</p>
+            <p className="mt-2"><strong>Feats:</strong> {selected.definitiveDossier.combat.feats.join(", ")}</p>
+            <p className="mt-2"><strong>Talents:</strong> {selected.definitiveDossier.combat.talents.join(", ")}</p>
+            <p className="mt-2"><strong>Trained skills:</strong> {selected.definitiveDossier.combat.trainedSkills.join(", ")}</p>
+            <p className="mt-2"><strong>Force-sensitive:</strong> {selected.definitiveDossier.combat.forceSensitive?"Yes":"No"} · Powers: {selected.definitiveDossier.combat.forcePowers.join(", ")||"None learned"}</p>
+            <p className="mt-2"><strong>Languages:</strong> {selected.definitiveDossier.combat.languages.join(", ")}</p>
+            <p className="mt-2"><strong>Prior-career starting loadout:</strong> {selected.definitiveDossier.equipment.baselineLoadout.join(", ")}</p>
+            <details className="mt-2"><summary className="cursor-pointer text-[#21dfc8]">Skill modifiers and species rules</summary>
+              <dl className="mt-2 grid grid-cols-2 gap-1">{Object.entries(selected.definitiveDossier.combat.skills).map(([skill,score])=><div key={skill}>{skill}: {score>=0?"+":""}{score}</div>)}</dl>
+              <p className="mt-2 text-xs text-[#a9adb8]">{selected.definitiveDossier.combat.sourceCitation}</p>
+              <p className="mt-2 text-xs">{(selected.definitiveDossier.combat.speciesTraits?.traits||[]).join("; ")}</p>
+            </details>
+            <p className="mt-3 text-xs text-[#e9a873]">Equipment is a proposed GM starting loadout; existing inventories and spent XP remain unchanged. Deceased characters are flashback-only.</p>
+          </div>}
+          {!selected.definitiveDossier && <p className="mt-2 text-xs text-[#a9adb8]">{selected.mechanics?.reason || selected.mechanics?.provenance || selected.design?.caveat || "A rules-validated character sheet is not yet recorded."}</p>}
+          {!selected.definitiveDossier && <>
           {selected.design?.level != null && <p className="mt-2 text-xs text-[#a9adb8]">Prior-career proposal: Level {selected.design.level}, XP {selected.design.priorCareerXp?.toLocaleString()} (historical career allocation, NOT earned during D'mir gameplay). · {selected.design.mechanicalAuthority}</p>}
           {selected.design?.abilityScores && <p className="mt-2 text-xs text-[#a9adb8]">Proposed abilities: STR {selected.design.abilityScores.strength} · DEX {selected.design.abilityScores.dexterity} · CON {selected.design.abilityScores.constitution} · INT {selected.design.abilityScores.intelligence} · WIS {selected.design.abilityScores.wisdom} · CHA {selected.design.abilityScores.charisma}. Use only after Saga validation.</p>}
           {selected.design?.talentDirection && <p className="mt-2 text-xs text-[#a9adb8]">Talent direction: {selected.design.talentDirection} (not an awarded talent).</p>}
@@ -68,6 +100,7 @@ export default function NpcsPage() {
             <p className="mt-2 text-xs">Talents: {Array.isArray(selected.mechanics.character.talents) ? selected.mechanics.character.talents.map(t => t.name || t).join(", ") : selected.mechanics.character.talents || "Refer to authored Saga sheet"}</p>
             <p className="mt-2 text-xs">Force powers: {selected.mechanics.character.forcePowers || selected.mechanics.character.forcePowerSuite?.join(", ") || "None established"}</p>
             <dl className="mt-3 grid grid-cols-2 gap-1 text-xs">{Object.entries(selected.mechanics.skillModifiers || {}).map(([skill,modifier])=><div key={skill}><dt className="inline">{skill}: </dt><dd className="inline">{modifier >= 0 ? "+" : ""}{modifier}</dd></div>)}</dl>
+          </>}
           </>}
           {selected.mechanics?.speciesTraits && <details className="mt-3 text-xs">
             <summary className="cursor-pointer text-[#21dfc8]">Species traits · {selected.mechanics.speciesTraits.name}</summary>
