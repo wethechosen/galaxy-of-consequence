@@ -5,7 +5,14 @@ import { validateLeaseTerms, validatePriceComponents } from "@/original/lib/leas
 type Ledger = Record<string, unknown>;
 export type TradeItem = { name: string; qty: number; tag: string };
 export type LeaseTerms = { propertyName: string; propertyLocation: string; landlord: string; termMonths: number; rentCredits: number; refundableDepositCredits: number; accessDescription: string };
-export type TradeOfferInput = { sellerName: string; sellerSpecies?: string; items: TradeItem[]; totalCredits: number; lease?: LeaseTerms; priceComponents?: Array<{ label: string; credits: number }> };
+export type ServiceTerms = {
+  kind: "travel" | "freight" | "lodging" | "commission" | "repair" | "medical" | "training" | "other";
+  title: string; details?: string; origin?: string; destination?: string; departure?: string;
+  durationMinutes?: number; minLevel?: number; requiredFlag?: string;
+};
+export type TradeOfferInput = { sellerName: string; sellerSpecies?: string; items: TradeItem[]; totalCredits: number;
+  lease?: LeaseTerms; service?: ServiceTerms; priceSource?: string;
+  priceComponents?: Array<{ label: string; credits: number }> };
 export type TradeOffer = TradeOfferInput & {
   id: string; location: string; sourceTurnId: string; status: "open" | "purchased" | "superseded";
   acceptedTurnId?: string;
@@ -24,8 +31,8 @@ const MAX_CREDITS = 1_000_000_000_000;
 export function validateTradeOffers(value: unknown): TradeOfferInput[] {
   if (!Array.isArray(value) || value.length > 8) throw new Error("Invalid merchant offer list.");
   return value.map((raw) => {
-    if (!isRecord(raw) || !validName(raw.sellerName) || !Array.isArray(raw.items) || !raw.items.length || raw.items.length > 12
-      || !Number.isSafeInteger(raw.totalCredits) || Number(raw.totalCredits) < 1 || Number(raw.totalCredits) > MAX_CREDITS) {
+    if (!isRecord(raw) || !validName(raw.sellerName) || !Array.isArray(raw.items) || (!raw.items.length && !raw.service) || raw.items.length > 12 || (raw.items.length > 0 && raw.service)
+      || !Number.isSafeInteger(raw.totalCredits) || Number(raw.totalCredits) < (raw.service ? 0 : 1) || Number(raw.totalCredits) > MAX_CREDITS) {
       throw new Error("A merchant offer requires a seller, concrete items, and a positive whole-credit bundle price.");
     }
     const seen = new Set<string>();
@@ -38,7 +45,29 @@ export function validateTradeOffers(value: unknown): TradeOfferInput[] {
     if (raw.sellerSpecies !== undefined && !validName(raw.sellerSpecies)) throw new Error("Invalid merchant species.");
     const lease = raw.lease === undefined ? undefined : validateLeaseTerms(raw.lease, Number(raw.totalCredits)) as LeaseTerms;
     const priceComponents = raw.priceComponents === undefined ? undefined : validatePriceComponents(raw.priceComponents, Number(raw.totalCredits));
-    return { sellerName: String(raw.sellerName).trim(), ...(raw.sellerSpecies ? { sellerSpecies: String(raw.sellerSpecies).trim() } : {}), items, totalCredits: Number(raw.totalCredits), ...(lease ? { lease } : {}), ...(priceComponents ? { priceComponents } : {}) };
+    let service: ServiceTerms | undefined;
+    if (raw.service !== undefined) {
+      if (!isRecord(raw.service) || lease || !validName(raw.service.title)
+        || !["travel", "freight", "lodging", "commission", "repair", "medical", "training", "other"].includes(String(raw.service.kind)))
+        throw new Error("Invalid merchant service terms.");
+      service = { kind: raw.service.kind as ServiceTerms["kind"], title: String(raw.service.title).trim() };
+      for (const field of ["details", "origin", "destination", "departure", "requiredFlag"] as const) {
+        const value = raw.service[field];
+        if (value === undefined) continue;
+        if (typeof value !== "string" || !value.trim() || value.length > (field === "details" ? 1200 : 160))
+          throw new Error("Invalid service " + field);
+        service[field] = value.trim();
+      }
+      for (const field of ["durationMinutes", "minLevel"] as const) {
+        const value = raw.service[field];
+        if (value === undefined) continue;
+        if (!Number.isSafeInteger(value) || Number(value) < 1 || Number(value) > (field === "minLevel" ? 20 : 525600))
+          throw new Error("Invalid service " + field);
+        service[field] = Number(value);
+      }
+    }
+    if (raw.priceSource !== undefined && !validName(raw.priceSource)) throw new Error("Invalid price source.");
+    return { sellerName: String(raw.sellerName).trim(), ...(raw.sellerSpecies ? { sellerSpecies: String(raw.sellerSpecies).trim() } : {}), items, totalCredits: Number(raw.totalCredits), ...(lease ? { lease } : {}), ...(service ? { service } : {}), ...(raw.priceSource ? { priceSource: String(raw.priceSource).trim() } : {}), ...(priceComponents ? { priceComponents } : {}) };
   });
 }
 
@@ -58,7 +87,8 @@ export function currentTradeOffers(state: Ledger): TradeOffer[] {
 export function offerAlreadySettled(offer: Ledger, state: Ledger) {
   const sourceTurn = String(offer.sourceTurnId || "").replace(/^reconcile:/, "");
   const bundle = (value: Ledger) => (Array.isArray(value.items) ? value.items.filter(isRecord) : [])
-    .map(item => `${key(item.name)}:${Number(item.qty)}`).sort().join("|");
+    .map(item => `${key(item.name)}:${Number(item.qty)}`).sort().join("|")
+    + (isRecord(value.service) ? `|service:${key(value.service.kind)}:${key(value.service.title)}:${key(value.service.destination)}` : "");
   const receipts = Array.isArray(state.tradeReceipts) ? state.tradeReceipts.filter(isRecord) : [];
   if (receipts.some(receipt => (offer.id && receipt.offerId === offer.id)
     || (offer.acceptedTurnId && receipt.turnId === offer.acceptedTurnId)
@@ -116,7 +146,7 @@ function namedMerchantOffers(offers: TradeOffer[], action: string): TradeOffer[]
 }
 
 /** Only affirmative acceptance of an established offer can spend credits. */
-export function planConversationTrade(action: string, state: Ledger, turnId: string, acceptedOfferId?: string | null): ConversationTrade | null {
+export function planConversationTrade(action: string, state: Ledger, turnId: string, acceptedOfferId?: string | null, character?: Ledger | null): ConversationTrade | null {
   const receipts = Array.isArray(state.tradeReceipts) ? state.tradeReceipts.filter(isRecord) : [];
   if (receipts.some((receipt) => receipt.turnId === turnId)) return { status: "already-committed" };
   const text = positiveActionText(action).replace(/[’]/g, "'");
@@ -130,18 +160,20 @@ export function planConversationTrade(action: string, state: Ledger, turnId: str
   // ambiguity, not a veto over that interpretation. Consent guards still apply.
   const purchaseQuestion = /\b(?:can|could|may|should)\s+i\s+(?:buy|purchase|take|grab|pay)\b/i.test(text);
   const inquiryOnly = /^["“']?\s*(?:can|could|may|should)\s+i\s+(?:buy|purchase|take|grab|pay)\b[^.!?\n]*\?\s*["”']?\s*$/i.test(text);
-  if (inquiryOnly || (!acceptedOfferId && (!accepts || purchaseQuestion))) return null;
+  const booksService = /\b(?:book|reserve|hire|charter|commission)\b/i.test(text)
+    && !/\b(?:how|whether|what|where|when|could|can|may|should|quote|estimate)\b[^.!?]{0,90}\b(?:book|reserve|hire|charter|commission)\b/i.test(text);
+  if (inquiryOnly || (!acceptedOfferId && (!(accepts || booksService) || purchaseQuestion))) return null;
   const acceptanceClause = text.replace(/^["“']\s*/, "")
     .split(/[.!?\n"“”]|\b(?:and\s+)?(?:i\s+ask|i\s+say|ask\s+(?:if|whether))\b/i)[0];
   if (/\b(?:if|unless|provided|on condition|only when)\b|\b(?:after|once|when|until)\b[^.!?]{0,100}\b(?:agrees?|proves?|confirms?|verifies?|accepts?|discount|refund|lower)\b/i.test(acceptanceClause)) return null;
   if (!/\b(?:buy|purchase|pay|accept|sold)\b/i.test(text) && /\b(?:take\s+(?:a\s+look|stock|note)|examine|inspect|try\s+on|check\s+the\s+fit)\b/i.test(text)) return null;
   const offers = currentTradeOffers(state);
   if (!offers.length) return null;
-  const refersToWholeOffer = isSoldAcceptance || /\b(?:take|buy|purchase|accept)\s+(?:it|them|both|(?:the|that) (?:offer|deal|bundle|outfit)|everything|(?:the\s+)?[^.!?\n]{1,100}\boffer)\b|\b(?:pay|hand over)\s+(?:the\s+)?(?:quoted|asking|agreed)\s+(?:price|credits|amount)\b/i.test(text);
+  const refersToWholeOffer = isSoldAcceptance || (booksService && offers.filter(offer => Boolean(offer.service)).length === 1) || /\b(?:take|buy|purchase|accept)\s+(?:it|them|both|(?:the|that) (?:offer|deal|bundle|outfit)|everything|(?:the\s+)?[^.!?\n]{1,100}\boffer)\b|\b(?:pay|hand over)\s+(?:the\s+)?(?:quoted|asking|agreed)\s+(?:price|credits|amount)\b/i.test(text);
   const statedPayment = /\b(?:pay|hand over|offer|transfer|charge|debit)\s+(?:(?:the|exactly|only)\s+)*([\d,]+)\s*(?:credits?)?\b|\b(?:buy|purchase)\b[^.!?]{0,140}\bfor\s+([\d,]+)\s*(?:credits?)?\b/i.exec(text);
   const payment = statedPayment ? Number(String(statedPayment[1] || statedPayment[2]).replace(/,/g, "")) : null;
   let matches = offers.filter((offer) => acceptedOfferId ? offer.id === acceptedOfferId
-    : refersToWholeOffer || offer.items.every((item) => matchesItem(text, item)) || Boolean(offer.lease && mentions(text, offer.lease.propertyName)));
+    : (refersToWholeOffer && (!booksService || Boolean(offer.service))) || Boolean(offer.service && (mentions(text, offer.service.title) || Boolean(offer.service.destination && mentions(text, offer.service.destination)))) || Boolean(offer.items.length && offer.items.every((item) => matchesItem(text, item))) || Boolean(offer.lease && mentions(text, offer.lease.propertyName)));
   const sellers = namedMerchantOffers(matches, text);
   if (sellers) {
     if (!sellers.length) return { status: "unavailable", reason: "That merchant has not made a matching saved offer. Confirm their terms before paying." };
@@ -153,6 +185,15 @@ export function planConversationTrade(action: string, state: Ledger, turnId: str
   }
   if (matches.length !== 1) return matches.length > 1 ? { status: "ambiguous", reason: "More than one offer matches. Confirm which merchant's offer you accept." } : null;
   const offer = matches[0];
+  if (offer.service) {
+    if (offer.service.minLevel && (!character || Number(character.level) < offer.service.minLevel))
+      return { status: "unavailable", offer, reason: `Requires Level ${offer.service.minLevel}. Nothing was booked or charged.` };
+    if (offer.service.requiredFlag) {
+      const flags = Array.isArray(state.flags) ? state.flags : [];
+      if (!flags.some(flag => key(isRecord(flag) ? flag.name || flag.id || flag.flag : flag) === key(offer.service!.requiredFlag)))
+        return { status: "unavailable", offer, reason: `Requires ${offer.service.requiredFlag}. Nothing was booked or charged.` };
+    }
+  }
   if (offer.lease && (Array.isArray(state.properties) ? state.properties.filter(isRecord) : []).some(property => {
     const lease = isRecord(property.lease) ? property.lease : null;
     return property.tenure === "leased" && property.status === "active" && lease
@@ -171,7 +212,9 @@ export function planConversationTrade(action: string, state: Ledger, turnId: str
 export function conversationTradeInstruction(trade: ConversationTrade | null) {
   if (!trade) return "";
   if (trade.status === "accepted" && trade.offer) {
-    return `AUTHORITATIVE MERCHANT TRANSACTION: The player accepted ${trade.offer.sellerName}'s saved offer${trade.offer.sellerSpecies ? ` (${trade.offer.sellerSpecies})` : ""}. Debit exactly ${trade.offer.totalCredits} galactic credits and add exactly ${JSON.stringify(trade.offer.items)}. ${trade.offer.lease ? `LEASE: ${JSON.stringify(trade.offer.lease)}. The server grants this tenancy and access with the receipt, NOT ownership. The deposit is held by the landlord and does not increase player credits. Do not emit propertyAdd; the server builds the exact lease record.` : ""} This ordinary agreed-price exchange requires no Saga check. Preserve this merchant's identity and answer any accompanying declared dialogue in the same scene. Do not equip items, change clothing, buy anything else, give discounts, or choose further actions unless explicitly declared. Narrate the payment and handover as completed; the server commits them together.`;
+    return `AUTHORITATIVE MERCHANT TRANSACTION: The player accepted ${trade.offer.sellerName}'s saved offer${trade.offer.sellerSpecies ? ` (${trade.offer.sellerSpecies})` : ""}. Debit exactly ${trade.offer.totalCredits} galactic credits. ${trade.offer.service
+      ? `Register the paid ${trade.offer.service.kind} contract ${JSON.stringify(trade.offer.service)}; do not add carried inventory, start the journey, teleport or advance time just for booking.`
+      : `Add exactly ${JSON.stringify(trade.offer.items)} to inventory.`} ${trade.offer.lease ? `LEASE: ${JSON.stringify(trade.offer.lease)}. The server grants this tenancy and access with the receipt, NOT ownership. The deposit is held by the landlord and does not increase player credits. Do not emit propertyAdd; the server builds the exact lease record.` : ""} This ordinary agreed-price exchange requires no Saga check. Preserve this merchant's identity and answer any accompanying declared dialogue in the same scene. Do not equip items, change clothing, buy anything else, give discounts, or choose further actions unless explicitly declared. Narrate the payment and handover as completed; the server commits them together.`;
   }
   return `AUTHORITATIVE MERCHANT TRANSACTION: ${trade.reason || "This offer is already committed."} No new payment or item handover occurs. Give the concrete in-world reason and respond to any accompanying dialogue. Do not block the conversation or invent a completed purchase.`;
 }
@@ -181,7 +224,7 @@ export function reconcileConversationTradeDelta(delta: Ledger | null, trade: Con
   if (!trade) return delta;
   if (trade.status === "accepted" && trade.offer) return {
     ...(delta || {}), credits: -trade.offer.totalCredits, creditsCriminal: 0,
-    inventoryAdd: trade.offer.items.map((item) => ({ ...item })), inventoryRemove: [],
+    inventoryAdd: trade.offer.service ? [] : trade.offer.items.map((item) => ({ ...item })), inventoryRemove: [],
     ...(trade.offer.lease ? { propertyAdd: [] } : {}),
   };
   return { ...(delta || {}), credits: 0, creditsCriminal: 0, inventoryAdd: [], inventoryRemove: [] };
@@ -193,7 +236,7 @@ export function isVerifiedConversationTradeDelta(delta: Ledger, trade: Conversat
     || (Array.isArray(delta.inventoryRemove) && delta.inventoryRemove.length > 0)) return false;
   const items = Array.isArray(delta.inventoryAdd) ? delta.inventoryAdd.filter(isRecord) : [];
   const itemKeys = (list: Ledger[]) => list.map(item => `${key(item.name)}:${Number(item.qty)}:${key(item.tag || "gear")}`).sort();
-  return JSON.stringify(itemKeys(items)) === JSON.stringify(itemKeys(trade.offer.items));
+  return JSON.stringify(itemKeys(items)) === JSON.stringify(itemKeys(trade.offer.service ? [] : trade.offer.items));
 }
 
 /** Called only with a finalized delta, inside the same authoritative save. */
@@ -212,20 +255,30 @@ export function commitConversationTradeState(state: Ledger, delta: Ledger | null
     if (offers.some((existing) => existing.id === id)) return;
     // Updated prices supersede only the same merchant's same bundle, retaining
     // unrelated offers so a conversation never silently chooses a merchant.
-    const bundle = offer.items.map((item) => `${key(item.name)}:${item.qty}`).sort().join("|");
+    const bundle = offer.items.map((item) => `${key(item.name)}:${item.qty}`).sort().join("|") + (offer.service ? `|service:${key(offer.service.kind)}:${key(offer.service.title)}:${key(offer.service.destination)}` : "");
     offers = offers.map((existing) => key(existing.sellerName) === key(offer.sellerName) && key(existing.location) === key(state.location)
       && Array.isArray(existing.items) && existing.items.filter(isRecord).map((item) => `${key(item.name)}:${item.qty}`).sort().join("|") === bundle
+      && (offer.service ? isRecord(existing.service) && key(existing.service.title) === key(offer.service.title) && key(existing.service.destination) === key(offer.service.destination) : !existing.service)
       && existing.status === "open" ? { ...existing, status: "superseded" } : existing);
     offers.push({ ...offer, id, location: String(state.location || ""), sourceTurnId: turnId, status: "open" });
   });
-  const receipt = trade?.status === "accepted" && trade.offer ? [{ turnId, offerId: trade.offer.id, sellerName: trade.offer.sellerName, location: trade.offer.location, totalCredits: trade.offer.totalCredits, items: trade.offer.items.map((item) => ({ ...item })), ...(trade.offer.lease ? { lease: { ...trade.offer.lease } } : {}) }] : [];
+  const receipt = trade?.status === "accepted" && trade.offer ? [{ turnId, offerId: trade.offer.id, sourceTurnId: trade.offer.sourceTurnId, sellerName: trade.offer.sellerName,
+    location: trade.offer.location, totalCredits: trade.offer.totalCredits, items: trade.offer.items.map((item) => ({ ...item })),
+    ...(trade.offer.lease ? { lease: { ...trade.offer.lease } } : {}), ...(trade.offer.service ? { service: { ...trade.offer.service } } : {}) }] : [];
+  const contracts = Array.isArray(state.serviceContracts) ? state.serviceContracts.filter(isRecord) : [];
+  const contract = trade?.status === "accepted" && trade.offer?.service ? {
+    id: `service:${trade.offer.id}`, offerId: trade.offer.id, turnId, provider: trade.offer.sellerName,
+    purchasedAt: String(state.location || ""), status: "booked", priceCredits: trade.offer.totalCredits, terms: { ...trade.offer.service },
+  } : null;
   const lease = trade?.status === "accepted" ? trade.offer?.lease : null;
   const properties = Array.isArray(state.properties) ? state.properties.filter(isRecord) : [];
   const leaseRecord = lease ? { id: `lease:${trade!.offer!.id}`, name: lease.propertyName, location: lease.propertyLocation,
     type: "Residential lease", tenure: "leased", status: "active", baseValue: 0, income: 0, upkeep: 0,
     lease: { ...lease, offerId: trade!.offer!.id, startedAtCampaignMinute: Number(state.campaignTimeMinutes || 0),
       endsAtCampaignMinute: Number(state.campaignTimeMinutes || 0) + lease.termMonths * 30 * 24 * 60 } } : null;
-  return { ...state, ...(leaseRecord ? { properties: [...properties, leaseRecord] } : {}), tradeOffers: offers.slice(-80), tradeReceipts: [...priorReceipts, ...receipt].slice(-500) };
+  return { ...state, ...(leaseRecord ? { properties: [...properties, leaseRecord] } : {}),
+    ...(contract ? { serviceContracts: [...contracts, contract] } : {}),
+    tradeOffers: offers.slice(-80), tradeReceipts: [...priorReceipts, ...receipt].slice(-500) };
 }
 
 /** Transaction preview for tests and other trusted controllers; persist once. */
@@ -233,7 +286,7 @@ export function applyConversationPurchase(snapshot: DatapadSnapshot, action: str
   const trade = planConversationTrade(action, snapshot.gameState, turnId);
   if (trade?.status !== "accepted" || !trade.offer) return snapshot;
   const inventory = Array.isArray(snapshot.gameState.inventory) ? snapshot.gameState.inventory.filter(isRecord).map((item) => ({ ...item })) : [];
-  for (const item of trade.offer.items) {
+  for (const item of trade.offer.service ? [] : trade.offer.items) {
     const existing = inventory.find((entry) => key(entry.name) === key(item.name));
     if (existing) existing.qty = Number(existing.qty || 0) + item.qty;
     else inventory.push({ ...item, id: `trade:${turnId}:${inventory.length}` });
