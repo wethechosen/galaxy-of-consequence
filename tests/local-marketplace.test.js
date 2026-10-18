@@ -2,6 +2,13 @@ import { describe, expect, it } from "vitest";
 import { localMarket, localMarketProfile, localSellQuote, localTradeAccess } from "../original/lib/localMarketplace";
 
 describe("place- and merchant-aware marketplace", () => {
+  it("uses published Saga baselines for a medpac and standard blaster pistol", () => {
+    const market = localMarket("Bonadan — Alien Quarter district street");
+    expect(market.goods.find(good => good.id === "medpac").price).toBe(100);
+    expect(market.goods.find(good => good.id === "blaster").price).toBe(500);
+  });
+
+
   it("uses retail venues instead of a securities exchange and separates merchant stock", () => {
     const market = localMarket("Coruscant — Level 512 market district");
     expect(market.area).toMatchObject({ planet: "Coruscant", level: "512", available: true });
