@@ -117,9 +117,9 @@ export function advanceNpcEarnedXp(snapshot:DatapadSnapshot,npc:NpcTestSubject):
   throw Error("Exceeded maximum player advancement rounds");
 }
 /** Preserves completed story/ledger turns. Starting XP is audited separately from XP earned during tests. */
-export function reconstructCoreNpc(snapshot:DatapadSnapshot,npc:NpcTestSubject):DatapadSnapshot{
+export function reconstructCoreNpc(snapshot:DatapadSnapshot,npc:NpcTestSubject,explicitTier?:Tier):DatapadSnapshot{
   const alien = GOC_ALIEN_STORY_RATINGS.find(entry=>entry.id===npc.id);
-  const tier=NPC_HISTORICAL_TIERS[npc.id] || (alien && sagaSpecies(npc.species) ? {level:alien.level,classId:alien.heroicClass.toLowerCase() as Heroic,reason:"GM-designed 150 ABY alien prior career with verified Saga Core species foundation"}:null);
+  const tier=explicitTier || NPC_HISTORICAL_TIERS[npc.id] || (alien && sagaSpecies(npc.species) ? {level:alien.level,classId:alien.heroicClass.toLowerCase() as Heroic,reason:"GM-designed 150 ABY alien prior career with verified Saga Core species foundation"}:null);
   if(!tier)return snapshot;
   if(!snapshot.character)throw Error("NPC has no saved character");
   if(!sagaSpecies(npc.species))throw Error("Nonhuman racial traits require species rules validation");
