@@ -1,10 +1,12 @@
 // Campaign retail prices, not securities quotes or a claim about rulebook prices.
 // Availability is derived from the saved place; selecting a merchant never travels.
+// Published Saga Edition equipment baselines; local markup remains a separate, visible factor.
+// Core Rulebook: medpac 100 cr, standard blaster pistol 500 cr.
 const GOODS = [
-  { id: "medpac", name: "Medpac", category: "Medical", base: 200, venue: "bazaar" },
+  { id: "medpac", name: "Medpac", category: "Medical", base: 100, venue: "bazaar" },
   { id: "comlink", name: "Encrypted comlink", category: "Communications", base: 350, venue: "bazaar" },
   { id: "slicer-kit", name: "Slicing kit", category: "Gear", base: 800, venue: "guild" },
-  { id: "blaster", name: "Blaster pistol", category: "Weapon", base: 750, venue: "guild" },
+  { id: "blaster", name: "Blaster pistol", category: "Weapon", base: 500, venue: "guild" },
   { id: "macrobinoculars", name: "Macrobinoculars", category: "Reconnaissance", base: 450, venue: "bazaar" },
   { id: "survival-kit", name: "Wilderness survival kit", category: "Survival", base: 600, venue: "guild" },
   { id: "civilian-tunic", name: "Civilian tunic", category: "Clothing", base: 50, venue: "bazaar" },
