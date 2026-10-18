@@ -3,6 +3,7 @@ import type {DatapadSnapshot} from "./datapad-save";
 import {DMIR_STORY_NPCS} from "./dmir-story-npcs";
 import {NPC_TEST_ROSTER} from "./npc-test-roster";
 import {CAMPAIGN_NPCS_150_ABY} from "./npc-canon-roster";
+import {CHARACTER_VISUAL_DOSSIERS} from "./character-visual-dossiers";
 type Row=Record<string,unknown>;
 const record=(v:unknown):v is Row=>!!v&&typeof v==="object"&&!Array.isArray(v);
 const text=(v:unknown,n=220)=>typeof v==="string"?v.trim().slice(0,n):"";
@@ -21,7 +22,7 @@ function displayNpc(v:Row){
     name,species:text(v.species,75)||known?.species||"Unknown",
     role:text(v.role,110)||known?.role||"Character",
     homeworld:text(v.homeworld,110)||known?.homeworld||"",
-    appearance:text(v.appearance,320)||known?.appearance||"",
+    appearance:text(v.appearance,320)||CHARACTER_VISUAL_DOSSIERS[known?.id||""]?.description||known?.appearance||"",
     background:text(v.publicBio,500),imageHeadshot:text(v.imageHeadshot,2000),
     imageFullBody:text(v.imageFullBody,2000)};
 }

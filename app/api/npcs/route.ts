@@ -8,6 +8,8 @@ import {npcMechanics} from "@/lib/npc-mechanics";
 import {SERALYTH_ID,SERALYTH_SAGA_SHEET,SERALYTH_GM_DOSSIER,SERALYTH_HAPES_OPENING} from "@/lib/seralyth-vhaelor";
 import {npcVisualReference} from "@/lib/npc-visual-reference";
 import {npcVerifiedLocalEnding,NPC_VERIFIED_LOCAL_ENDINGS} from "@/lib/npc-audited-ending-ledger";
+import {CHARACTER_VISUAL_DOSSIERS} from "@/lib/character-visual-dossiers";
+import {CHARACTER_REFERENCE_SHEETS} from "@/lib/character-reference-sheets";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 /** GM PRIVATE: character containers, plots and confidential facts. */
@@ -19,7 +21,7 @@ export async function GET(request:Request){
       ...NPC_TEST_ROSTER.filter(n=>n.id!=="kelvek").map(n=>({
         id:n.id,name:n.name,species:n.species,homeworld:n.homeworld,
         designation:n.role,era:n.yearABY,category:"test",description:n.background,
-        objective:n.objective,appearance:n.appearance,
+        objective:n.objective,appearance:n.appearance,visualDossier:CHARACTER_VISUAL_DOSSIERS[n.id]||null,
         visualReference:npcVisualReference(n.id,n.appearance,n.role,n.species),
         visualReferenceType:"provisional-vector-study",
         playthroughStatus:npcVerifiedLocalEnding(n.id)?"goal_complete":"unverified",
@@ -31,6 +33,7 @@ export async function GET(request:Request){
         objective:n.objective,secret:n.confidential,eraCorrection:n.revision,
         visualReference:npcVisualReference(n.id,n.biography,n.role150,n.species),
         visualReferenceType:"provisional-vector-study",
+        visualDossier:CHARACTER_VISUAL_DOSSIERS[n.id]||null,
         playthroughStatus:"unverified",gmOnly:true,
       })),
       ...DMIR_STORY_NPCS.map(n=>({
@@ -48,7 +51,7 @@ export async function GET(request:Request){
     ];
     return NextResponse.json({roster:roster.map(n=>({...n,mechanics:npcMechanics(n.name)})),
       endingCountVerified:Object.keys(NPC_VERIFIED_LOCAL_ENDINGS).length,
-      endingEvidenceScope:"audited-isolated-live-playthroughs-not-hosted-saves",visibility:"gm-only"},
+      endingEvidenceScope:"audited-isolated-live-playthroughs-not-hosted-saves",referenceSheets:CHARACTER_REFERENCE_SHEETS,visibility:"gm-only"},
       {headers:{"Cache-Control":"private, no-store"}});
   }catch{
     return NextResponse.json({error:"GM authorization required."},{status:403,
