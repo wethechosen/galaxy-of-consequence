@@ -25,7 +25,8 @@ export const NPC_HISTORICAL_TIERS:Readonly<Record<string,Tier>> = {
   "torin-kade":{level:3,classId:"scoundrel",reason:"Corellian shipyard claims technician"},
   "bren-varo":{level:3,classId:"scout",reason:"Socorro route guide"},
 };
-const choose=(options:Array<{id:string}>,priority:string[])=>priority.find(id=>options.some(x=>x.id===id))||options[0]?.id||"";
+const choose=(options:Array<{id:string}>,priority:string[])=>priority.find(id=>options.some(x=>x.id===id))||
+  options.find(x=>!["linguist","skill-training","skill-focus","force-training"].includes(x.id))?.id||options[0]?.id||"";
 const languages=(c:Record<string,unknown>,required:number)=>{
   const automatic=sagaSpecies(c.species)?.languages||[];
   const existing=new Set([...automatic,...String(c.languages||"").split(",")].map(v=>v.trim().toLowerCase()));
