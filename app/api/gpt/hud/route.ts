@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { bridgeGet } from "../../../../lib/datapad-bridge";
 import { controllerAccountId, controllerError, requireGptController } from "../../../../lib/gpt-controller-auth";
 import { advancementGate } from "@/original/lib/sagaAdvancement";
+import { playerVisualContract } from "@/lib/gpt-visual-contract";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +27,7 @@ export async function GET(request: Request) {
     } };
     return NextResponse.json({
       ...result,
+      interface: playerVisualContract(character.name),
       advancement: { ...advancementGate(result.character || {}), dossierUrl: "https://galaxy-local.vercel.app/character#advancement" },
       controllerMode: "hud-read-only",
       instruction: "Use this as authoritative web HUD state. Do not infer changes from this read.",

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 296" role="img" aria-labelledby="title description">
+<title id="title">D'mir Holloràn</title><desc id="description">Stylized character headshot: dark brown skin, twin braided-back locs, small facial scars and amber Sith eyes.</desc>
+<defs>
+<linearGradient id="bg" x2="1" y2="1"><stop stop-color="#07141c"/><stop offset="1" stop-color="#19121b"/></linearGradient>
+<linearGradient id="skin" x1="0" x2="1"><stop stop-color="#29130f"/><stop offset=".52" stop-color="#704732"/><stop offset="1" stop-color="#392018"/></linearGradient>
+<linearGradient id="coat" x2="1" y2="1"><stop stop-color="#111f29"/><stop offset="1" stop-color="#03090e"/></linearGradient>
+<linearGradient id="hair" x1="0" x2="1"><stop stop-color="#050708"/><stop offset=".5" stop-color="#1b1617"/><stop offset="1" stop-color="#07090b"/></linearGradient>
+<radialGradient id="halo"><stop stop-color="#ae713d" stop-opacity=".34"/><stop offset="1" stop-color="#122430" stop-opacity="0"/></radialGradient>
+</defs>
+<rect width="256" height="296" rx="12" fill="url(#bg)"/>
+<circle cx="133" cy="106" r="108" fill="url(#halo)"/>
+<path d="M6 282Q25 224 65 211L100 202 158 203 204 220Q234 243 250 294H6Z" fill="url(#coat)" stroke="#6c563b" stroke-width="1.6"/>
+<path d="M100 189V222L127 255 156 219V187" fill="url(#skin)" stroke="#271710" stroke-width="3"/>
+<path d="M93 217L127 263 160 216 173 228 131 288 81 229Z" fill="#0d1118" stroke="#99764a" stroke-width="2"/>
+<path d="M72 226L101 214 129 281 110 296H56Z M183 222L156 215 129 281 150 296H215Z" fill="url(#coat)" stroke="#8a6b48" stroke-width="1.6"/>
+<path d="M111 230L126 250 141 230" stroke="#cca36c" stroke-width="2" fill="none"/>
+<path d="M66 118C60 76 72 40 106 28Q139 12 178 45Q202 76 193 125L178 167 160 192Q129 207 103 189L80 160Z" fill="url(#skin)" stroke="#24120f" stroke-width="3"/>
+<path d="M66 121Q43 94 57 63Q67 27 112 25Q169 15 192 54Q205 74 193 119L179 91 163 55Q129 78 90 76L78 110Z" fill="url(#hair)"/>
+<path d="M63 72Q43 99 69 148M74 48Q55 91 79 157M83 34Q81 63 97 79M164 41Q179 62 185 116M176 46Q206 93 189 153" stroke="#171a1b" stroke-width="13" fill="none" stroke-linecap="round"/>
+<path d="M63 72Q43 99 69 148M74 48Q55 91 79 157M83 34Q81 63 97 79M164 41Q179 62 185 116M176 46Q206 93 189 153" stroke="#49413a" stroke-width="2.5" fill="none" opacity=".58"/>
+<path d="M83 104Q103 93 119 103M144 102Q161 93 176 101" fill="none" stroke="#1a100c" stroke-width="6" stroke-linecap="round"/>
+<path d="M87 116Q101 107 118 115Q102 126 87 116ZM145 114Q160 106 175 112Q160 124 145 114Z" fill="#210d0b" stroke="#160c0b" stroke-width="2"/>
+<path d="M91 116Q103 111 116 115M148 114Q160 110 172 113" stroke="#dfb56e" stroke-width="2" fill="none"/>
+<ellipse cx="104" cy="116" rx="3" ry="5" fill="#edb442"/><ellipse cx="160" cy="114" rx="3" ry="5" fill="#edb442"/>
+<path d="M129 116L120 152Q129 159 140 151" fill="none" stroke="#2e1710" stroke-width="3" stroke-linecap="round"/>
+<path d="M107 173Q128 179 148 170" stroke="#27110f" stroke-width="3" fill="none" stroke-linecap="round"/>
+<path d="M161 119L169 132M158 139L168 148M92 141L86 149" stroke="#b18b70" stroke-width="1.5" opacity=".82"/>
+<path d="M13 13H45M13 13V45M243 13H211M243 13V45M13 283H45M13 283V251M243 283H211M243 283V251" stroke="#a88753" stroke-width="1.2" opacity=".75" fill="none"/>
+<path d="M127 5V16 M127 280V292" stroke="#a88753" stroke-width="1.5"/>
+</svg>

@@ -66,3 +66,25 @@ button, input, select, textarea { font-family: var(--font-body), sans-serif; }
 @media (max-width: 760px) { .datapad-shell.game-ui { padding: 8px; gap: 8px; }.game-ui .game-header { min-height: 62px; padding: 10px 12px; border-radius: 14px; flex-wrap: wrap; }.game-ui .menu-toggle { display: inline-flex; padding: 6px; }.game-ui .wordmark { font-size: 13px; flex: 1; white-space: normal; }.game-ui .character-link { display: none; }.game-ui .header-action { font-size: 8px; padding: 6px 8px; letter-spacing: .06em; }.game-body { display: block; position: relative; }.game-nav { position: absolute; z-index: 20; left: 0; top: 0; bottom: 0; width: 242px; display: none; background: #0b101bf7; box-shadow: 30px 0 50px #0009; }.game-nav.is-open { display: flex; }.game-content { height: 100%; border-radius: 14px; }.vitals-strip { padding: 12px 16px; gap: 10px 18px; flex-wrap: wrap; min-height: 65px; font-size: 10px; }.vitals-strip .era-chip { padding: 4px 8px; }.game-ui .workspace { padding: 20px 16px; }.game-ui .module-heading { margin-bottom: 22px; }.game-ui h2 { font-size: 23px; }.scene-heading { align-items: flex-start; }.scene-heading .request-state { font-size: 7px; max-width: 100px; }.gm-narrative-panel { padding: 23px 18px; }.game-ui .scene-message h2 { font-size: 22px; }.scene-composer { padding: 12px; }.composer-note { align-items: flex-start; }.composer-note span { font-size: 9px; }.game-ui .composer-note button { font-size: 8px; white-space: nowrap; }.terminal-status { padding: 8px 14px; font-size: 9px; }.terminal-status span:last-child { display: none; }.market-grid { gap: 12px; }.market-details { padding: 13px; }.game-ui .market-details h2 { font-size: 16px; }.market-art { height: 125px; }.market-price { flex-direction: column; align-items: start; }.entry-form, .comms-layout, .dossier-grid { grid-template-columns: 1fr; }.player-hud-stats { grid-template-columns: repeat(3,minmax(50px,1fr)); }.player-hud-context { grid-template-columns: 1fr; }.portrait-grid { gap: 12px; }.portrait-slot { min-height: 160px; text-align: center; padding: 12px; }.data-panel-body { padding: 16px; }.data-panel h3 small { display: block; margin: 3px 0 0; }.access-screen { padding: 25px 18px; gap: 30px; }.access-brand { font-size: 13px; }.access-card { padding: 28px 24px; }.access-screen h1 { font-size: 23px; } }
 @media (max-width: 420px) { .market-grid { grid-template-columns: 1fr; }.market-art { height: 150px; }.market-price { flex-direction: row; }.portrait-grid { grid-template-columns: 1fr; }.market-toolbar { gap: 10px; }.market-toolbar small { font-size: 9px; } }
 @media (prefers-reduced-transparency: reduce) { .glass, .market-card, .data-panel { background: #0b101b; backdrop-filter: none; } }
+
+/* Incremental character portrait / GM-authoritative HUD enhancement. Existing layout and theme retained. */
+.game-ui .character-link { display: inline-flex; align-items: center; gap: 9px; }
+.game-ui .character-headshot-small { width: 34px; height: 34px; flex: 0 0 34px; border-radius: 8px; object-fit: cover; border: 1px solid #8a6645; background: #09131d; }
+.game-ui .hud-character-heading { display: flex; align-items: center; gap: 18px; margin-bottom: 12px; }
+.game-ui .hud-character-heading h2 { margin: 0; }
+.game-ui .character-headshot { width: 98px; height: 114px; object-fit: cover; flex: 0 0 98px; border: 1px solid #a47b45; border-radius: 10px; background: #0b121b; }
+.game-ui .hud-health { margin: 14px 0; padding: 12px 14px; border: 1px solid #214455; border-radius: 10px; background: #06121a; }
+.game-ui .hud-health-label { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 9px; font-size: 11px; letter-spacing: .08em; }
+.game-ui .hud-health-label strong { letter-spacing: normal; font-size: 16px; }
+.game-ui .hud-health-track { overflow: hidden; width: 100%; height: 9px; background: #242f39; border-radius: 20px; }
+.game-ui .hud-health-track > span { display: block; height: 100%; background: linear-gradient(90deg,#2e7867,#69ae92); border-radius: inherit; transition: width 200ms ease; }
+.game-ui .hud-health small { display: block; margin-top: 7px; color: #9c9daa; }
+.game-ui .player-hud-identity { display: flex; align-items: center; gap: 12px; }
+.game-ui .player-hud-identity-text { min-width: 0; }
+.game-ui .player-hud-portrait { width: 72px; height: 82px; border-radius: 8px; border: 1px solid #886644; object-fit: cover; flex: 0 0 72px; }
+@media (max-width: 540px) {
+  .game-ui .character-headshot-small { width: 28px; height: 28px; flex-basis: 28px; }
+  .game-ui .hud-character-heading { gap: 12px; }
+  .game-ui .character-headshot { width: 78px; height: 92px; flex-basis: 78px; }
+  .game-ui .player-hud-portrait { width: 54px; height: 64px; flex-basis: 54px; }
+}

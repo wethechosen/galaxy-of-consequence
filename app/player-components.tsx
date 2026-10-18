@@ -12,7 +12,7 @@ export function PlayerHUD({ character, location }: { character: CharacterState; 
     ["FORCE", character.forcePoints], ["DESTINY", character.destinyPoints], ["DSS", character.darkSideScore],
   ];
   return <section className="player-hud" aria-label="Player status">
-    <div className="player-hud-identity"><span className="eyebrow"><Sparkles size={14}/> PLAYER DOSSIER</span><h2>{character.name}</h2><p>{character.species} · {character.heroicClass}</p></div>
+    <div className="player-hud-identity">{/d['’]?mir/i.test(character.name) && <img className="player-hud-portrait" src="/images/dmir-headshot.svg" alt="Headshot of D'mir Holloràn" />}<div className="player-hud-identity-text"><span className="eyebrow"><Sparkles size={14}/> PLAYER DOSSIER</span><h2>{character.name}</h2><p>{character.species} · {character.heroicClass}</p></div></div>
     <div className="player-hud-stats">{stats.map(([label, value]) => <div key={label}><small>{label}</small><strong>{value}</strong></div>)}</div>
     <div className="player-hud-context"><span><MapPin size={15}/>{location}</span><span><Wallet size={15}/>{character.credits.toLocaleString()}cr</span><span><Heart size={15}/>Condition {character.condition}</span></div>
   </section>;
