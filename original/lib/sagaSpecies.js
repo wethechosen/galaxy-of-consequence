@@ -27,7 +27,13 @@ const species = {
   muun:{name:"Muun",adjustments:{intelligence:4,strength:-2},languages:["Basic","Muun"],defenses:{will:2},traits:["GOC homebrew: Impose Order swift action once per encounter, allies within 12 squares may reactively move up to half speed","Iron Will +2"],source:"GOC homebrew (Muun adaptation; published examples use similar traits)"},
 
 };
-export function sagaSpecies(name){return species[String(name||"").toLowerCase().replace(/[^a-z]/g,"")]||null;}
+/** Cultural upbringing is not ancestry: no Chiss racial abilities for a Kiffar raised by Chiss. */
+export function sagaSpecies(name){
+  const label=String(name||"").toLowerCase().trim();
+  const explicitAliases={"chiss-raised kiffar":"kiffar","human (hapan)":"human","human (haruun kal)":"human","hapan human":"human","human (cybernetics)":"human"};
+  const normalized=explicitAliases[label]||label.replace(/[^a-z]/g,"");
+  return species[normalized]||null;
+}
 export function speciesTraitContext(character){
   const profile=sagaSpecies(character?.species);
   return profile?{...profile,ruleset:"Saga Edition",source:profile.source||"Saga Edition Core Rulebook",mechanicalBoundary:"Passive bonuses require a validated species foundation. Optional rerolls require an explicit choice and a server-owned original roll; never reroll silently. Culture and physiology do not determine individual personality or grant Force training."}:null;
