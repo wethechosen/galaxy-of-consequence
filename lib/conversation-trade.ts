@@ -172,7 +172,8 @@ export function planConversationTrade(action: string, state: Ledger, turnId: str
   const refersToWholeOffer = isSoldAcceptance || (booksService && offers.filter(offer => Boolean(offer.service)).length === 1) || /\b(?:take|buy|purchase|accept)\s+(?:it|them|both|(?:the|that) (?:offer|deal|bundle|outfit)|everything|(?:the\s+)?[^.!?\n]{1,100}\boffer)\b|\b(?:pay|hand over)\s+(?:the\s+)?(?:quoted|asking|agreed)\s+(?:price|credits|amount)\b/i.test(text);
   const statedPayment = /\b(?:pay|hand over|offer|transfer|charge|debit)\s+(?:(?:the|exactly|only)\s+)*([\d,]+)\s*(?:credits?)?\b|\b(?:buy|purchase)\b[^.!?]{0,140}\bfor\s+([\d,]+)\s*(?:credits?)?\b/i.exec(text);
   const payment = statedPayment ? Number(String(statedPayment[1] || statedPayment[2]).replace(/,/g, "")) : null;
-  let matches = offers.filter((offer) => acceptedOfferId ? offer.id === acceptedOfferId
+  const requestedId = /\boffer\s+id\s+([a-z0-9:._-]+)/i.exec(text)?.[1];
+  let matches = offers.filter((offer) => acceptedOfferId ? offer.id === acceptedOfferId : requestedId ? offer.id === requestedId
     : (refersToWholeOffer && (!booksService || Boolean(offer.service))) || Boolean(offer.service && (mentions(text, offer.service.title) || Boolean(offer.service.destination && mentions(text, offer.service.destination)))) || Boolean(offer.items.length && offer.items.every((item) => matchesItem(text, item))) || Boolean(offer.lease && mentions(text, offer.lease.propertyName)));
   const sellers = namedMerchantOffers(matches, text);
   if (sellers) {
@@ -283,7 +284,7 @@ export function commitConversationTradeState(state: Ledger, delta: Ledger | null
 
 /** Transaction preview for tests and other trusted controllers; persist once. */
 export function applyConversationPurchase(snapshot: DatapadSnapshot, action: string, turnId: string): DatapadSnapshot {
-  const trade = planConversationTrade(action, snapshot.gameState, turnId);
+  const trade = planConversationTrade(action, snapshot.gameState, turnId, undefined, snapshot.character as Ledger);
   if (trade?.status !== "accepted" || !trade.offer) return snapshot;
   const inventory = Array.isArray(snapshot.gameState.inventory) ? snapshot.gameState.inventory.filter(isRecord).map((item) => ({ ...item })) : [];
   for (const item of trade.offer.service ? [] : trade.offer.items) {
