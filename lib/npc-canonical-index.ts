@@ -70,7 +70,11 @@ const mkDesign=(id:string,species:string) => {
   const independent=proposed[id];
   const isSeralyth=id==="seralyth-vhaelor";
   const lev=isSeralyth?SERALYTH_SAGA_SHEET.level:(tier?.level??rating?.level??independent?.level??null);
-  const abilities= isSeralyth?SERALYTH_SAGA_SHEET.abilities:(rating?
+  const abilities:Attributes|null= isSeralyth?{
+    strength:SERALYTH_SAGA_SHEET.abilities.str,dexterity:SERALYTH_SAGA_SHEET.abilities.dex,
+    constitution:SERALYTH_SAGA_SHEET.abilities.con,intelligence:SERALYTH_SAGA_SHEET.abilities.int,
+    wisdom:SERALYTH_SAGA_SHEET.abilities.wis,charisma:SERALYTH_SAGA_SHEET.abilities.cha
+  }:(rating?
     {strength:rating.strength,dexterity:rating.dexterity,constitution:rating.constitution,intelligence:rating.intelligence,wisdom:rating.wisdom,charisma:rating.charisma}:
     independent?.attributes||null);
   const authority:NpcMechanicalAuthority=isSeralyth?"authored-saga-sheet":
