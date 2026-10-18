@@ -12,6 +12,7 @@ import { GALAXY_LOCATIONS, getTravelAccess, getTravelCost, getTravelTime } from 
 import { getEconomicSnapshot } from "@/original/lib/marketCatalog";
 import { BankView } from "@/original/components/BankView";
 import { MarketplaceView } from "@/original/components/MarketplaceView";
+import { NpcOfferMenu } from "@/original/components/NpcOfferMenu";
 import { useAuth } from "@/original/lib/AuthContext";
 import { cleanPlayerMessage, immersiveTurnError, parseImmersiveMessage } from "@/original/lib/immersiveChat";
 import { currentPlayerOptions } from "@/original/lib/sceneDirections";
@@ -293,6 +294,10 @@ function PlayView() {
             </div>
           </div>
         ))}
+        {!showArchive && !advancement.blocked && <NpcOfferMenu gameState={gameState} character={character}
+          disabled={sending || !saveReady || Boolean(saveError) || turnCooldownRemaining > 0}
+          onChoose={(text) => { setInput(text); followLatest.current = false; }}
+          onAccept={(text) => { setShowRecap(false); followLatest.current = true; void sendTurn(text); }} />}
         {!sending && messages.length > 0 && <button type="button" onClick={() => sendTurn(null)} disabled={!saveReady || Boolean(saveError) || Boolean(turnError) || turnCooldownRemaining > 0} className="text-xs text-[#8b93a3] hover:text-[#22d3ee] disabled:opacity-40">Take in the current scene · no time passes</button>}
         {sending && <div className="flex items-center gap-2 text-[#8b93a3] text-[11px] tracking-widest pl-4 gc-dot-bounce">THE GALAXY RESPONDS <span>.</span><span>.</span><span>.</span></div>}
         </>}
