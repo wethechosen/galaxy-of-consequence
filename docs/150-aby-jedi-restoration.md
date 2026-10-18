@@ -84,4 +84,27 @@ Planning happens on GOC's **authoritative clock**, using `lib/faction-strategy-1
 - `original/pages/FactionsPage.jsx`: Jedi overview for players and distinct protected GM section.
 - `lib/jedi-order-150aby.test.ts`: chronology, dead historical NPCs, faction standing, regional facilities, ethical mandates, continuity and privacy.
 
+## Persistent institutional work cycle (subsequent update)
+
+The `jedi-institution-scheduler.ts` reconciles the faction planning preview
+with the existing authoritative game-turn CAS transaction in `lib/gm.ts`.
+It persists one GM-private `gameState.jediInstitution` record with six
+individual programs. The new record is initialized **only after an actually
+committed new 150 ABY play turn**, and later ticks use the committed fictional
+clock. Once the charter's preparation period has elapsed, a plan moves
+from `preparing` to `awaiting_gm`; it **never becomes an achievement by
+passing time alone**. No program owns money, warships, students or Jedi powers.
+The same saved turn cannot tick twice, corrupted mission IDs/timing are rejected,
+and an explicitly pre-150 ABY campaign cannot be upgraded just by a misplaced
+field.
+
+The earlier `jedi-operational-planning.ts` week-ahead review is now
+**non-authoritative reference material**. The GM's live `factionGmContext`
+reads **only the persisted institutional cycle**, never both a weekly preview
+and an independent in-save version of a Jedi mission. All ordinary saves and
+user-visible read endpoints redact `jediInstitution`; client-originated
+versions are removed or replaced with the server's copy. Distinct user
+campaigns still hold their own saved state; this update does not create
+a globally synchronized universe database.
+
 **No live player state, NPC save, institutional appointment, Jedi troop deployment or company/property asset has been changed by this module.**

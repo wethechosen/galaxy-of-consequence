@@ -11,8 +11,12 @@ const original=():DatapadSnapshot=>({
   rivalIntelligence:{version:1,memories:[{name:"Captain Vell",observations:[{turnId:"t1",style:"ranged"}]}]},
   npcOffscreen:{version:1,plans:[{id:"secret-plan",actor:"Captain Vell",status:"preparing",dueAtMinute:190}],
    links:[],reports:[]},
- },
- settings:{tone:"grounded"},messages:[],comms:[],
+  jediInstitution:{version:1,factionId:"new-jedi-order",lastTickTurnId:"t1",lastMinute:130,
+   foundedAtMinute:120,programs:[{id:"jedi:relief:t1",mandateId:"relief",cycle:0,createdTurnId:"t1",
+   createdAtMinute:120,dueAtMinute:4440,stage:"preparing",purpose:"medical relief",result:"unadjudicated",
+   ethicalBoundary:"voluntary care",prerequisites:[],locationContext:"Dantooine"}]},
+ }
+ ,settings:{tone:"grounded"},messages:[],comms:[],
 });
 describe("NPC private state stays server-only and survives browser autosaves",()=>{
  it("redacts both GM fields without changing the stored object",()=>{
@@ -20,6 +24,7 @@ describe("NPC private state stays server-only and survives browser autosaves",()
   expect(visible?.gameState).not.toHaveProperty("rivalIntelligence");
   expect(visible?.gameState).not.toHaveProperty("npcOffscreen");
   expect(visible?.gameState).not.toHaveProperty("npcMechanics");
+  expect(visible?.gameState).not.toHaveProperty("jediInstitution");
   expect(source.gameState).toHaveProperty("npcOffscreen");
   expect(visible).not.toBe(source);
  });
@@ -29,10 +34,12 @@ describe("NPC private state stays server-only and survives browser autosaves",()
   candidate.gameState.rivalIntelligence={version:1,memories:[{name:"Forged"}]};
   candidate.gameState.npcOffscreen={version:1,plans:[{id:"fabricated-win"}]};
   candidate.gameState.npcMechanics={captain:{health:999}};
+  candidate.gameState.jediInstitution={version:1,factionId:"new-jedi-order",lastMinute:999999,programs:[]};
   const safe=preserveNpcPrivateState(server,candidate);
   expect(safe.gameState.npcOffscreen).toEqual(server.gameState.npcOffscreen);
   expect(safe.gameState.rivalIntelligence).toEqual(server.gameState.rivalIntelligence);
   expect(safe.gameState.npcMechanics).toEqual(server.gameState.npcMechanics);
+  expect(safe.gameState.jediInstitution).toEqual(server.gameState.jediInstitution);
  });
  it("retains hidden rival knowledge through an actual read/public-autosave/reload sequence",()=>{
   const db=accountStore(openStorage(":memory:"));
@@ -44,11 +51,13 @@ describe("NPC private state stays server-only and survives browser autosaves",()
    const publicVersion=playerVisibleSnapshot(readDatapad(actor,null,db).snapshot)!;
    publicVersion.settings={...publicVersion.settings,tone:"quiet"};
    publicVersion.gameState.npcOffscreen={version:1,plans:[{id:"fake"}]};
+   publicVersion.gameState.jediInstitution={version:1,programs:[{id:"fake-Jedi-victory"}]};
    const next=saveDatapad(actor,null,1,publicVersion,db);
    expect(next.revision).toBe(2);
    const restored=readDatapad(actor,null,db).snapshot!;
    expect(restored.gameState.npcOffscreen).toEqual(source.gameState.npcOffscreen);
    expect(restored.gameState.rivalIntelligence).toEqual(source.gameState.rivalIntelligence);
+   expect(restored.gameState.jediInstitution).toEqual(source.gameState.jediInstitution);
    expect(restored.settings.tone).toBe("quiet");
    expect(restored.character).toEqual(source.character);
   }finally{db.close();}

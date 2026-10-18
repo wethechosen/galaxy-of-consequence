@@ -6,6 +6,7 @@ import { readDatapad, saveAuthoritativeDatapad, type DatapadSnapshot } from "./d
 import {projectQuestWorld,questWorldGmContext} from "./quest-world-events";
 import {recordCommittedRivalObservation,relevantRivalGmContext} from "./npc-rival-intelligence";
 import {advanceNpcOffscreen,npcOffscreenGmContext} from "./npc-offscreen-intelligence";
+import {advanceJediInstitution} from "./jedi-institution-scheduler";
 import {factionGmContext} from "./faction-strategy-150aby";
 import {interpretRpgActionContract,assertRpgOutcomeFocus} from "./rpg-action-contract";
 import { invokeNvidia, NvidiaProviderError, type NvidiaMessage } from "./original-provider";
@@ -1876,6 +1877,8 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
     // Advance independently timed NPC plans and report deliveries only as
     // part of the existing compare-and-swap authoritative save transaction.
     snapshot.gameState.npcOffscreen=advanceNpcOffscreen(currentSnapshot,snapshot,input.turnId,delta);
+    const jediState=advanceJediInstitution(currentSnapshot,snapshot,input.turnId);
+    if(jediState)snapshot.gameState.jediInstitution=jediState;
   }
   if (mode === "play" && isDmirPrimaryCampaign(actor, snapshot.character as Record<string, unknown>)) {
     snapshot.gameState = updateDmirNpcContinuity(snapshot.gameState, delta, input.turnId, action);

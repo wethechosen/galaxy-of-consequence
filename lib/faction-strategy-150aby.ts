@@ -9,7 +9,7 @@ import {GOC_FACTIONS_150_ABY,GOC_FACTION_BY_ID,GOC_FACTION_MEMBERS,type Faction1
 import {sceneNpcRoster} from "./player-scene-roster";
 import {GOC_NPC_INDEX_BY_ID} from "./npc-canonical-index";
 import {jediInstitution150} from "./jedi-order-150aby";
-import {jediInstitutionWorkload} from "./jedi-operational-planning";
+import {jediInstitutionGmContext} from "./jedi-institution-scheduler";
 type Row=Record<string,unknown>;
 const rec=(v:unknown):Row=>v&&typeof v==="object"&&!Array.isArray(v)?v as Row:{};
 const arr=(v:unknown)=>Array.isArray(v)?v:[];
@@ -86,14 +86,16 @@ export function factionGmContext(snapshot:unknown,action:string,limit=2){
    jurisdiction:f.presence,resourcesAreOrdinalPlanningBands:f.strengths,internalPressure:f.internalPressure,
    confidential:f.confidential,leaderRule:f.leaderRule,
    relations:f.relations.map(r=>({id:r.id,stance:r.stance,reason:r.reason,secret:!!r.secret}))})),
-  proposals:candidates.map(f=>factionPlanPreview(f,minute)),
+  // The Jedi's six persistent office programs replace their generic weekly faction preview.
+  // Never show two independently maturing versions of the same institutional work.
+  proposals:candidates.filter(f=>f.id!=="new-jedi-order").map(f=>factionPlanPreview(f,minute)),
   jediRecovery:candidates.some(f=>f.id==="new-jedi-order")?(()=>{
     const x=jediInstitution150();
     return {governance:x.council150,historicalFoundation:x.canonicalHistoricalEvents.map(h=>({year:h.yearABY,event:h.event,consequence:h.consequence})),
       sites:x.sites.map(s=>({name:s.name,state150:s.state150,restriction:s.restriction})),
       departmentMandates:x.offices.map(o=>({description:o.description,mandate:o.mandate,leaderId:o.leaderId})),
       confirmedGocJedi:x.existingOriginalGocJedi.map(n=>({name:n.name,position:n.position})),
-      institutionalWorkload:jediInstitutionWorkload(minute),
+      currentInstitutionalPlans:jediInstitutionGmContext(snapshot),
       warning:"No 150 ABY Grand Master, fixed council appointments or force-pursuit mission is automatically established. Kill no NPC and award no XP merely from an institutional profile."};
   })():null,
   contract:"All strategic agendas are GM-private fictional intentions, not historical events, informed player knowledge, or successful operations. A proposed mission never spends funds, grants sovereign authority, moves troops, resolves conflict, or creates news. Verify scene evidence, time, logistics, boundaries and Saga mechanics; commit outcomes only through the existing authoritative turn ledger. Never introduce XIII, Korvalis or another secret into an unrelated player scene."
