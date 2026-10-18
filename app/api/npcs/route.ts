@@ -48,7 +48,8 @@ export async function GET(request:Request){
       })),
     ];
     const canonicalRegistry=GOC_NPC_INDEX_150_ABY.map(n=>{
-      const previous=roster.find(item=>item.name.toLowerCase()===n.name.toLowerCase());
+      const previous=roster.find(item=>item.name.toLowerCase()===n.name.toLowerCase()) as
+        {playthroughStatus?:string;auditedEnding?:unknown}|undefined;
       return ({
       id:n.id,name:n.name,species:n.species,homeworld:n.homeworld,era:n.eraABY,
       designation:n.role,description:n.biography,objective:n.objective,secret:n.privateKnowledge,
