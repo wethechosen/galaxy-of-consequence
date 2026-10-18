@@ -1,0 +1,44 @@
+import {beforeEach,describe,expect,it,vi} from "vitest";
+vi.mock("@/lib/accounts",()=>({requireAccount:vi.fn()}));
+vi.mock("@/lib/local-http",()=>({assertLocalRequest:vi.fn()}));
+import {requireAccount} from "@/lib/accounts";
+import {GET as publicGET} from "@/app/api/factions/route";
+import {GET as privateGET} from "@/app/api/factions/private/route";
+const request=()=>new Request("http://localhost/api/factions/private");
+beforeEach(()=>vi.resetAllMocks());
+describe("GOC faction visibility",()=>{
+ it("returns only public institutional facts, not hidden Sith memberships or plans",async()=>{
+  const r=await publicGET();
+  expect(r.status).toBe(200);
+  const result=await r.json();
+  expect(result.eraABY).toBe(150);
+  expect(result.factions.length).toBeLessThan(27);
+  expect(result.factions.some((x:{id:string})=>x.id==="fel-empire")).toBe(true);
+  expect(JSON.stringify(result).toLowerCase()).not.toContain("xiii");
+  expect(JSON.stringify(result).toLowerCase()).not.toContain("korvalis");
+  expect(JSON.stringify(result).toLowerCase()).not.toContain("seralyth");
+  expect(JSON.stringify(result).toLowerCase()).not.toContain("kelvek");
+  expect(result).not.toHaveProperty("members");
+  expect(result).not.toHaveProperty("hiddenLinks");
+ });
+ it("denies ordinary accounts without leaking hidden factions",async()=>{
+  vi.mocked(requireAccount).mockImplementation(()=>{throw Error("Administrator required");});
+  const r=await privateGET(request());
+  expect(r.status).toBe(403);
+  expect(JSON.stringify(await r.json())).not.toMatch(/xiii|korvalis|klev|hapes/i);
+ });
+ it("gives GM all 27 power blocs and sourced 54 NPC assignments",async()=>{
+  vi.mocked(requireAccount).mockReturnValue({id:"gm-1",username:"gm",displayName:"GM",role:"admin"});
+  const r=await privateGET(request());
+  expect(r.status).toBe(200);
+  expect(vi.mocked(requireAccount)).toHaveBeenCalledWith(expect.any(Request),true);
+  const b=await r.json();
+  expect(b.visibility).toBe("gm-only");
+  expect(b.factions).toHaveLength(27);
+  expect(b.members).toHaveLength(54);
+  expect(b.hiddenLinks).toContainEqual(expect.objectContaining({personId:"seralyth-vhaelor",factionId:"sith-traditionalists"}));
+  const fel=b.factions.find((x:{id:string})=>x.id==="fel-empire");
+  expect(fel.confidential).toMatch(/Aliyah/);
+  expect(b.warnings.join(" ")).toMatch(/not player knowledge/);
+ });
+});

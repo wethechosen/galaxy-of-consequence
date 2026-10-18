@@ -16,6 +16,7 @@ import Home from "@/original/pages/Home";
 import ExchangesPage from "@/original/pages/ExchangesPage";
 import ProfilePage from "@/original/pages/ProfilePage";
 import SyndicatesPage from "@/original/pages/SyndicatesPage";
+import FactionsPage from "@/original/pages/FactionsPage";
 import ArchiveMapsPage from "@/original/pages/ArchiveMapsPage";
 
 function AuthenticatedApp() {
@@ -46,6 +47,7 @@ function AuthenticatedApp() {
       <Route path="/exchanges" element={<ExchangesPage />} />
       <Route path="/profile" element={<ProfilePage />} />
       <Route path="/syndicates" element={<SyndicatesPage />} />
+      <Route path="/factions" element={<FactionsPage />} />
       <Route path="/archive" element={<ArchiveMapsPage />} />
       <Route path="/gm" element={user?.role === "admin" ? <GmConsolePage /> : <Navigate to="/" replace />} />
       <Route path="*" element={<PageNotFound />} />

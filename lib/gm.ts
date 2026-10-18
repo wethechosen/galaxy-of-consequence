@@ -6,6 +6,7 @@ import { readDatapad, saveAuthoritativeDatapad, type DatapadSnapshot } from "./d
 import {projectQuestWorld,questWorldGmContext} from "./quest-world-events";
 import {recordCommittedRivalObservation,relevantRivalGmContext} from "./npc-rival-intelligence";
 import {advanceNpcOffscreen,npcOffscreenGmContext} from "./npc-offscreen-intelligence";
+import {factionGmContext} from "./faction-strategy-150aby";
 import {interpretRpgActionContract,assertRpgOutcomeFocus} from "./rpg-action-contract";
 import { invokeNvidia, NvidiaProviderError, type NvidiaMessage } from "./original-provider";
 import { rollSagaCheck } from "./saga-dice";
@@ -1508,6 +1509,12 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
     if (behindScenes.reports.length||behindScenes.plans.length||behindScenes.offscreenDue.length)
       system += "\n\nGM-PRIVATE NPC OFFSCREEN INTELLIGENCE: "+JSON.stringify(behindScenes)+
        "\nDo not reveal rumors as truth, make offscreen plans automatically succeed, invent resources, or resolve a conflict without SAGA adjudication. Report delivery is knowledge only. Do not narrate unobserved NPC plans as public news unless a separate adjudicated event justifies it. Plans outside the scene may advance as independent world actions only when evidence, resources, elapsed time, and valid world-state changes are present. An offscreen NPC may not apply player health, credits, inventory, XP or conditions.";
+  }
+  if (mode === "play") {
+    const factionContext=factionGmContext(currentSnapshot,action,2);
+    if(factionContext.factions.length)
+      system += "\n\nGM-PRIVATE FACTION STRATEGY (150 ABY): "+JSON.stringify(factionContext)+
+        "\nOrganizations pursue independent priorities as galactic time passes, but their plans are not completed events. No source-backed outcome means no war, fleet movement, title, financial transfer, NPC secret revelation or player penalty. Answer only the player's actual topic; never tie unrelated scenes to XIII, Black Sun or Korvalis.";
   }
   if (mode === "play" && isReadOnlyGoodsInspection(action)) system += `\n\nREAD-ONLY MERCHANDISE INSPECTION: Resolve the declared examination only. Describe visible condition, seals, labels, packaging, and expiration markings supported by the scene. Do not deduct or grant credits; do not add, remove, consume, sell, equip, or transfer an item; do not narrate a completed transaction. Temporary handling remains with the current owner. Use an empty material ledger unless an authoritative mechanic supplied above requires a non-material change.`;
   if (atelierAppointment) system += `\n\n${atelierAppointmentGmInstruction()}`;
