@@ -27,7 +27,8 @@ export const NPC_HISTORICAL_TIERS:Readonly<Record<string,Tier>> = {
 };
 const choose=(options:Array<{id:string}>,priority:string[])=>priority.find(id=>options.some(x=>x.id===id))||options[0]?.id||"";
 const languages=(c:Record<string,unknown>,required:number)=>{
-  const existing=new Set(String(c.languages||"").split(",").map(v=>v.trim().toLowerCase()));
+  const automatic=sagaSpecies(c.species)?.languages||[];
+  const existing=new Set([...automatic,...String(c.languages||"").split(",")].map(v=>v.trim().toLowerCase()));
   return SAGA_LANGUAGE_OPTIONS.filter((v:{id:string;name:string})=>v.id!=="basic"&&!existing.has(v.name.toLowerCase()))
     .slice(0,required).map((v:{id:string})=>v.id);
 };
