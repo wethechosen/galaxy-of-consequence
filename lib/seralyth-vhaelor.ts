@@ -94,7 +94,7 @@ export const SERALYTH_GM_DOSSIER = {
     fact:"The hidden Sith teacher directing her is the same Sith Lord who led the dark-side prison gang connected to Kelvek in the Coruscant juvenile detention center.",
     kelvekTruth:"Kelvek skimmed funds from IGBC transactions and held tens of billions in accumulated wealth and associated infrastructure; D'mir inherited approximately 1.2 billion across accounts and has the datapad that accesses remaining infrastructure. Kelvek served as STAFF LIBRARIAN, never an inmate. Korvalis pursued Kelvek for the money, not out of friendship or former mentorship.",
     intelligence:"Someone who knew Kelvek after his IGBC career had reason to suspect real secret wealth. Information reached the Sith Lord, who persuaded the prison gang that Kelvek was a valuable target. The identity of the informant, chain of custody and exact amounts are unresolved; it was not an invented fortune.",
-    currentKnowledge:"Seralyth has no established knowledge of Kelvek, D'mir or the prison gang's finances. D'mir does not know Seralyth or Korvalis's involvement. GM private information is never automatically character knowledge.",
+    currentKnowledge:"Seralyth has no knowledge of Kelvek, D'mir or the prison gang's finances. D'mir does not know Seralyth or Korvalis's involvement. GM private information is never automatically character knowledge.",
     identities:"The creator established that this hidden lifelong Sith instructor is Darth Korvalis; this is GM-only history, not player knowledge.",
   },
   relationalPotential:{
