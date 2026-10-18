@@ -96,7 +96,7 @@ const mkDesign=(id:string,species:string) => {
 const rows:GocNpcIndexEntry[]=[];
 for (const n of CAMPAIGN_NPCS_150_ABY) {
  rows.push({id:n.id,name:n.name,eraABY:150,sourceClass:"core-cast",species:n.species,homeworld:n.birthworld,faction:n.affiliation,role:n.role150,
-   biography:n.biography,objective:n.objective,privateKnowledge:n.confidential,lifeStatus:n.id==="darth-korvalis"?"unknown":"living",
+   biography:n.biography,objective:n.objective,privateKnowledge:n.confidential,lifeStatus:"living",
    worldState:"active-candidate",identitySource:"lib/npc-canon-roster.ts (200 ABY authored concepts reconciled into 150 ABY)",
    design:mkDesign(n.id,n.species)});
 }
