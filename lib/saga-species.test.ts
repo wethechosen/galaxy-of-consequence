@@ -18,8 +18,14 @@ it("uses the second species reroll even when worse and rejects repeated or ineli
   expect(()=>resolveSpeciesReroll({species:"Rodian"},next,()=>20)).toThrow();
   expect(()=>resolveSpeciesReroll({species:"Duros"},previous,()=>20)).toThrow();
 });
-it("does not confer fictional homebrew traits or Force powers through species",()=>{
-  expect(npcMechanics("Alar Mar'Isk").status).toBe("pending-validation");
-  expect(npcMechanics("Rena Salvek").status).toBe("pending-validation");
-  expect(sagaSpecies("Chiss-raised Kiffar")).toBeNull();
+it("preserves Kiffar ancestry without Chiss powers and never invents Force powers from species",()=>{
+  const alar=npcMechanics("Alar Mar'Isk");
+  const rena=npcMechanics("Rena Salvek");
+  expect(alar.status,alar.reason).toBe("validated-core-build");
+  expect(rena.status,rena.reason).toBe("validated-core-build");
+  expect(sagaSpecies("Chiss-raised Kiffar")?.name).toBe("Kiffar");
+  expect(sagaSpecies("Chiss-raised Kiffar")?.source).toMatch(/homebrew/i);
+  expect(sagaSpecies("Chiss-raised Kiffar")?.traits.join(" ")).not.toMatch(/low-light/i);
+  expect(String(alar.character?.forcePowers||"")).not.toMatch(/psychometry/i);
+  expect((alar.character?.featSelections as any[]).some(feat=>feat.source==="human-bonus-feat")).toBe(false);
 });
