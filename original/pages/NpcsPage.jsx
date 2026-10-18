@@ -13,14 +13,14 @@ export default function NpcsPage() {
     fetch("/api/npcs", {signal:controller.signal}).then(r => {
       if (!r.ok) throw Error("NPC dossier service unavailable");
       return r.json();
-    }).then(data => setRoster(data.roster || [])).catch(() => {});
+    }).then(data => setRoster(data.canonicalRegistry || data.roster || [])).catch(() => {});
     return () => controller.abort();
   }, []);
   const [group, setGroup] = useState("all");
   const [selected, setSelected] = useState(null);
   const shown = useMemo(() => roster.filter(item =>
     (group === "all" || item.category === group) &&
-    [item.name,item.species,item.homeworld,item.designation].some(value => String(value || "").toLowerCase().includes(query.toLowerCase()))
+    [item.name,item.species,item.homeworld,item.designation,item.faction].some(value => String(value || "").toLowerCase().includes(query.toLowerCase()))
   ), [query,group,roster]);
 
   return <Shell>
@@ -41,6 +41,8 @@ export default function NpcsPage() {
           <option value="test">GM simulation scenarios</option>
           <option value="cast">Supplement cast</option>
           <option value="story">Dmir storyline</option>
+          <option value="family">Documented family</option>
+          <option value="sourcebook">Sourcebook candidates</option>
         </select>
       </div>
       {selected && <GlassCard className="p-5 mb-5">
@@ -48,20 +50,57 @@ export default function NpcsPage() {
           <div><p className="text-[10px] tracking-[.2em] text-[#ff9b50]">DOSSIER · NOT A GAMEPLAY RECEIPT</p><h2 className="gc-display mt-2 text-xl text-[#f2f0ea]">{selected.name}</h2></div>
           <button className="gc-btn px-3 py-1.5 text-xs" onClick={()=>setSelected(null)}>CLOSE</button>
         </div>
-        <div className="mt-3 text-xs text-[#8b93a3]">{selected.species} · {selected.homeworld} · {selected.era} ABY</div>
-        <p className="mt-3 text-sm text-[#d2d0cc]">{selected.description}</p>
-        <p className="mt-3 text-xs text-[#a9adb8]">Prior-career statistics are GM build choices, not evidence of earned campaign rewards.</p>
+        <div className="mt-3 text-xs text-[#8b93a3]">{selected.species} · {selected.homeworld} · {selected.era} ABY · {selected.faction || "Unaffiliated"} · {selected.lifeStatus || "Unconfirmed status"}</div>
+        <p className="mt-3 text-sm text-[#d2d0cc]">{selected.definitiveDossier?.biography || selected.description}</p>
+        {selected.definitiveDossier && <div className="mt-4 rounded-xl border border-white/10 p-4 text-sm text-[#d2d0cc]" aria-label="Complete private 150 ABY character history">
+          <h3 className="font-semibold text-[#21dfc8]">LIFE RECORD · {selected.definitiveDossier.birthplace} · BORN {selected.definitiveDossier.bornABY} ABY</h3>
+          <p className="mt-2">Age in 150 ABY: {selected.definitiveDossier.ageIn150} · {selected.definitiveDossier.worldPresence}</p>
+          <p className="mt-2"><strong>Appearance:</strong> {selected.definitiveDossier.appearance}</p>
+          <p className="mt-2"><strong>Personality:</strong> {selected.definitiveDossier.personality}</p>
+          <p className="mt-2"><strong>Weakness:</strong> {selected.definitiveDossier.flaw}</p>
+          <p className="mt-2"><strong>Relationships:</strong> {selected.definitiveDossier.importantRelationships}</p>
+          <p className="mt-2"><strong>Autonomous objective:</strong> {selected.definitiveDossier.objective}</p>
+          <details className="mt-3"><summary className="cursor-pointer text-[#e9a873]">GM-only secrets and sources</summary>
+            <p className="mt-2">{selected.definitiveDossier.gmPrivateKnowledge || "No established undisclosed information."}</p>
+            <p className="mt-2 text-xs">{selected.definitiveDossier.canonProvenance}</p>
+          </details>
+        </div>}
+        <p className="mt-3 text-xs text-[#a9adb8]">Prior-career XP and GM loadouts are baselines, not player-earned rewards or committed inventories.</p>
         <section className="mt-4 border-t border-white/10 pt-4" aria-label="NPC mechanics">
-          <h3 className="text-sm text-[#21dfc8]">{selected.mechanics?.status === "validated-core-build" ? "VALIDATED SAGA CORE BUILD" : "MECHANICS PENDING VALIDATION"}</h3>
-          <p className="mt-2 text-xs text-[#a9adb8]">{selected.mechanics?.reason || selected.mechanics?.provenance}</p>
+          <h3 className="text-sm text-[#21dfc8]">{selected.definitiveDossier ? "COMPLETE 150 ABY SAGA CAREER SHEET · GM PRIVATE" : selected.mechanics?.status === "validated-core-build" ? "VALIDATED SAGA CORE BUILD" : selected.mechanics?.status === "authored-saga-sheet" ? "AUTHORED SAGA SHEET · NOT YET ENGINE-CERTIFIED" : "MECHANICS PENDING VALIDATION"}</h3>
+          {selected.definitiveDossier && <div className="mt-3 rounded-xl border border-white/10 p-4 text-sm" aria-label="Saga Edition definitive NPC abilities and inventory plan">
+            <p><strong>Classes:</strong> {Object.entries(selected.definitiveDossier.combat.classLevels).map(([k,v])=>k+" "+v).join(" / ")} · Level {selected.definitiveDossier.combat.level} · Prior-career XP {selected.definitiveDossier.combat.careerXp.toLocaleString()}</p>
+            <p className="mt-2">HP {selected.definitiveDossier.combat.maxHitPoints} · BAB {selected.definitiveDossier.combat.baseAttackBonus} · DT {selected.definitiveDossier.combat.damageThreshold} · Melee +{selected.definitiveDossier.combat.meleeAttack} · Ranged +{selected.definitiveDossier.combat.rangedAttack}</p>
+            <p className="mt-2">Reflex {selected.definitiveDossier.combat.defenses.reflex} · Fortitude {selected.definitiveDossier.combat.defenses.fortitude} · Will {selected.definitiveDossier.combat.defenses.will}</p>
+            <p className="mt-2">Abilities: {Object.entries(selected.definitiveDossier.combat.abilities).map(([k,v])=>k.toUpperCase()+" "+v).join(" · ")}</p>
+            <p className="mt-2"><strong>Feats:</strong> {selected.definitiveDossier.combat.feats.join(", ")}</p>
+            <p className="mt-2"><strong>Talents:</strong> {selected.definitiveDossier.combat.talents.join(", ")}</p>
+            <p className="mt-2"><strong>Trained skills:</strong> {selected.definitiveDossier.combat.trainedSkills.join(", ")}</p>
+            <p className="mt-2"><strong>Force-sensitive:</strong> {selected.definitiveDossier.combat.forceSensitive?"Yes":"No"} · Powers: {selected.definitiveDossier.combat.forcePowers.join(", ")||"None learned"}</p>
+            <p className="mt-2"><strong>Languages:</strong> {selected.definitiveDossier.combat.languages.join(", ")}</p>
+            <p className="mt-2"><strong>Prior-career starting loadout:</strong> {selected.definitiveDossier.equipment.baselineLoadout.join(", ")}</p>
+            <details className="mt-2"><summary className="cursor-pointer text-[#21dfc8]">Skill modifiers and species rules</summary>
+              <dl className="mt-2 grid grid-cols-2 gap-1">{Object.entries(selected.definitiveDossier.combat.skills).map(([skill,score])=><div key={skill}>{skill}: {score>=0?"+":""}{score}</div>)}</dl>
+              <p className="mt-2 text-xs text-[#a9adb8]">{selected.definitiveDossier.combat.sourceCitation}</p>
+              <p className="mt-2 text-xs">{(selected.definitiveDossier.combat.speciesTraits?.traits||[]).join("; ")}</p>
+            </details>
+            <p className="mt-3 text-xs text-[#e9a873]">Equipment is a proposed GM starting loadout; existing inventories and spent XP remain unchanged. Deceased characters are flashback-only.</p>
+          </div>}
+          {!selected.definitiveDossier && <p className="mt-2 text-xs text-[#a9adb8]">{selected.mechanics?.reason || selected.mechanics?.provenance || selected.design?.caveat || "A rules-validated character sheet is not yet recorded."}</p>}
+          {!selected.definitiveDossier && <>
+          {selected.design?.level != null && <p className="mt-2 text-xs text-[#a9adb8]">Prior-career proposal: Level {selected.design.level}, XP {selected.design.priorCareerXp?.toLocaleString()} (historical career allocation, NOT earned during D'mir gameplay). · {selected.design.mechanicalAuthority}</p>}
+          {selected.design?.abilityScores && <p className="mt-2 text-xs text-[#a9adb8]">Proposed abilities: STR {selected.design.abilityScores.strength} · DEX {selected.design.abilityScores.dexterity} · CON {selected.design.abilityScores.constitution} · INT {selected.design.abilityScores.intelligence} · WIS {selected.design.abilityScores.wisdom} · CHA {selected.design.abilityScores.charisma}. Use only after Saga validation.</p>}
+          {selected.design?.talentDirection && <p className="mt-2 text-xs text-[#a9adb8]">Talent direction: {selected.design.talentDirection} (not an awarded talent).</p>}
+          {!!selected.design?.forcePowerDirection?.length && selected.mechanics?.status !== "validated-core-build" && <p className="mt-2 text-xs text-[#a9adb8]">Force-power proposal: {selected.design.forcePowerDirection.join(", ")} (not learned until validated).</p>}
           {selected.mechanics?.character && <>
             <p className="mt-3 text-sm">Level {selected.mechanics.character.level} · HP {selected.mechanics.character.maxHitPoints} · BAB {selected.mechanics.character.baseAttackBonus} · Damage threshold {selected.mechanics.character.damageThreshold}</p>
             <p className="mt-2 text-sm">Reflex {selected.mechanics.character.defenses?.reflex} · Fortitude {selected.mechanics.character.defenses?.fortitude} · Will {selected.mechanics.character.defenses?.will}</p>
             <p className="mt-2 text-xs">{selected.mechanics.character.sagaStats}</p>
-            <p className="mt-2 text-xs">Feats: {selected.mechanics.character.feats}</p>
-            <p className="mt-2 text-xs">Talents: {selected.mechanics.character.talents}</p>
-            <p className="mt-2 text-xs">Force powers: {selected.mechanics.character.forcePowers || "None established"}</p>
+            <p className="mt-2 text-xs">Feats: {Array.isArray(selected.mechanics.character.feats) ? selected.mechanics.character.feats.join(", ") : selected.mechanics.character.feats || "Refer to authored Saga sheet"}</p>
+            <p className="mt-2 text-xs">Talents: {Array.isArray(selected.mechanics.character.talents) ? selected.mechanics.character.talents.map(t => t.name || t).join(", ") : selected.mechanics.character.talents || "Refer to authored Saga sheet"}</p>
+            <p className="mt-2 text-xs">Force powers: {selected.mechanics.character.forcePowers || selected.mechanics.character.forcePowerSuite?.join(", ") || "None established"}</p>
             <dl className="mt-3 grid grid-cols-2 gap-1 text-xs">{Object.entries(selected.mechanics.skillModifiers || {}).map(([skill,modifier])=><div key={skill}><dt className="inline">{skill}: </dt><dd className="inline">{modifier >= 0 ? "+" : ""}{modifier}</dd></div>)}</dl>
+          </>}
           </>}
           {selected.mechanics?.speciesTraits && <details className="mt-3 text-xs">
             <summary className="cursor-pointer text-[#21dfc8]">Species traits · {selected.mechanics.speciesTraits.name}</summary>
@@ -93,7 +132,7 @@ export default function NpcsPage() {
               <p className="mt-2">{selected.auditedEnding.outcome}</p>
               <p className="mt-2">Evidence revision {selected.auditedEnding.evidenceRevision} · {selected.auditedEnding.evidenceTurnIds.length} corroborating turn IDs · hosted save not migrated</p>
             </div>}
-            <p className="mt-3 text-xs text-[#a9adb8]">Role: {selected.designation}. Separate provisional head and full-body vector costume references; not final character art. No unearned ending, XP, talents or gear.</p>
+            <p className="mt-3 text-xs text-[#a9adb8]">Role: {selected.designation}. Faction: {selected.faction || "unrecorded"}. Registry: {selected.sourceClass || "legacy"}. Separate provisional visual references, not final art. No unearned ending, XP, talents or gear.</p>
           </div>
         </div>
       </GlassCard>}

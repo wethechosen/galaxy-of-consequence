@@ -25,9 +25,11 @@ export const NPC_HISTORICAL_TIERS:Readonly<Record<string,Tier>> = {
   "torin-kade":{level:3,classId:"scoundrel",reason:"Corellian shipyard claims technician"},
   "bren-varo":{level:3,classId:"scout",reason:"Socorro route guide"},
 };
-const choose=(options:Array<{id:string}>,priority:string[])=>priority.find(id=>options.some(x=>x.id===id))||options[0]?.id||"";
+const choose=(options:Array<{id:string}>,priority:string[])=>priority.find(id=>options.some(x=>x.id===id))||
+  options.find(x=>!["linguist","skill-training","skill-focus","force-training"].includes(x.id))?.id||options[0]?.id||"";
 const languages=(c:Record<string,unknown>,required:number)=>{
-  const existing=new Set(String(c.languages||"").split(",").map(v=>v.trim().toLowerCase()));
+  const automatic=sagaSpecies(c.species)?.languages||[];
+  const existing=new Set([...automatic,...String(c.languages||"").split(",")].map(v=>v.trim().toLowerCase()));
   return SAGA_LANGUAGE_OPTIONS.filter((v:{id:string;name:string})=>v.id!=="basic"&&!existing.has(v.name.toLowerCase()))
     .slice(0,required).map((v:{id:string})=>v.id);
 };
@@ -117,9 +119,9 @@ export function advanceNpcEarnedXp(snapshot:DatapadSnapshot,npc:NpcTestSubject):
   throw Error("Exceeded maximum player advancement rounds");
 }
 /** Preserves completed story/ledger turns. Starting XP is audited separately from XP earned during tests. */
-export function reconstructCoreNpc(snapshot:DatapadSnapshot,npc:NpcTestSubject):DatapadSnapshot{
+export function reconstructCoreNpc(snapshot:DatapadSnapshot,npc:NpcTestSubject,explicitTier?:Tier):DatapadSnapshot{
   const alien = GOC_ALIEN_STORY_RATINGS.find(entry=>entry.id===npc.id);
-  const tier=NPC_HISTORICAL_TIERS[npc.id] || (alien && sagaSpecies(npc.species) ? {level:alien.level,classId:alien.heroicClass.toLowerCase() as Heroic,reason:"GM-designed 150 ABY alien prior career with verified Saga Core species foundation"}:null);
+  const tier=explicitTier || NPC_HISTORICAL_TIERS[npc.id] || (alien && sagaSpecies(npc.species) ? {level:alien.level,classId:alien.heroicClass.toLowerCase() as Heroic,reason:"GM-designed 150 ABY alien prior career with verified Saga Core species foundation"}:null);
   if(!tier)return snapshot;
   if(!snapshot.character)throw Error("NPC has no saved character");
   if(!sagaSpecies(npc.species))throw Error("Nonhuman racial traits require species rules validation");

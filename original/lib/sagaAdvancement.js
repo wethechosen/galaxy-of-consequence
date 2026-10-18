@@ -152,7 +152,7 @@ const CLASS_SKILL_IDS = Object.freeze({
 // Core printed p. 22, Common Languages. Language use still respects species'
 // physical speech restrictions and what the current scene actually permits.
 export const SAGA_LANGUAGE_OPTIONS = Object.freeze([
-  ["basic", "Basic"], ["binary", "Binary"], ["bocce", "Bocce"], ["bothese", "Bothese"], ["cerean", "Cerean"], ["dosh", "Dosh"], ["durese", "Durese"], ["ewokese", "Ewokese"], ["gamorrean", "Gamorrean"], ["gunganese", "Gunganese"], ["high-galactic", "High Galactic"], ["huttese", "Huttese"], ["ithorese", "Ithorese"], ["jawa-trade-language", "Jawa Trade Language"], ["kel-dor", "Kel Dor"], ["mon-calamarian", "Mon Calamarian"], ["quarrenese", "Quarrenese"], ["rodese", "Rodese"], ["ryl", "Ryl"], ["shyriiwook", "Shyriiwook"], ["sullustese", "Sullustese"], ["zabrak", "Zabrak"],
+  ["basic", "Basic"], ["aqualish", "Aqualish"], ["binary", "Binary"], ["bocce", "Bocce"], ["bothese", "Bothese"], ["cheunh", "Cheunh"], ["falleen", "Falleen"], ["kiffu", "Kiffu"], ["mirialan", "Mirialan"], ["muun", "Muun"], ["nikto", "Nikto"], ["sriluurian", "Sriluurian"], ["togruti", "Togruti"], ["cerean", "Cerean"], ["dosh", "Dosh"], ["durese", "Durese"], ["ewokese", "Ewokese"], ["gamorrean", "Gamorrean"], ["gunganese", "Gunganese"], ["high-galactic", "High Galactic"], ["huttese", "Huttese"], ["ithorese", "Ithorese"], ["jawa-trade-language", "Jawa Trade Language"], ["kel-dor", "Kel Dor"], ["mon-calamarian", "Mon Calamarian"], ["quarrenese", "Quarrenese"], ["rodese", "Rodese"], ["ryl", "Ryl"], ["shyriiwook", "Shyriiwook"], ["sullustese", "Sullustese"], ["zabrak", "Zabrak"],
 ].map(([id, name]) => ({ id, name })));
 
 const cleanList = (value, emptyPattern = /^(?:none|none recorded|unestablished)$/i) => Array.isArray(value)
@@ -324,7 +324,7 @@ export function foundationRequirements(character = {}, classId, choices = {}) {
   const existingLanguageIds = languageIdsForCharacter(character).filter(id => !automaticLanguages.has(SAGA_LANGUAGE_OPTIONS.find(language=>language.id===id)?.name.toLowerCase()));
   return {
     validClass: Boolean(heroic), abilityScoresEstablished: established, human,
-    trainedSkillCount: heroic && established ? Math.max(1, heroic.trainedSkillBase + intelligenceModifier + (human ? 1 : 0)) : null,
+    trainedSkillCount: heroic && established ? Math.max(1, heroic.trainedSkillBase + intelligenceModifier + (human ? 1 : 0) + (sagaSpecies(character.species)?.bonusTrainedSkills || 0)) : null,
     bonusLanguageCount: Math.max(0, languageTotal - existingLanguageIds.length), languageTotal,
     startingLinguist: Boolean(startingLinguist),
     ...forcePowerChoiceRequirements(character, choices, true),
@@ -699,6 +699,11 @@ export function applySagaFoundation(snapshot, choices = {}, now = new Date().toI
   if (cleanList(current.character.trainedSkills).length !== priorSkillIds.size || [...priorSkillIds].some(id => !selectedSkillIds.includes(id))) throw advancementError("The foundation choices must preserve the character's existing established trained skills.");
   character.trainedSkills = selectedSkillIds.map(id => SAGA_SKILL_OPTIONS.find(item => item.id === id).name);
   const featSelections = character.featSelections;
+  if (species.bonusFeat) {
+    const entry=FEAT_CATALOG.find(item=>item.id===species.bonusFeat);
+    if (!entry) throw advancementError("Missing sourcebook species bonus feat in Saga catalogue.");
+    featSelections.push({id:entry.id,name:entry.name,source:"species-bonus-feat",classId,level:1});
+  }
   for (const id of heroic.startingFeats) {
     const entry = FEAT_CATALOG.find(item => item.id === id);
     // Noble Linguist and Scout Shake It Off are explicitly conditional.
@@ -735,7 +740,7 @@ export function applySagaFoundation(snapshot, choices = {}, now = new Date().toI
     will: 11 + heroic.defense.will + abilityModifier(scores.wisdom) + improvedDefense + (species.defenses.will || 0),
   };
   Object.assign(character, {
-    classLevels: { [classId]: 1 }, heroicClass: `${heroic.name} 1`, abilityScores: scores, sagaStats: formatAbilityScores(scores), speciesTraitsApplied: {species:species.name,source:"Saga Edition Core Rulebook",pdfPages:species.pages,version:1},
+    classLevels: { [classId]: 1 }, heroicClass: `${heroic.name} 1`, abilityScores: scores, sagaStats: formatAbilityScores(scores), speciesTraitsApplied: {species:species.name,source:species.source||"Saga Edition Core Rulebook",pdfPages:species.pages,version:1},
     talentSelections, featSelections, talents: talentSelections.map(item => item.name).join(", ") || "None recorded",
     feats: [...new Set(featSelections.map(item => item.name))].join(", ") || "None recorded",
     baseAttackBonus: classLevelBab(classId, 1), maxHitPoints, defenses, damageThreshold: defenses.fortitude + 5 * featCount(character, "improved-damage-threshold"),
