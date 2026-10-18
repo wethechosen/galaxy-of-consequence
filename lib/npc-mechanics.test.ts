@@ -18,7 +18,7 @@ it("uses actual alien starting traits and does not give unknown people Human bui
   expect(rena.status,rena.reason).toBe("validated-core-build");
   expect(rena.character?.species).toBe("Zeltron");
   expect(rena.character?.level).toBe(4);
-  expect(rena.character?.speciesTraitsApplied?.species).toBe("Zeltron");
+  expect((rena.character?.speciesTraitsApplied as {species:string})?.species).toBe("Zeltron");
   expect(npcMechanics("Jax").character).toBeUndefined();
   expect(npcMechanics("Kelvek").character).toBeUndefined();
 });
