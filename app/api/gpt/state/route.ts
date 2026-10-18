@@ -7,6 +7,7 @@ import { parseImmersiveMessage } from "@/original/lib/immersiveChat";
 import { advancementGate } from "@/original/lib/sagaAdvancement";
 import { itemStatBlock } from "@/original/lib/itemStats";
 import { buildAssetLedger } from "@/original/lib/assetLedger";
+import { playerVisualContract } from "@/lib/gpt-visual-contract";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +27,7 @@ export async function GET(request: Request) {
       message.role === "assistant" && sameCampaignLocation(parseImmersiveMessage(String(message.content || "")).location, state.location));
     return NextResponse.json({
       account: actorSummary(actor), revision: saved.revision,
+      interface: playerVisualContract(typeof saved.snapshot.character?.name === "string" ? saved.snapshot.character.name : undefined),
       assetLedger: { balances, holdings, purchases, transfers, valuationStatus },
       character: saved.snapshot.character,
       itemStatBlocks: [...(Array.isArray(state.inventory) ? state.inventory : []), ...(Array.isArray(state.properties) ? state.properties : []).map(item => ({ ...item, ownership: "property" })), ...(Array.isArray(state.ships) ? state.ships : []).map(item => ({ ...item, ownership: "vehicle" }))].map(item => ({ id: item.id, ...itemStatBlock(item, snapshot.character || {}, state) })),

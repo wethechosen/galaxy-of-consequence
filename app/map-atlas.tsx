@@ -2,8 +2,9 @@
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { mapPoint, type MapEntry } from "@/lib/maps";
+import { AtlasLocationContext } from "./visual-page-enhancements";
 
-export default function MapAtlas({ saveNote, busy }: { saveNote: (title: string, detail: string) => Promise<void>; busy: boolean }) {
+export default function MapAtlas({ saveNote, busy, location }: { saveNote: (title: string, detail: string) => Promise<void>; busy: boolean; location: string }) {
   const [maps, setMaps] = useState<MapEntry[]>([]);
   const [status, setStatus] = useState("Loading private atlas…");
   const [selected, setSelected] = useState("galaxy-overview");
@@ -24,6 +25,7 @@ export default function MapAtlas({ saveNote, busy }: { saveNote: (title: string,
   function reset() { setZoom(1); viewport.current?.scrollTo(0, 0); }
   return <>
     <h2>Galactic atlas</h2>
+    <AtlasLocationContext location={location} />
     <p>Out-of-character reference library. Reading a chart does not reveal it to your character, start a journey, or advance time.</p>
     <p className="map-caution">Historical charts, not a verified 150 ABY political map. Borders, population, world status and navigable routes need separate review. Printed labels cannot be hidden individually in these images.</p>
     {status && <p role="status">{status}</p>}

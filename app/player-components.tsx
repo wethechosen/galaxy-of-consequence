@@ -4,6 +4,7 @@ import type { FormEvent, ReactNode } from "react";
 import { Heart, MapPin, Send, Shield, Sparkles, Wallet } from "lucide-react";
 import type { CampaignState, CharacterState, RollRecord } from "@/lib/types";
 import type { WorldState } from "@/lib/world";
+import { playerKnownContacts } from "@/lib/visual-page-projections";
 
 export function PlayerHUD({ character, location }: { character: CharacterState; location: string }) {
   const stats = [
@@ -12,7 +13,7 @@ export function PlayerHUD({ character, location }: { character: CharacterState; 
     ["FORCE", character.forcePoints], ["DESTINY", character.destinyPoints], ["DSS", character.darkSideScore],
   ];
   return <section className="player-hud" aria-label="Player status">
-    <div className="player-hud-identity"><span className="eyebrow"><Sparkles size={14}/> PLAYER DOSSIER</span><h2>{character.name}</h2><p>{character.species} · {character.heroicClass}</p></div>
+    <div className="player-hud-identity"><div className="player-hud-identity-text"><span className="eyebrow"><Sparkles size={14}/> PLAYER DOSSIER</span><h2>{character.name}</h2><p>{character.species} · {character.heroicClass}</p></div></div>
     <div className="player-hud-stats">{stats.map(([label, value]) => <div key={label}><small>{label}</small><strong>{value}</strong></div>)}</div>
     <div className="player-hud-context"><span><MapPin size={15}/>{location}</span><span><Wallet size={15}/>{character.credits.toLocaleString()}cr</span><span><Heart size={15}/>Condition {character.condition}</span></div>
   </section>;
@@ -23,9 +24,9 @@ function DossierPanel({ title, meta, children }: { title: string; meta?: string;
 }
 
 export function RelationshipPanel({ world }: { world: WorldState }) {
-  const contacts = world.contacts.filter(contact => contact.playerKnown);
+  const contacts = playerKnownContacts(world.contacts);
   return <DossierPanel title="RELATIONSHIPS" meta={`${contacts.length} KNOWN`}>
-    {contacts.length ? contacts.map(contact => <article className="dossier-entry" key={contact.id}><strong>{contact.name}{contact.companion ? " · Companion" : ""}</strong><p>{contact.description}</p><small>{contact.observedAttitude}</small>{contact.knownObligations.length > 0 && <ul>{contact.knownObligations.map(item => <li key={item}>{item}</li>)}</ul>}</article>) : <p className="empty">No confirmed relationships recorded.</p>}
+    {contacts.length ? contacts.map(contact => <details className="page-inspector" key={contact.id}><summary>{contact.name}{contact.companion ? " · Companion" : ""} · {contact.observedAttitude || "Attitude unconfirmed"}</summary><p>{contact.description}</p>{contact.knownObligations.length > 0 && <ul>{contact.knownObligations.map(item => <li key={item}>{item}</li>)}</ul>}</details>) : <p className="empty">No confirmed relationships recorded.</p>}
   </DossierPanel>;
 }
 
@@ -43,8 +44,8 @@ export function InventoryPanel({ character, world }: { character: CharacterState
   const carried = character?.inventory ?? [];
   return <DossierPanel title="INVENTORY" meta={`${carried.length + equipment.length} RECORDED`}>
     {!carried.length && !equipment.length && <p className="empty">No established equipment.</p>}
-    {carried.length > 0 && <><h4>CARRIED ITEMS</h4><ul className="dossier-list">{carried.map(item => <li key={item}>{item}</li>)}</ul></>}
-    {equipment.length > 0 && <><h4>NOTABLE EQUIPMENT</h4>{equipment.map(asset => <article className="dossier-entry" key={asset.id}><strong>{asset.name}</strong><p>{asset.description}</p></article>)}</>}
+    {carried.length > 0 && <><h4>CARRIED ITEMS</h4>{carried.map((item, index) => <details className="page-inspector" key={`${index}:${item}`}><summary>{item}</summary><p className="muted">Carried item. No unrecorded bonuses or enhancements are assumed. An item stat block requires verified GM/rules-engine data.</p></details>)}</>}
+    {equipment.length > 0 && <><h4>NOTABLE EQUIPMENT</h4>{equipment.map(asset => <details className="page-inspector" key={asset.id}><summary>{asset.name}</summary><p>{asset.description}</p><small>Established equipment record · read-only</small></details>)}</>}
   </DossierPanel>;
 }
 
@@ -53,7 +54,7 @@ export function FinancialAssetsPanel({ character, world }: { character: Characte
   return <DossierPanel title="FINANCIAL / KELVEK LEGACY" meta="CONFIRMED STATE ONLY">
     <div className="financial-summary"><small>LIQUID CREDITS</small><strong>{character ? `${character.credits.toLocaleString()}cr` : "UNASSIGNED"}</strong></div>
     <h4>CONFIRMED HOLDINGS</h4>
-    {holdings.length ? holdings.map(asset => <article className="dossier-entry" key={asset.id}><strong>{asset.name}</strong><small>{asset.kind}</small><p>{asset.description}</p></article>) : <p className="empty">No confirmed holdings or accessible legacy assets.</p>}
+    {holdings.length ? holdings.map(asset => <details className="page-inspector" key={asset.id}><summary>{asset.name} · {asset.kind}</summary><p>{asset.description}</p><small>Ownership determined solely by recorded campaign events.</small></details>) : <p className="empty">No confirmed holdings or accessible legacy assets.</p>}
     <p className="muted">Suspected or inaccessible assets appear only after the campaign records them.</p>
   </DossierPanel>;
 }
