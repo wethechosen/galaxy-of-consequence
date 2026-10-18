@@ -21,6 +21,8 @@ it("preserves audited NPC progress with one GM dossier per character",async()=>{
   expect(result.canonicalRegistry).toHaveLength(54);
   for(const npc of result.canonicalRegistry){
     expect(npc.definitiveDossier?.id,npc.id).toBe(npc.id);
+    expect(npc.design.level,npc.id).toBe(npc.definitiveDossier.combat.level);
+    expect(npc.design.priorCareerXp,npc.id).toBe(npc.definitiveDossier.combat.careerXp);
     expect(npc.definitiveDossier.combat.level,npc.id).toBeGreaterThan(0);
     expect(npc.definitiveDossier.combat.feats.length,npc.id).toBeGreaterThan(0);
     expect(npc.definitiveDossier.equipment.neverGrantAutomatically,npc.id).toBe(true);
