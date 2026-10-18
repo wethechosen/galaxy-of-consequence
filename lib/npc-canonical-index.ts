@@ -145,6 +145,9 @@ export const GOC_FEL_LEGENDS_BASELINE=Object.freeze({
  roanFel:"Deceased after 138 ABY; not a living 150 ABY combatant.",
  marasiahFel:"Succeeded Roan Fel after the 138 ABY war; later fate is determined only by established GOC state.",
  jaggedFel:"Founder of the Fel dynastic Imperial lineage; historical only.",
+ antaresDraco:"Legends Imperial Knight and Marasiah Fel's loyal companion; later 150 ABY survival and role require committed GOC history.",
+ gannerKrieg:"Legends Imperial Knight in service to the Fel cause; 150 ABY fate unconfirmed.",
+ treisSinde:"Legends veteran Imperial Knight; 150 ABY fate and current rank unconfirmed.",
  aliyahFel:"GOC-original Fel dynast; succession and title require actual recorded history.",
  knightDoctrine:"Imperial Knights reject the dark side; loyalty to a fallen sovereign does not override duty to resist their fall."
 });
