@@ -91,10 +91,10 @@ function validateDelta(value) {
   if (own(value, "tradeOfferAdd")) {
     if (!Array.isArray(value.tradeOfferAdd) || value.tradeOfferAdd.length > 8) invalid("tradeOfferAdd");
     result.tradeOfferAdd = value.tradeOfferAdd.map((offer) => {
-      if (!record(offer) || !Array.isArray(offer.items) || !offer.items.length || offer.items.length > 12) invalid("tradeOfferAdd");
+      if (!record(offer) || !Array.isArray(offer.items) || (!offer.items.length && !offer.service) || offer.items.length > 12 || (offer.items.length && offer.service)) invalid("tradeOfferAdd");
       const sellerName = string(offer.sellerName, "tradeOfferAdd.sellerName", 160);
       if (!sellerName) invalid("tradeOfferAdd.sellerName");
-      const entry = { sellerName, totalCredits: number(offer.totalCredits, "tradeOfferAdd.totalCredits", 1, MAX_MONEY, true) };
+      const entry = { sellerName, totalCredits: number(offer.totalCredits, "tradeOfferAdd.totalCredits", offer.service ? 0 : 1, MAX_MONEY, true) };
       if (own(offer, "lease")) {
         try { entry.lease = validateLeaseTerms(offer.lease, entry.totalCredits); }
         catch { invalid("tradeOfferAdd.lease"); }
@@ -107,6 +107,17 @@ function validateDelta(value) {
         const species = string(offer.sellerSpecies, "tradeOfferAdd.sellerSpecies", 160);
         if (species) entry.sellerSpecies = species;
       }
+      if (own(offer, "service")) {
+        const service = offer.service;
+        const kinds = ["travel", "freight", "lodging", "commission", "repair", "medical", "training", "other"];
+        if (!record(service) || own(offer, "lease") || !kinds.includes(service.kind)) invalid("tradeOfferAdd.service");
+        entry.service = { kind: service.kind, title: string(service.title, "tradeOfferAdd.service.title", 160) };
+        if (!entry.service.title) invalid("tradeOfferAdd.service.title");
+        Object.assign(entry.service, strings(service, ["details", "origin", "destination", "departure", "requiredFlag"], "tradeOfferAdd.service"));
+        if (own(service, "durationMinutes")) entry.service.durationMinutes = number(service.durationMinutes, "tradeOfferAdd.service.durationMinutes", 1, 525600, true);
+        if (own(service, "minLevel")) entry.service.minLevel = number(service.minLevel, "tradeOfferAdd.service.minLevel", 1, 20, true);
+      }
+      if (own(offer, "priceSource")) entry.priceSource = string(offer.priceSource, "tradeOfferAdd.priceSource", 160);
       const seen = new Set();
       entry.items = offer.items.map((item) => {
         if (!record(item)) invalid("tradeOfferAdd.items");
