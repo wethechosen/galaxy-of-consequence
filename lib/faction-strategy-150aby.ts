@@ -9,6 +9,7 @@ import {GOC_FACTIONS_150_ABY,GOC_FACTION_BY_ID,GOC_FACTION_MEMBERS,type Faction1
 import {sceneNpcRoster} from "./player-scene-roster";
 import {GOC_NPC_INDEX_BY_ID} from "./npc-canonical-index";
 import {jediInstitution150} from "./jedi-order-150aby";
+import {jediInstitutionWorkload} from "./jedi-operational-planning";
 type Row=Record<string,unknown>;
 const rec=(v:unknown):Row=>v&&typeof v==="object"&&!Array.isArray(v)?v as Row:{};
 const arr=(v:unknown)=>Array.isArray(v)?v:[];
@@ -92,6 +93,7 @@ export function factionGmContext(snapshot:unknown,action:string,limit=2){
       sites:x.sites.map(s=>({name:s.name,state150:s.state150,restriction:s.restriction})),
       departmentMandates:x.offices.map(o=>({description:o.description,mandate:o.mandate,leaderId:o.leaderId})),
       confirmedGocJedi:x.existingOriginalGocJedi.map(n=>({name:n.name,position:n.position})),
+      institutionalWorkload:jediInstitutionWorkload(minute),
       warning:"No 150 ABY Grand Master, fixed council appointments or force-pursuit mission is automatically established. Kill no NPC and award no XP merely from an institutional profile."};
   })():null,
   contract:"All strategic agendas are GM-private fictional intentions, not historical events, informed player knowledge, or successful operations. A proposed mission never spends funds, grants sovereign authority, moves troops, resolves conflict, or creates news. Verify scene evidence, time, logistics, boundaries and Saga mechanics; commit outcomes only through the existing authoritative turn ledger. Never introduce XIII, Korvalis or another secret into an unrelated player scene."
