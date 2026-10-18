@@ -26,7 +26,7 @@ export function playerVisualContract(name?: string) {
     design: "existing-datapad",
     gpt: { mode: "full", panels: [...GPT_MODULES] },
     web: { mode: "existing-ui-selected-enhancements", panels: [...WEB_ENHANCEMENTS] },
-    portrait: /d['’]?mir/i.test(name || "") ? { url: "/images/dmir-headshot.svg", alt: "D'mir Holloràn headshot", kind: "illustrated" } : null,
+    portrait: { status: "awaiting-approved-reference", assetUrl: null, subject: name || "Current character", note: "Use approved character artwork only; never generate a placeholder." },
     statAuthority: {
       mode: "gm-controller-only",
       readOnlyForPlayer: [...GM_ONLY_FIELDS],

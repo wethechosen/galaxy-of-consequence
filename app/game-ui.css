@@ -67,24 +67,24 @@ button, input, select, textarea { font-family: var(--font-body), sans-serif; }
 @media (max-width: 420px) { .market-grid { grid-template-columns: 1fr; }.market-art { height: 150px; }.market-price { flex-direction: row; }.portrait-grid { grid-template-columns: 1fr; }.market-toolbar { gap: 10px; }.market-toolbar small { font-size: 9px; } }
 @media (prefers-reduced-transparency: reduce) { .glass, .market-card, .data-panel { background: #0b101b; backdrop-filter: none; } }
 
-/* Incremental character portrait / GM-authoritative HUD enhancement. Existing layout and theme retained. */
 .game-ui .character-link { display: inline-flex; align-items: center; gap: 9px; }
-.game-ui .character-headshot-small { width: 34px; height: 34px; flex: 0 0 34px; border-radius: 8px; object-fit: cover; border: 1px solid #8a6645; background: #09131d; }
 .game-ui .hud-character-heading { display: flex; align-items: center; gap: 18px; margin-bottom: 12px; }
 .game-ui .hud-character-heading h2 { margin: 0; }
-.game-ui .character-headshot { width: 98px; height: 114px; object-fit: cover; flex: 0 0 98px; border: 1px solid #a47b45; border-radius: 10px; background: #0b121b; }
 .game-ui .hud-health { margin: 14px 0; padding: 12px 14px; border: 1px solid #214455; border-radius: 10px; background: #06121a; }
 .game-ui .hud-health-label { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 9px; font-size: 11px; letter-spacing: .08em; }
 .game-ui .hud-health-label strong { letter-spacing: normal; font-size: 16px; }
 .game-ui .hud-health-track { overflow: hidden; width: 100%; height: 9px; background: #242f39; border-radius: 20px; }
 .game-ui .hud-health-track > span { display: block; height: 100%; background: linear-gradient(90deg,#2e7867,#69ae92); border-radius: inherit; transition: width 200ms ease; }
 .game-ui .hud-health small { display: block; margin-top: 7px; color: #9c9daa; }
-.game-ui .player-hud-identity { display: flex; align-items: center; gap: 12px; }
-.game-ui .player-hud-identity-text { min-width: 0; }
-.game-ui .player-hud-portrait { width: 72px; height: 82px; border-radius: 8px; border: 1px solid #886644; object-fit: cover; flex: 0 0 72px; }
 @media (max-width: 540px) {
-  .game-ui .character-headshot-small { width: 28px; height: 28px; flex-basis: 28px; }
   .game-ui .hud-character-heading { gap: 12px; }
-  .game-ui .character-headshot { width: 78px; height: 92px; flex-basis: 78px; }
-  .game-ui .player-hud-portrait { width: 54px; height: 64px; flex-basis: 54px; }
 }
+
+/* Within-page inspection controls; keeps the existing screenshot-led datapad style. */
+.game-ui .page-inspector { margin: 6px 0; border: 1px solid var(--line); border-radius: 9px; padding: 12px 14px; background: rgba(9, 18, 27, .55); }
+.game-ui .page-inspector summary { cursor: pointer; font-weight: 600; color: var(--ink); }
+.game-ui .page-inspector[open] summary { color: var(--acid); margin-bottom: 10px; }
+.game-ui .page-inspector p { line-height: 1.5; }
+.game-ui .ledger-filters { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 12px; }
+.game-ui .ledger-filters label { flex: 1 1 170px; min-width: 0; }
+.game-ui .ledger-filters input, .game-ui .ledger-filters select { width: 100%; }

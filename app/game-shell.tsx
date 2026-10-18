@@ -20,7 +20,6 @@ export default function GameShell({ campaign, user, tab, navigate, theme, status
   const dialog = useRef<HTMLDialogElement>(null);
   const character = campaign.character;
   const name = character?.name ?? campaign.world?.draft?.name ?? "Character pending";
-  const isDmir = /d['’]?mir/i.test(name);
   const health = character?.hitPoints;
   const healthPct = health?.maximum ? Math.max(0, Math.min(100, 100 * health.current / health.maximum)) : 0;
   const [logoutError, setLogoutError] = useState("");
@@ -31,7 +30,7 @@ export default function GameShell({ campaign, user, tab, navigate, theme, status
       <button className="menu-toggle icon-button" onClick={() => setMenuOpen(!menuOpen)} aria-label="Toggle navigation" aria-expanded={menuOpen}><Menu size={22} /></button>
       <button className="wordmark" onClick={() => go("Home")}>GALAXY OF CONSEQUENCE</button>
       <span className="connection-label"><i />LIVE AI OFF</span><span className="alignment-chip" title={theme.label}>{character && campaign.rulesStatus === "verified" ? `DSS ${character.darkSideScore}` : "UNASSIGNED"}</span>
-      <button className="character-link" onClick={() => go("Character")}>{isDmir && <img className="character-headshot-small" src="/images/dmir-headshot.svg" alt="D'mir character portrait" />}{name}</button>
+      <button className="character-link" onClick={() => go("Character")}>{name}</button>
       <div className="header-meter"><span>FORCE POINTS</span><strong>{character?.forcePoints ?? "—"}</strong></div>
       <button className="header-action" onClick={() => go("HUD")}><Gauge size={14} />HUD</button>
       {user.role === "admin" && <button className="header-action" onClick={() => go("GM Console")}><Shield size={14} />GM CONSOLE</button>}
@@ -47,7 +46,7 @@ export default function GameShell({ campaign, user, tab, navigate, theme, status
     </div>
     <dialog ref={dialog} className="hud-dialog glass" aria-labelledby="hud-title" onClick={event => { if (event.target === dialog.current) dialog.current.close(); }}>
       <div className="hud-heading"><span className="eyebrow">PERSONAL DATAPAD / STATUS</span><button className="icon-button" aria-label="Close HUD" onClick={() => dialog.current?.close()}><X size={20}/></button></div>
-      <div className="hud-character-heading">{isDmir && <img className="character-headshot" src="/images/dmir-headshot.svg" alt="Headshot of D'mir Holloràn" />}<div><h2 id="hud-title">{name}</h2><p>{character ? `${character.species} · ${character.heroicClass} · Level ${character.level}` : "Biography and character creation pending"}</p><small className="muted">AUTHORITATIVE GAME STATE · GM-CONTROLLED</small></div></div>
+      <div className="hud-character-heading"><div><h2 id="hud-title">{name}</h2><p>{character ? `${character.species} · ${character.heroicClass} · Level ${character.level}` : "Biography and character creation pending"}</p><small className="muted">AUTHORITATIVE GAME STATE · GM-CONTROLLED</small></div></div>
       {health && <div className="hud-health" aria-label={`Health ${health.current} of ${health.maximum} hit points, read only`}><div className="hud-health-label"><span>HIT POINTS / VITALITY</span><strong>{health.current} / {health.maximum}</strong></div><div className="hud-health-track" role="progressbar" aria-valuenow={health.current} aria-valuemin={0} aria-valuemax={health.maximum} aria-label="Current health, GM controlled"><span style={{ width: `${healthPct}%` }} /></div><small>Read-only · Only the GM and rules engine determine changes.</small></div>}
       <div className="stat-grid">{[["HIT POINTS", character ? `${character.hitPoints.current}/${character.hitPoints.maximum}` : "—"], ["CREDITS", character?.credits ?? "—"], ["FORCE POINTS", character?.forcePoints ?? "—"], ["DARK SIDE SCORE", character?.darkSideScore ?? "—"]].map(([label, value]) => <div key={label}><small>{label}</small><strong>{value}</strong></div>)}</div>
       <p><MapPin size={16}/>{campaign.currentLocation}</p><p className="muted">{theme.label}. Appearance does not change game statistics.</p>

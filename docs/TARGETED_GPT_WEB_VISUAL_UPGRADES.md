@@ -19,7 +19,7 @@ Expose all supported player-visible modules in ChatGPT:
 9. Objectives, mission journal and milestone history
 10. Living chronology, committed dice rolls, receipts, and event provenance
 
-The Custom GPT reads `/api/gpt/state` or `/api/gpt/hud`; both now expose `interface` presentation metadata. Use actual saved values, not archived example numbers. No client slider or locally editable stats. The hero portrait is a presentation-only illustration at `/images/dmir-headshot.svg` for D'mir. It does not rewrite existing character canon or provide new abilities.
+The Custom GPT reads `/api/gpt/state` or `/api/gpt/hud`; both now expose `interface` presentation metadata. Use actual saved values, not archived example numbers. No client slider or locally editable stats. The existing headshot slot remains empty until the player provides or approves artwork; do not add unsolicited generated portraits.
 
 ### Single GM and authoritative state
 
@@ -59,6 +59,26 @@ These are incremental improvements to the existing screens, not five new replace
 - Verify state GET and HUD GET return consistent interface contracts.
 - Verify `GM_ONLY_FIELDS` includes HP/vitality, conditions, XP, credits, and inventory.
 - Confirm no player HP/XP sliders are introduced in ChatGPT or website.
-- Verify the website portrait only appears for D'mir; other characters keep existing appearance.
+- Verify no unapproved generated portrait appears in any interface.
 - Ensure existing UI is functional at mobile widths and on desktop.
 - Run tests and typecheck before merging any branch. If this cannot be completed, leave changes on a review branch.
+
+## Implemented page-level interactive increment (2026-10-17)
+
+No replacement dashboard was made, no generated image was approved or retained, and the existing portrait slots remain unchanged.
+
+| Existing website page | Interaction now landed | Boundaries and follow-on |
+|---|---|---|
+| Atlas | Recorded current-position panel beside original zoom/pan, coordinate reference and journal note functionality | Clicking map does **not** travel; a verified graph-backed route planner can be added only when canonical system/route data exists |
+| Contacts / Syndicates / Comms | Expand known contact cards; source-limited known intelligence search and known contacts; private goals/memories filtered out | Interactive relationship edges need explicit source-linked faction records, not invented associations |
+| Bank / Economy | Read-only spendable funds and holdings summary, transaction search, inflow/outflow filter and explicit contract-decision count | Discrete deposit/physical chip layers require reading the authoritative GPT/hosted asset ledger; do not synthesize from local `CharacterState` |
+| Assets / Inventory / Character dossier | Expand carried items and established equipment records within existing inventory panels | Rich item stat blocks and equipment slots require verified inventory/equipment data; no equipping-by-click without a validated GM transaction |
+| Saves / Chronology | Timeline records now filtered by type, sorted by committed timestamp, and limited to player-visible events | Event-to-receipt links can be added when revision/turn IDs are available in the persisted event schema |
+
+### Availability and limits
+
+These changes are committed on a feature branch for review, not merged or deployed to production until validated. They are purely client projections of the existing saved data. No added page control changes character statistics, advances story time, makes purchases or exposes internal NPC state.
+
+### GPT separate work track
+
+The existing GPT controller response includes `interface` metadata and a complete read-only panel contract. The actual in-chat UI can render those panels only when ChatGPT is consuming live authenticated GPT state; this repository cannot unilaterally force arbitrary ChatGPT client UI rendering. Players always express game-changing intent through the GM controller; no raw client state writes or sliders.

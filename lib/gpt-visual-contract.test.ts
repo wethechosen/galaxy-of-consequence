@@ -9,8 +9,8 @@ describe("preserve existing datapad / visual interface contract", () => {
     expect(playerVisualContract("D'mir Holloràn").design).toBe("existing-datapad");
   });
   it("exposes a correctly scoped D'mir portrait and no fabricated portraits for other characters", () => {
-    expect(playerVisualContract("D’mir Holloràn").portrait?.url).toBe("/images/dmir-headshot.svg");
-    expect(playerVisualContract("Another Character").portrait).toBeNull();
+    expect(playerVisualContract("D’mir Holloràn").portrait.assetUrl).toBeNull();
+    expect(playerVisualContract("Another Character").portrait.assetUrl).toBeNull();
   });
   it("leaves player stat controls read-only", () => {
     const contract = playerVisualContract("D'mir");
