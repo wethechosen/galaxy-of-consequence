@@ -112,11 +112,14 @@ not player facts.
    ability-score and talent/Force directions. Proposed scores and powers
    are not mechanically valid merely because they are printed in a dossier.
    **Species not implemented or rules-validated must remain pending**.
-4. Core book species currently supported by `sagaSpecies` include Human,
-   Bothan, Duros, Rodian, Sullustan, Twi'lek and Zabrak. Do not grant Human
-   feats or substitute Human species ability modifiers for Aqualish, Chiss,
-   Falleen, Hutt, Ithorian, Kiffar, Mirialan, Muun, Nikto, Togruta, Zeltron,
-   Weequay or other unverified species.
+4. The Saga species builder recognizes Human, Bothan, Duros, Rodian,
+   Sullustan, Twi'lek and Zabrak alongside Core Aqualish/Ithorian and
+   supplement-derived Chiss, Falleen, Nikto, Togruta, Weequay and Zeltron.
+   Mirialan, Kiffar and Muun adaptations are **explicitly labeled GOC homebrew**;
+   their abilities must never be misrepresented as verified official Saga traits.
+   Native languages and eligible racial bonus feats/skills are now validated.
+   Chiss-raised Kiffar means Kiffar ancestry, **not stacked Kiffar and Chiss** traits.
+   Additional rare species remain gated until their exact source mechanics are entered.
 5. **Seralyth** has an authored eighth-level Saga character sheet with an
    explicit class history, ability scores, attacks, defenses, Force powers
    and talents. It is separately labeled authored, not falsely certified by
@@ -146,3 +149,19 @@ not player facts.
 - Live NVIDIA NPC playthrough and deployed database checks are separate
   validations; source-code commits alone do not prove the simulation has
   advanced or updated hosted save-state records.
+
+## Species foundation bottleneck (2026-10-17 resolution)
+
+- Root cause: nonhuman automatic languages were missing from `SAGA_LANGUAGE_OPTIONS`;
+  some generated bonus-language choices reused the character's native language.
+- Registered and source-labeled the needed species and automatic languages;
+  corrected Kiffar/Chiss cultural ancestry normalization, racial feat grants and
+  extra trained skills. Unsupported/homebrew trait names do not grant unearned powers.
+- **All 25 members of `CAMPAIGN_NPCS_150_ABY` now produce mechanically validated
+  starting-career sheets in memory** through `npcMechanics()` and the actual
+  Saga foundation/advancement validator. `lib/npc-mechanics.test.ts` requires
+  complete build construction and explicit racial source provenance for each.
+- This does **not** certify undocumented equipment inventories, advanced special
+  racial actions not implemented as server-owned roll handlers, or live NPC save
+  migrations. Existing lower-level NPC simulation test saves are not promoted
+  by rendering the roster. Deceased Kelvek is blocked from living NPC spawning.
