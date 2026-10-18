@@ -22,3 +22,23 @@ export function normalizeModelLedgerJson(source: string) {
   }
   return output;
 }
+
+/**
+ * Repair an EXISTING ledger comment without inventing missing fields.
+ * A missing ledger, multiple ledgers, executable value, invalid object, or
+ * semantic contradiction still requires GM/validator handling.
+ */
+export function repairEmbeddedModelLedger(narration: string): string | null {
+  const matches = [...narration.matchAll(/<!--\s*STATE\s*:\s*([\s\S]*?)\s*-->/gi)];
+  if (matches.length !== 1) return null;
+  const match = matches[0];
+  const original = match[1].trim();
+  try { JSON.parse(original); return null; } catch { /* Only malformed JSON needs repair. */ }
+  let repaired: unknown;
+  try { repaired = JSON.parse(normalizeModelLedgerJson(original)); }
+  catch { return null; }
+  if (!repaired || typeof repaired !== "object" || Array.isArray(repaired)) return null;
+  const prefix = narration.slice(0, match.index);
+  const suffix = narration.slice(match.index! + match[0].length);
+  return prefix + `<!--STATE:${JSON.stringify(repaired)}-->` + suffix;
+}

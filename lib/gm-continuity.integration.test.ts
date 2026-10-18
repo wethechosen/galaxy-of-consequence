@@ -5,6 +5,7 @@ import { openStorage } from './storage';
 import { readDatapad, saveAuthoritativeDatapad, type DatapadSnapshot } from './datapad-save';
 import { runGmTurn } from './gm';
 import { currentTradeOffers } from './conversation-trade';
+import { loadLocalValidatedDraft, storeLocalValidatedDraft } from './gm-draft-checkpoint';
 import { NvidiaProviderError, type NvidiaRequest } from './original-provider';
 
 const provider = vi.hoisted(() => vi.fn());
@@ -168,6 +169,36 @@ describe('authoritative GM continuity and unavailable drafting', () => {
     expect(readDatapad(actor, null, db).snapshot?.gameState.campaignTimeMinutes).toBe(365);
   });
 
+  it('resumes a fully validated draft without another model call or a new roll', async () => {
+    const { actor, db, initial } = setup();
+    const input = { turnId: 'validated-checkpoint-01', revision: 1, action: QUESTION };
+    const response = monthlyReply();
+    storeLocalValidatedDraft(db, actor.id, input.turnId, input.revision, input.action, {
+      version: 1,
+      stage: "validated",
+      interpretation: { semantic: { intent: 'dialogue', canonicalAction: QUESTION, checkNeeded: false }, fallbackReason: null },
+      roll: null,
+      content: response.content,
+      provider: response.provider,
+      model: response.model,
+    });
+    const before = readDatapad(actor, null, db);
+    expect(before.snapshot?.gameState.credits).toBe(5000);
+    expect(provider).not.toHaveBeenCalled();
+
+    const committed = await runGmTurn(actor, input);
+    expect(provider).not.toHaveBeenCalled();
+    expect(committed.provider).toBe('nvidia');
+    expect(committed.roll).toBeNull();
+    expect(committed.revision).toBe(2);
+    expect(committed.snapshot.gameState.turnEvents).toHaveLength(1);
+    expect(committed.snapshot.gameState.credits).toBe(initial.gameState.credits);
+    expect(currentTradeOffers(committed.snapshot.gameState).filter(offer => offer.sourceTurnId === input.turnId)).toHaveLength(1);
+    expect(await runGmTurn(actor, input)).toEqual(committed);
+    expect(readDatapad(actor, null, db).revision).toBe(2);
+    expect(provider).not.toHaveBeenCalled();
+  });
+
   it('answers a continuity correction without changing scene, clock, or resources', async () => {
     const { actor, db } = setup();
     const before = readDatapad(actor, null, db).snapshot!;
@@ -212,6 +243,42 @@ describe('authoritative GM continuity and unavailable drafting', () => {
     expect(provider).toHaveBeenCalledTimes(4); // Interpretation plus three rewritten drafts.
   });
 
+  it('reuses original Nemotron narration when ledger repair is rate limited', async () => {
+    const { actor, db } = setup();
+    const before = readDatapad(actor, null, db);
+    const input = { turnId: 'ledger-cooldown-same-draft-01', revision: 1, action: QUESTION };
+    let gmCalls = 0;
+    let ledgerCalls = 0;
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mockProvider((request) => {
+      if (request.messages[0]?.content.startsWith('PLAYER ACTION:')) {
+        ledgerCalls += 1;
+        if (ledgerCalls === 1) throw new NvidiaProviderError('Quota during ledger repair.', 429, 60, 429, true);
+        return { provider: 'nvidia', model: 'ledger-test', finishReason: 'stop',
+          content: '<!--STATE:' + JSON.stringify({ tradeOfferAdd: [MONTHLY_OFFER] }) + '-->' };
+      }
+      gmCalls += 1;
+      const reply = monthlyReply();
+      return { ...reply, content: reply.content.replace(/<!--STATE:[\s\S]*?-->/, '<!--STATE:{}-->') };
+    });
+
+    await expect(runGmTurn(actor, input)).rejects.toMatchObject({ status: 429 });
+    expect(readDatapad(actor, null, db)).toEqual(before);
+    expect(gmCalls).toBe(1);
+    expect(ledgerCalls).toBe(1);
+    expect(loadLocalValidatedDraft(db, actor.id, input.turnId, input.revision, input.action)?.stage).toBe('raw');
+
+    const result = await runGmTurn(actor, input);
+    expect(gmCalls).toBe(1); // Preserve the original narrator response.
+    expect(ledgerCalls).toBe(2); // Retry only the unfinished ledger step.
+    expect(result.revision).toBe(2);
+    expect(currentTradeOffers(result.snapshot.gameState).filter(offer => offer.sourceTurnId === input.turnId)).toHaveLength(1);
+    expect(loadLocalValidatedDraft(db, actor.id, input.turnId, input.revision, input.action)?.stage).toBe('validated');
+    expect((await runGmTurn(actor, input)).revision).toBe(2);
+    expect(gmCalls).toBe(1);
+    expect(ledgerCalls).toBe(2);
+  });
+
   it('repairs an empty ledger from the same monthly quote without rerolling or rewriting the scene', async () => {
     const { actor } = setup();
     const requests: NvidiaRequest[] = [];
@@ -241,7 +308,10 @@ describe('authoritative GM continuity and unavailable drafting', () => {
       if (++drafts === 1) throw new NvidiaProviderError('Temporary outage.', 503);
       return monthlyReply();
     });
-    const result = await runGmTurn(actor, { turnId: 'recovered-draft', revision: 1, action: QUESTION });
+    const input = { turnId: 'recovered-draft', revision: 1, action: QUESTION };
+    await expect(runGmTurn(actor, input)).rejects.toMatchObject({ status: 503 });
+    const result = await runGmTurn(actor, input);
+    expect(drafts).toBe(2); // One attempt per invocation, never an immediate outage retry.
     expect(result.fallbackReason).toBeNull();
     expect(result.snapshot.messages.at(-1)).toMatchObject({ provider: 'nvidia', fallbackReason: null });
   });
@@ -258,7 +328,7 @@ describe('authoritative GM continuity and unavailable drafting', () => {
     expect(db.prepare('SELECT status, result FROM gm_turn_attempts WHERE account_id = ? AND turn_id = ?').get(actor.id, input.turnId))
       .toMatchObject({ status: 'pending', result: null });
     const callsBeforeRetry = provider.mock.calls.length;
-    expect(callsBeforeRetry).toBe(4); // One interpretation, three unavailable drafts.
+    expect(callsBeforeRetry).toBe(2); // One interpretation, one unavailable draft.
 
     mockProvider(() => monthlyReply());
     const completed = await runGmTurn(actor, input);
