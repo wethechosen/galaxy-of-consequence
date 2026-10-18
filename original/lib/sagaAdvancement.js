@@ -152,7 +152,7 @@ const CLASS_SKILL_IDS = Object.freeze({
 // Core printed p. 22, Common Languages. Language use still respects species'
 // physical speech restrictions and what the current scene actually permits.
 export const SAGA_LANGUAGE_OPTIONS = Object.freeze([
-  ["basic", "Basic"], ["binary", "Binary"], ["bocce", "Bocce"], ["bothese", "Bothese"], ["cerean", "Cerean"], ["dosh", "Dosh"], ["durese", "Durese"], ["ewokese", "Ewokese"], ["gamorrean", "Gamorrean"], ["gunganese", "Gunganese"], ["high-galactic", "High Galactic"], ["huttese", "Huttese"], ["ithorese", "Ithorese"], ["jawa-trade-language", "Jawa Trade Language"], ["kel-dor", "Kel Dor"], ["mon-calamarian", "Mon Calamarian"], ["quarrenese", "Quarrenese"], ["rodese", "Rodese"], ["ryl", "Ryl"], ["shyriiwook", "Shyriiwook"], ["sullustese", "Sullustese"], ["zabrak", "Zabrak"],
+  ["basic", "Basic"], ["aqualish", "Aqualish"], ["binary", "Binary"], ["bocce", "Bocce"], ["bothese", "Bothese"], ["cheunh", "Cheunh"], ["falleen", "Falleen"], ["kiffu", "Kiffu"], ["mirialan", "Mirialan"], ["muun", "Muun"], ["nikto", "Nikto"], ["sriluurian", "Sriluurian"], ["togruti", "Togruti"], ["cerean", "Cerean"], ["dosh", "Dosh"], ["durese", "Durese"], ["ewokese", "Ewokese"], ["gamorrean", "Gamorrean"], ["gunganese", "Gunganese"], ["high-galactic", "High Galactic"], ["huttese", "Huttese"], ["ithorese", "Ithorese"], ["jawa-trade-language", "Jawa Trade Language"], ["kel-dor", "Kel Dor"], ["mon-calamarian", "Mon Calamarian"], ["quarrenese", "Quarrenese"], ["rodese", "Rodese"], ["ryl", "Ryl"], ["shyriiwook", "Shyriiwook"], ["sullustese", "Sullustese"], ["zabrak", "Zabrak"],
 ].map(([id, name]) => ({ id, name })));
 
 const cleanList = (value, emptyPattern = /^(?:none|none recorded|unestablished)$/i) => Array.isArray(value)
