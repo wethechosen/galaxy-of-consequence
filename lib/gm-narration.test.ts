@@ -3,6 +3,14 @@ import { attachRepairedLedger, appendTurnEvent, assertActionConstraints, assertC
 import { planConversationTrade, reconcileConversationTradeDelta } from "./conversation-trade";
 
 describe("authoritative Saga narration", () => {
+  it("requires a saved shop interior when the resolved movement enters a supply shop", () => {
+    const street = "Bonadan — Alien Quarters district street";
+    const interior = "Bonadan — Alien Quarters, general supply shop interior";
+    const text = "## SCENE\nYou push through the shop door.\n## GAMEPLAY RESULT\nYou step into the supply shop and face the merchant.";
+    expect(() => assertMovementSceneProgress(text, "I enter the supply shop", null, {}, street)).toThrow(/shop interior/);
+    expect(() => assertMovementSceneProgress(text, "I enter the supply shop", null, { location: interior }, street)).not.toThrow();
+    expect(() => assertMovementSceneProgress(text.replace("You step into", "You do not step into"), "I enter the supply shop", { outcome: "failure" }, {}, street)).not.toThrow();
+  });
   it("rejects the Bonadan counter move when the ledger still points to the workroom", () => {
     const old = "Bonadan — Nuvorren Design House, rear workroom.";
     const narration = `## LOCATION\n${old}\n## SCENE\nYou cross the showroom.\n## GAMEPLAY RESULT\nYou return to the front counter and speak with the clerk directly.`;
