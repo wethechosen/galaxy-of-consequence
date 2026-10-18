@@ -43,6 +43,13 @@ export function applyMarketTrade(snapshot: DatapadSnapshot, input: TradeInput): 
       } else inventory.push({ id: crypto.randomUUID(), name: good.name, qty: 1, tag: String(good.category || "gear").toLocaleLowerCase(), ...(good.illicit ? { legality: good.legality } : {}) });
     }
     state.credits = credits - Number(good.price);
+    // Sale and finite merchant-stock movement commit atomically under the API's
+    // campaign revision/transaction idempotency guard.
+    const listingId = `${market.area.id}:${good.id}`;
+    const stock = Number(good.stock);
+    if (!Number.isSafeInteger(stock) || stock < 1) throw new MarketTradeError("That listing is sold out.", 409);
+    const previousStock = record(state.marketStock) ? state.marketStock : {};
+    state.marketStock = { ...previousStock, [listingId]: stock - 1 };
     state.inventory = inventory;
     return { ...snapshot, gameState: state };
   }
