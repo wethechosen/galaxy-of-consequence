@@ -160,7 +160,7 @@ export function planConversationTrade(action: string, state: Ledger, turnId: str
   // ambiguity, not a veto over that interpretation. Consent guards still apply.
   const purchaseQuestion = /\b(?:can|could|may|should)\s+i\s+(?:buy|purchase|take|grab|pay)\b/i.test(text);
   const inquiryOnly = /^["“']?\s*(?:can|could|may|should)\s+i\s+(?:buy|purchase|take|grab|pay)\b[^.!?\n]*\?\s*["”']?\s*$/i.test(text);
-  const booksService = /\b(?:book|reserve|hire|charter|commission)\b/i.test(text)
+  const booksService = /\b(?:i\s+(?:will\s+|\x27ll\s+)?(?:book|reserve|hire|charter|commission)|(?:book|reserve|hire|charter)\s+(?:the|a|an|my)\b)/i.test(text)
     && !/\b(?:how|whether|what|where|when|could|can|may|should|quote|estimate)\b[^.!?]{0,90}\b(?:book|reserve|hire|charter|commission)\b/i.test(text);
   if (inquiryOnly || (!acceptedOfferId && (!(accepts || booksService) || purchaseQuestion))) return null;
   const acceptanceClause = text.replace(/^["“']\s*/, "")
@@ -172,7 +172,7 @@ export function planConversationTrade(action: string, state: Ledger, turnId: str
   const refersToWholeOffer = isSoldAcceptance || (booksService && offers.filter(offer => Boolean(offer.service)).length === 1) || /\b(?:take|buy|purchase|accept)\s+(?:it|them|both|(?:the|that) (?:offer|deal|bundle|outfit)|everything|(?:the\s+)?[^.!?\n]{1,100}\boffer)\b|\b(?:pay|hand over)\s+(?:the\s+)?(?:quoted|asking|agreed)\s+(?:price|credits|amount)\b/i.test(text);
   const statedPayment = /\b(?:pay|hand over|offer|transfer|charge|debit)\s+(?:(?:the|exactly|only)\s+)*([\d,]+)\s*(?:credits?)?\b|\b(?:buy|purchase)\b[^.!?]{0,140}\bfor\s+([\d,]+)\s*(?:credits?)?\b/i.exec(text);
   const payment = statedPayment ? Number(String(statedPayment[1] || statedPayment[2]).replace(/,/g, "")) : null;
-  const requestedId = /\boffer\s+id\s+([a-z0-9:._-]+)/i.exec(text)?.[1];
+  const requestedId = /\boffer\s+id\s+([a-z0-9:._-]+)/i.exec(text)?.[1].replace(/[:.]+$/, "");
   let matches = offers.filter((offer) => acceptedOfferId ? offer.id === acceptedOfferId : requestedId ? offer.id === requestedId
     : (refersToWholeOffer && (!booksService || Boolean(offer.service))) || Boolean(offer.service && (mentions(text, offer.service.title) || Boolean(offer.service.destination && mentions(text, offer.service.destination)))) || Boolean(offer.items.length && offer.items.every((item) => matchesItem(text, item))) || Boolean(offer.lease && mentions(text, offer.lease.propertyName)));
   const sellers = namedMerchantOffers(matches, text);
