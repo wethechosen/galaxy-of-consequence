@@ -51,6 +51,7 @@ export async function GET(request:Request){
     const canonicalRegistry=GOC_NPC_INDEX_150_ABY.map(n=>{
       const previous=roster.find(item=>item.name.toLowerCase()===n.name.toLowerCase()) as
         {playthroughStatus?:string;auditedEnding?:unknown}|undefined;
+      const complete=npcDefinitiveDossier150ABY(n.id);
       return ({
       id:n.id,name:n.name,species:n.species,homeworld:n.homeworld,era:n.eraABY,
       designation:n.role,description:n.biography,objective:n.objective,secret:n.privateKnowledge,
@@ -58,8 +59,9 @@ export async function GET(request:Request){
         n.sourceClass==="personal-story"?"story":n.sourceClass==="independent-simulation"?"test":
         n.sourceClass==="documented-relative"?"family":"sourcebook",
       lifeStatus:n.lifeStatus,worldState:n.worldState,identitySource:n.identitySource,
-      design:n.design,gmOnly:true,
-      definitiveDossier:npcDefinitiveDossier150ABY(n.id),
+      design:{...n.design,level:complete.combat.level,priorCareerXp:complete.combat.careerXp,
+        abilityScores:complete.combat.abilities,mechanicalAuthority:complete.combat.certification},gmOnly:true,
+      definitiveDossier:complete,
       playthroughStatus:previous?.playthroughStatus||"unverified",
       auditedEnding:previous?.auditedEnding,
       visualReference:npcVisualReference(n.id,n.biography,n.role,n.species),
