@@ -44,6 +44,8 @@ export function npcMechanics(name: string): NpcMechanics {
     storyTraits:rating?{traits:rating.specialTraits,flaw:rating.flaw,origin:rating.origin,mechanicalAuthority:false}:undefined,
     provenance:"GOC 150 ABY campaign design; proposed ratings are not committed mechanics",
     reason: identity?.species !== "Human" ? "Species foundation and full Saga advancement require validation. No Human traits or proposed powers are substituted." : "No validated prior-career build is registered." };
+  if (indexed?.worldState==="historical-only") return {...pending,
+    reason:"Historical deceased NPC: flashback-only. Do not create an active 150 ABY build or spawn a present-day actor."};
   if (!identity || !sagaSpecies(identity.species) || (!NPC_HISTORICAL_TIERS[id]&&!rating&&!proposedTier)) return pending;
   const seed: DatapadSnapshot = { character:{name:identity.name,species:identity.species,level:1,experience:0,maxHitPoints:1},
     gameState:{health:1,conditionTrack:0,inventory:[],turnEvents:[]}, messages:[],comms:[],settings:{} };
