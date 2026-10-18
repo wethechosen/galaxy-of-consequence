@@ -6,6 +6,7 @@ import { readDatapad, saveAuthoritativeDatapad, type DatapadSnapshot } from "./d
 import {projectQuestWorld,questWorldGmContext} from "./quest-world-events";
 import {recordCommittedRivalObservation,relevantRivalGmContext} from "./npc-rival-intelligence";
 import {advanceNpcOffscreen,npcOffscreenGmContext} from "./npc-offscreen-intelligence";
+import {factionGmContext} from "./faction-strategy-150aby";
 import {interpretRpgActionContract,assertRpgOutcomeFocus} from "./rpg-action-contract";
 import { invokeNvidia, NvidiaProviderError, type NvidiaMessage } from "./original-provider";
 import { rollSagaCheck } from "./saga-dice";
@@ -27,7 +28,9 @@ import { buildSemanticSagaCheck, declaredForcePower, forceCapabilityConstraint, 
 import { buildForcePowerPlan, resolveForcePower, type ForcePowerResolution } from "./saga-force";
 import { recoverConfirmedTradeOffer } from "./trade-offer-recovery";
 import { quotedCreditAmounts } from "./quoted-credits";
-import { normalizeModelLedgerJson } from "./model-ledger-json";
+import { normalizeModelLedgerJson, repairEmbeddedModelLedger } from "./model-ledger-json";
+import { classifyGmDraftFailure } from "./gm-draft-failure";
+import { GmDraftIdentityError, loadValidatedDraft, storeValidatedDraft } from "./gm-draft-checkpoint";
 import { itemStatBlock } from "@/original/lib/itemStats";
 import { constrainReadOnlyGoodsInspectionDelta, isReadOnlyGoodsInspection } from "./goods-inspection";
 import { advanceTurnLifecycle, beginTurnLifecycle, commitTurnLifecycle, failTurnLifecycle, recordDraftFailure, type TurnLifecycleReceipt } from "./turn-lifecycle";
@@ -1377,6 +1380,9 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   if (existing?.status === "complete" && existing.result) return JSON.parse(existing.result);
   if (!Number.isSafeInteger(input.revision) || input.revision !== saved.revision) throw new GmTurnError("The campaign changed in another window. Reload the saved game before continuing.", 409);
   if (existing && existing.base_revision !== input.revision) throw new GmTurnError("The campaign changed after this turn began. Submit the action again as a new turn or reload the saved game.", 409);
+  // A validated draft is keyed to precisely this account, action, turn and base revision.
+  // Reading it never changes the authoritative campaign save.
+  const checkpoint = await loadValidatedDraft(db, accountId, input.turnId, input.revision, action);
 
   const mode = classifyTurnMode(action);
   const transitArrival = mode === "play"
@@ -1385,7 +1391,9 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   if (mode === "play" && action) assertAdvancementReady(currentSnapshot.character);
   const priorInterpretation = db.prepare("SELECT interpretation FROM gm_turn_interpretations WHERE account_id = ? AND turn_id = ?").get(accountId, input.turnId) as { interpretation: string } | undefined;
   enterPhase("interpret-action");
-  const interpretation = priorInterpretation ? JSON.parse(priorInterpretation.interpretation) : mode === "play" && action ? await interpretSagaAction(action, currentSnapshot.character as Record<string, unknown>, { ...currentSnapshot.gameState, scene: currentSceneFrame(currentSnapshot), sceneMerchant: sceneMerchant(currentSnapshot), recentInteraction: safeMessages(currentSnapshot).slice(-4) }) : { semantic: null, fallbackReason: null };
+  const interpretation = checkpoint ? checkpoint.interpretation as Awaited<ReturnType<typeof interpretSagaAction>>
+    : priorInterpretation ? JSON.parse(priorInterpretation.interpretation)
+    : mode === "play" && action ? await interpretSagaAction(action, currentSnapshot.character as Record<string, unknown>, { ...currentSnapshot.gameState, scene: currentSceneFrame(currentSnapshot), sceneMerchant: sceneMerchant(currentSnapshot), recentInteraction: safeMessages(currentSnapshot).slice(-4) }) : { semantic: null, fallbackReason: null };
   if (!priorInterpretation) db.prepare("INSERT OR IGNORE INTO gm_turn_interpretations VALUES (?, ?, ?)").run(accountId, input.turnId, JSON.stringify(interpretation));
   let semantic = interpretation.semantic;
   let resolvedIntent = semantic?.canonicalAction || action;
@@ -1433,7 +1441,7 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
     plan = { ...plan, modifier: plan.modifier + battleStrike.attackBonus, damage: plan.damage ? { ...plan.damage, count: plan.damage.count + battleStrike.damageDice } : plan.damage };
   }
   enterPhase("roll-saga");
-  const roll = existing?.roll ? JSON.parse(existing.roll) : plan ? rollSagaCheck(plan) : null;
+  const roll = checkpoint ? checkpoint.roll : existing?.roll ? JSON.parse(existing.roll) : plan ? rollSagaCheck(plan) : null;
   let combatResolution: CombatResolution | null = null;
   let forceResolution: ForcePowerResolution | null = null;
   const combatActionText = positiveActionText(resolvedIntent).toLowerCase();
@@ -1484,7 +1492,9 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   let system = mode === "ooc" ? `You are the campaign Game Master. Answer the player's out-of-character rules or character-status question concisely from authoritative saved state. Distinguish confirmed state from rumors or prior narrative claims. Do not advance time, narrate a new scene, change state, or output a STATE block.\n\nCURRENT CAMPAIGN STATE:\n${publicContext(currentSnapshot)}`
     : mode === "context" ? `The player supplied character background/context, not an in-world action. Acknowledge it briefly, do not roll, do not advance the scene, and do not invent additions. Do not output a STATE block.\n\nCURRENT CAMPAIGN STATE:\n${publicContext(currentSnapshot)}`
     : `${gmSystemForCharacter(currentSnapshot.character as Record<string, unknown>, currentSnapshot.gameState)}${rollInstruction}${combatInstruction}${authorityInstruction}${creatorInstruction}\n\nTURN CONTRACT: Suggestions must change with the current scene, visible interactables, injuries, carried equipment, trained skills and remaining combat actions. Use 2-4 A-D possible attempts, never a static menu, guaranteed outcome, secret clue or unearned Force technique. Only suggest objects already visible in this scene or recorded in state. LOCATION names the end-of-turn place and matches the ledger, not a stale district label. SCENE shows the active character's established visible condition and the declared action meeting the immediate environment before mechanics. GM ADJUDICATION accepts the executable intent; an asserted destination is a goal, not a reason to refuse the attempt. GAMEPLAY RESULT must create a playable new beat even on failure. SAGA CHECK contains only server-owned dice or "No check required." Meditation and terminal interaction are not travel. Negated actions never occur. Travel reaches a concrete observable boundary, not an endless generic transit summary. Historical NPCs and locations in old receipts are not present at the CURRENT planet or location unless authoritative state places them there; never replay an old dock, ship, or contact as the destination of generic movement. PRIOR TURN OUTCOME messages omit old scene prose: use them only for continuity, never as a writing template. The saved scene summary identifies the present beat but its wording must not be copied.\n\nCURRENT AUTHORITATIVE CAMPAIGN STATE:\n${publicContext(currentSnapshot)}`;
-  let response: Awaited<ReturnType<typeof invokeNvidia>> | null = null;
+  let response: Awaited<ReturnType<typeof invokeNvidia>> | null = checkpoint
+    ? { content: checkpoint.content, provider: checkpoint.provider, model: checkpoint.model, finishReason: "stop" }
+    : null;
   if (mode === "play") {
     const currentIdentity = String((currentSnapshot.character as Record<string, unknown>).name || "");
     const lore = canonicalNpcContext(currentIdentity + "\n" + action);
@@ -1509,6 +1519,12 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       system += "\n\nGM-PRIVATE NPC OFFSCREEN INTELLIGENCE: "+JSON.stringify(behindScenes)+
        "\nDo not reveal rumors as truth, make offscreen plans automatically succeed, invent resources, or resolve a conflict without SAGA adjudication. Report delivery is knowledge only. Do not narrate unobserved NPC plans as public news unless a separate adjudicated event justifies it. Plans outside the scene may advance as independent world actions only when evidence, resources, elapsed time, and valid world-state changes are present. An offscreen NPC may not apply player health, credits, inventory, XP or conditions.";
   }
+  if (mode === "play") {
+    const factionContext=factionGmContext(currentSnapshot,action,2);
+    if(factionContext.factions.length)
+      system += "\n\nGM-PRIVATE FACTION STRATEGY (150 ABY): "+JSON.stringify(factionContext)+
+        "\nOrganizations pursue independent priorities as galactic time passes, but their plans are not completed events. No source-backed outcome means no war, fleet movement, title, financial transfer, NPC secret revelation or player penalty. Answer only the player's actual topic; never tie unrelated scenes to XIII, Black Sun or Korvalis.";
+  }
   if (mode === "play" && isReadOnlyGoodsInspection(action)) system += `\n\nREAD-ONLY MERCHANDISE INSPECTION: Resolve the declared examination only. Describe visible condition, seals, labels, packaging, and expiration markings supported by the scene. Do not deduct or grant credits; do not add, remove, consume, sell, equip, or transfer an item; do not narrate a completed transaction. Temporary handling remains with the current owner. Use an empty material ledger unless an authoritative mechanic supplied above requires a non-material change.`;
   if (atelierAppointment) system += `\n\n${atelierAppointmentGmInstruction()}`;
   if (mode === "play") system += `\n\n${SANDBOX_GM_AGENCY}`;
@@ -1522,11 +1538,14 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   if (mode === "play") system += `\n\n${conversationTradeInstruction(trade)}\n${routineCommerce ? "ORDINARY INTERACTION: No check is required for a normal question or stock/price inquiry. Answer the actual question as the CURRENT interlocutor in the saved scene. A broad market location does not mean a clothing stall. Resolve short follow-ups against the last exchange, including lodging duration, privacy, meals and prices. Quote new terms before charging; do not invent procedural refusal without an established reason." : ""}\nSERIALIZATION: End with exactly one HTML STATE comment containing strict JSON, with double-quoted keys and string values. Multiple merchandise items use one inventoryAdd array, never duplicate keys. A no-change example is <!--STATE:{}-->. Record every concrete priced offer in tradeOfferAdd, including services as named entitlements tagged service with the agreed duration and amenities. Quotes grant nothing yet. LOCATION names the place at the END of this action and must match delta.location when declared travel changes it, or the saved location otherwise.`;
   if (mode === "play") system += `\n${LEASE_LEDGER_INSTRUCTION}\n${QUOTE_COMPONENT_INSTRUCTION}`;
   if (mode === "play" && !input.openScene) system += `\nHOLONET WORLD UPDATES: Resolve the current 150 ABY territory using the saved atlas entry. When a turn establishes a public development, or significant elapsed time produces a plausible public bulletin, record that bulletin in publicNewsAdd with headline, facts, an attributed in-universe source, and location. Use the planet name for a local report, its region name for a territorial report, or "Galactic" for genuinely galaxy-wide news. Do not recycle old headlines, announce an unestablished war or ruler as canonical fact, reveal private conversations or undiscovered secrets, or describe player purchases as galaxy-wide news. Reports are campaign developments, not real-world news. Destroyed worlds cannot have intact planetary ports; damaged inhabited worlds are not automatically destroyed. Canon imports must respect the established Legends-led continuity.`;
-  let parsed: ReturnType<typeof parseEngineResponse> | null = null;
-  let delta: Record<string, unknown> | null = null;
+  let parsed: ReturnType<typeof parseEngineResponse> | null = checkpoint?.stage === "validated"
+    ? parseEngineResponse(checkpoint.content, { requireState: mode === "play" })
+    : null;
+  let delta: Record<string, unknown> | null = checkpoint?.stage === "validated"
+    ? (parsed?.delta as Record<string, unknown> | null) : null;
   let validationError: unknown = null;
   let fallbackReason: "provider" | "validation" | null = null;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; checkpoint?.stage !== "validated" && attempt < 3; attempt += 1) {
     draftAttempt = attempt + 1;
     enterPhase("invoke-provider", draftAttempt);
     const inspectionMaterialFailure = isReadOnlyGoodsInspection(action) && validationError instanceof Error
@@ -1537,7 +1556,8 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
         : `[SERVER VALIDATION REJECTED THE PRIOR DRAFT: ${validationError.message}] Rewrite the same turn from the CURRENT authoritative location. Address the player\'s latest action specifically. Do not replay the last NPC obstruction or undo any confirmed payment, release, purchase, or access. Preserve the supplied roll exactly, use only authoritative state, follow all seven required sections in order, accept the declared action as an attempt, fail forward when necessary, and output one valid STATE block. Do not add a new action or reroll.` }
       : null;
     try {
-      response = await invokeNvidia({
+      if (!(checkpoint?.stage === "raw" && attempt === 0)) {
+      const authored = await invokeNvidia({
         purpose: "gm",
         system,
         timeout_ms: providerBudget(55_000),
@@ -1545,19 +1565,39 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
         max_tokens: mode === "ooc" ? 768 : Math.min(4096, Math.max(1200, Math.round(Number(process.env.NVIDIA_GM_MAX_TOKENS) || 3072)) + (attempt > 0 ? 512 : 0)),
         messages: [...history, { role: "user", content: userMessage }, ...(correction ? [correction] : [])],
       });
+      response = authored;
+      // Raw narration is never authoritative. Persist it only so an interrupted
+      // ledger repair can resume without generating a second GM scene.
+      try {
+        await storeValidatedDraft(db, accountId, input.turnId, input.revision, action, {
+          version: 1, stage: "raw", interpretation,
+          roll: roll && typeof roll === "object" ? roll : null,
+          content: authored.content, provider: authored.provider, model: authored.model,
+        });
+      } catch (error) {
+        if (error instanceof GmDraftIdentityError) throw error;
+        console.warn("[api/gm] raw draft checkpoint unavailable", { turnId: input.turnId,
+          status: (error as { status?: number } | null)?.status || null });
+      }
+      }
     } catch (error) {
       if (!(error instanceof NvidiaProviderError)) throw error;
       fallbackReason = "provider";
       console.warn("[api/gm] drafting failed", { turnId: input.turnId, attempt: attempt + 1, status: error.status, message: error.message });
       recordDraftFailure(turnLifecycle, attempt + 1, "provider", error);
-      if (error.status === 429 || error.status === 504) throw error;
+      // Provider outages are not invalid GM drafts. Never spend additional
+      // tokens on immediate retries during the same request.
+      if (error.status >= 500 || error.status === 429) throw error;
       validationError = error;
       // An outage is not an in-world event. Keep the action and roll for retry.
       continue;
     }
+    if (!response) throw new GmTurnError("No draft exists for the preserved turn. No gameplay was saved.", 502);
     try {
       enterPhase("validate-draft", draftAttempt);
-      let candidate = response.content;
+      // Correct only an EXISTING, syntactically repairable JSON ledger locally.
+      // Missing consequences or a missing ledger still need semantic review.
+      let candidate = repairEmbeddedModelLedger(response.content) || response.content;
       try {
         parsed = parseEngineResponse(candidate, { requireState: mode === "play" });
         if (mode === "play") assertQuotedOfferConsistency(parsed.clean, parsed.delta as Record<string, unknown> | null, trade);
@@ -1656,13 +1696,26 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
       fallbackReason = null;
       break;
     } catch (error) {
-      console.warn("[api/gm] draft validation failed", { turnId: input.turnId, attempt: attempt + 1, reason: error instanceof Error ? error.message : String(error) });
+      const failureKind = classifyGmDraftFailure(error);
+      enterPhase(failureKind === "format" ? "validate-format" : failureKind === "provider" ? "invoke-provider" : "validate-semantic", attempt + 1);
+      console.warn("[api/gm] draft validation failed", { turnId: input.turnId, attempt: attempt + 1, failureKind, reason: error instanceof Error ? error.message : String(error) });
       recordDraftFailure(turnLifecycle, attempt + 1, "validation", error);
-      if (error instanceof NvidiaProviderError && error.status === 429) throw error;
+      if (failureKind === "provider") throw error;
       validationError = error;
       parsed = null;
       delta = null;
     }
+  }
+  // Revalidate saved intermediate work before advancing a turn. Its identity
+  // and base revision were checked before any roll or model request.
+  if (checkpoint?.stage === "validated" && parsed && mode === "play") {
+    enterPhase("revalidate-checkpoint");
+    assertCampaignResponseStructure(parsed.clean);
+    assertNarrativeFocus(parsed.clean, resolvedIntent);
+    assertMechanicalNarration(parsed.clean, roll);
+    assertMaterialAuthority(delta, action, roll, currentSnapshot.gameState as Record<string, unknown>, trade);
+    assertNarrativeLedgerConsistency(parsed.clean, delta, resolvedIntent);
+    assertQuotedOfferConsistency(parsed.clean, delta, trade);
   }
   if (validationError) {
     const proposalRecovery = mode === "play" ? resolvedProposalDiscussion(currentSnapshot, action, semantic?.intent, roll) : null;
@@ -1872,6 +1925,21 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
   }
   if (mode === "play" && isDmirPrimaryCampaign(actor, snapshot.character as Record<string, unknown>)) {
     snapshot.gameState = updateDmirNpcContinuity(snapshot.gameState, delta, input.turnId, action);
+  }
+  // The completed, validated draft can be reused after a transient failure in
+  // persistence. A checkpoint NEVER modifies gameplay state or its revision.
+  enterPhase("checkpoint-validated");
+  try {
+    await storeValidatedDraft(db, accountId, input.turnId, input.revision, action, {
+      version: 1, stage: "validated", interpretation, roll: roll && typeof roll === "object" ? roll : null,
+      content: mode === "play" ? parsed.clean + "\n<!--STATE:" + JSON.stringify(delta || {}) + "-->" : parsed.clean,
+      provider: response.provider, model: response.model,
+    });
+  } catch (error) {
+    if (error instanceof GmDraftIdentityError) throw error;
+    // Storage availability must not make an otherwise valid turn fail.
+    console.warn("[api/gm] draft checkpoint unavailable", { turnId: input.turnId,
+      status: (error as { status?: number } | null)?.status || null });
   }
   enterPhase("persist");
   const persisted = saveAuthoritativeDatapad(actor, accountId, input.revision, snapshot);
