@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { currentTradeOffers } from "@/lib/conversation-trade";
 
 /**
  * A single contextual offer surface shared with the authoritative GM ledger.
@@ -7,13 +8,7 @@ import React, { useState } from "react";
  */
 export function NpcOfferMenu({ gameState, onAction, disabled = false }) {
   const [expanded, setExpanded] = useState(null);
-  const location = String(gameState?.location || "").trim().toLowerCase();
-  const offers = (Array.isArray(gameState?.tradeOffers) ? gameState.tradeOffers : [])
-    .filter(offer => offer && offer.status === "open"
-      && String(offer.location || "").trim().toLowerCase() === location
-      && typeof offer.sellerName === "string"
-      && Number.isSafeInteger(offer.totalCredits)
-      && offer.totalCredits > 0 && Array.isArray(offer.items) && offer.items.length);
+  const offers = currentTradeOffers(gameState || {});
   if (!offers.length) return null;
   return <section aria-label="Offers from NPCs in this scene" className="rounded-xl border border-[#22e5c5]/30 bg-[#0a1119]/95 p-3 space-y-3">
     <div>
