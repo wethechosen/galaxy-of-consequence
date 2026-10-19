@@ -1145,6 +1145,10 @@ export function assertMovementSceneProgress(
 ) {
   if (!action || !permitsPhysicalMovement(action)) return;
   const result = sectionBody(narration, "GAMEPLAY RESULT");
+  const shopEntry = /\byou\s+(?:enter|step\s+(?:inside|into)|walk\s+into)\s+(?:the\s+)?(?:general\s+)?supply shop\b/i.test(result);
+  if (shopEntry && !/\bsupply shop\b/i.test(String(delta?.location || currentLocation || ""))) {
+    throw new GmTurnError("The movement entered the supply shop, but the saved location still names the previous position. Rewrite LOCATION and delta.location to the shop interior, preserving its planet and district.", 502);
+  }
   const localEndpoint = result.match(/\byou\s+(?:return|move|walk|cross|go|step)\s+(?:back\s+)?(?:to|into|through|across)\s+(?:the\s+)?(front counter|rear workroom|showroom|workshop|office|reception|lobby|corridor)\b/i)?.[1];
   if (localEndpoint && !normalizedKey(delta?.location || currentLocation).includes(localEndpoint.toLowerCase())) {
     throw new GmTurnError("The movement reached a different position within the venue, but the saved location does not name that endpoint. Rewrite LOCATION and delta.location to the confirmed endpoint, preserving its planet and venue. Do not send the character back to the prior room.", 502);
