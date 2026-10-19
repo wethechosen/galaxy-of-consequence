@@ -9,6 +9,7 @@ import {advanceNpcOffscreen,npcOffscreenGmContext} from "./npc-offscreen-intelli
 import {factionGmContext} from "./faction-strategy-150aby";
 import {interpretRpgActionContract,assertRpgOutcomeFocus} from "./rpg-action-contract";
 import { invokeNvidia, NvidiaProviderError, type NvidiaMessage } from "./original-provider";
+import { withNvidiaTurnTelemetry } from "./nvidia-usage-telemetry";
 import { rollSagaCheck } from "./saga-dice";
 import { planSagaAction } from "./saga-planner";
 import { permitsLocationChange, positiveActionText } from "./action-intent";
@@ -1353,7 +1354,7 @@ export function assertNarrativeAuthority(narration: string, claims: string[], ro
   }
 }
 
-export async function runGmTurn(actor: Account, input: TurnInput) {
+async function runGmTurnCore(actor: Account, input: TurnInput) {
   let phase = "load";
   let draftAttempt = 0;
   const turnLifecycle = beginTurnLifecycle(input.turnId, input.revision);
@@ -1978,4 +1979,9 @@ export async function runGmTurn(actor: Account, input: TurnInput) {
     });
     throw error; // Never convert a failure into a fictional gameplay outcome.
   }
+}
+
+// Scope all provider calls (interpretation, narration, ledger) to one anonymous GM turn.
+export async function runGmTurn(actor: Account, input: TurnInput) {
+  return withNvidiaTurnTelemetry(() => runGmTurnCore(actor, input));
 }

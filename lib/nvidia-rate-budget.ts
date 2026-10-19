@@ -2,12 +2,19 @@ import { neonConfigured, neonQuery, withNeonTransaction, hostedRuntimeRequired }
 import { NvidiaProviderError } from "./nvidia-errors";
 const SCOPE = "goc-nvidia";
 const SPACING_MS = 2000; // 30 RPM, with headroom below the user's 40 RPM.
+export const FALLBACK_NVIDIA_COOLDOWN_SECONDS = 65 * 60; // Conservative safety interval, NOT NVIDIA's measured reset window.
 let localNext = 0, localCooldown = 0;
-export function parseRetryAfter(value: string | null, now = Date.now()) {
-  if (!value?.trim()) return 60;
+export function retryAfterIsEstimated(value: string | null, now = Date.now()) {
+  if (!value?.trim()) return true;
   const seconds = Number(value);
   const duration = Number.isFinite(seconds) ? seconds : (Date.parse(value) - now) / 1000;
-  return Number.isFinite(duration) ? Math.max(1, Math.min(86400, Math.ceil(duration))) : 60;
+  return !Number.isFinite(duration) || duration <= 0;
+}
+export function parseRetryAfter(value: string | null, now = Date.now()) {
+  if (retryAfterIsEstimated(value, now)) return FALLBACK_NVIDIA_COOLDOWN_SECONDS;
+  const seconds = Number(value);
+  const duration = Number.isFinite(seconds) ? seconds : (Date.parse(value!) - now) / 1000;
+  return Math.max(1, Math.min(86400, Math.ceil(duration)));
 }
 export function planNvidiaSlot(now: number, next: number, cooldown: number) {
   const delay = Math.max(0, next - now, cooldown - now);
