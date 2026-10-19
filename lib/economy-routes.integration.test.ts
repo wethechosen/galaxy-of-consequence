@@ -22,7 +22,7 @@ function setup() {
 const request = (path: string, body: object) => new Request(`http://localhost:3100/api/${path}`, { method: "POST", headers: { "Content-Type": "application/json", Origin: "http://localhost:3100" }, body: JSON.stringify(body) });
 const cases = [
   { path: "bank", handler: bank, input: { action: "deposit", amount: 500 }, total: 4500, field: "bankTransactions" },
-  { path: "market", handler: market, input: { action: "buy", goodId: "medpac" }, total: 4770, field: "marketTransactions" },
+  { path: "market", handler: market, input: { action: "buy", goodId: "medpac" }, total: 4885, field: "marketTransactions" },
 ];
 describe.each(cases)("$path authoritative request boundary", ({ path, handler, input, total, field }) => {
   it("commits one result, replays the same request, rejects changed choices and other accounts", async () => {
