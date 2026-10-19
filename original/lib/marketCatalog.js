@@ -1,10 +1,10 @@
 import { localMarket, localTradeAccess, localSellQuote } from "./localMarketplace";
 
 export const BASE_GOODS = [
-  { id: "medpac", name: "Medpac", category: "Medical", base: 200, minLevel: 1, tags: ["Core", "Outer Rim"] },
+  { id: "medpac", name: "Medpac", category: "Medical", base: 100, minLevel: 1, tags: ["Core", "Outer Rim"] },
   { id: "comlink", name: "Encrypted comlink", category: "Communications", base: 350, minLevel: 1, tags: ["Core", "Outer Rim", "Hutt Space"] },
   { id: "slicer-kit", name: "Slicing kit", category: "Gear", base: 800, minLevel: 2, tags: ["Core", "Hutt Space"] },
-  { id: "blaster", name: "Blaster pistol", category: "Weapon", base: 750, minLevel: 1, tags: ["Core", "Outer Rim"] },
+  { id: "blaster", name: "Blaster pistol", category: "Weapon", base: 500, minLevel: 1, tags: ["Core", "Outer Rim"] },
   { id: "macrobinoculars", name: "Macrobinoculars", category: "Reconnaissance", base: 450, minLevel: 1, tags: ["Core", "Outer Rim"] },
   { id: "survival-kit", name: "Wilderness survival kit", category: "Survival", base: 600, minLevel: 2, tags: ["Outer Rim", "Deep Core"] },
   { id: "beskar-plate", name: "Beskar-reinforced plate", category: "Armor", base: 6200, minLevel: 4, tags: ["Mandalore", "Outer Rim"] },

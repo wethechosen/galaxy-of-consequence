@@ -46,7 +46,7 @@ describe("original campaign persistence", () => {
     const { db, one } = setup();
     const established = { ...snapshot, character: { ...snapshot.character, level: 1 }, gameState: { credits: 500, location: "Coruscant — lower-city market", inventory: [] } };
     saveDatapad(one, null, 0, established, db);
-    const purchase = { ...established, gameState: { ...established.gameState, credits: 270, inventory: [{ id: "m", name: "Medpac", qty: 1, tag: "medical" }] } };
+    const purchase = { ...established, gameState: { ...established.gameState, credits: 385, inventory: [{ id: "m", name: "Medpac", qty: 1, tag: "medical" }] } };
     saveDatapad(one, null, 1, purchase, db);
     expect(readDatapad(one, null, db).snapshot?.gameState).toEqual(purchase.gameState);
     const invented = { ...purchase, gameState: { ...purchase.gameState, inventory: [...purchase.gameState.inventory, { id: "x", name: "Kelvek vault key", qty: 1 }] } };
@@ -62,11 +62,18 @@ describe("original campaign persistence", () => {
     expect(readDatapad(one, null, db).config).toEqual(config);
     expect(readDatapad(one, null, db).snapshot).not.toHaveProperty("apiKey");
   });
+  it("rejects the obsolete medpac charge after the Saga baseline correction", () => {
+    const { db, one } = setup();
+    const established = { ...snapshot, character: { ...snapshot.character, level: 1 }, gameState: { credits: 500, location: "Coruscant — lower-city market", inventory: [] } };
+    saveDatapad(one, null, 0, established, db);
+    saveDatapad(one, null, 1, { ...established, gameState: { ...established.gameState, credits: 270, inventory: [{ name: "Medpac", qty: 1, tag: "medical" }] } }, db);
+    expect(readDatapad(one, null, db).snapshot?.gameState).toEqual(established.gameState);
+  });
   it("pauses legacy catalog trades for earned advancement while allowing presentation saves", () => {
     const { db, one } = setup();
     const established = { ...snapshot, character: { ...snapshot.character, level: 1, experience: 1050 }, gameState: { credits: 500, location: "Coruscant — lower-city market", inventory: [] } };
     saveDatapad(one, null, 0, established, db);
-    const purchase = { ...established, gameState: { ...established.gameState, credits: 270, inventory: [{ id: "m", name: "Medpac", qty: 1, tag: "medical" }] } };
+    const purchase = { ...established, gameState: { ...established.gameState, credits: 385, inventory: [{ id: "m", name: "Medpac", qty: 1, tag: "medical" }] } };
     expect(() => saveDatapad(one, null, 1, purchase, db)).toThrow(/earned level 2/i);
     expect(readDatapad(one, null, db)).toMatchObject({ revision: 1, snapshot: established });
     saveDatapad(one, null, 1, { ...established, settings: { sound: false } }, db);
@@ -125,7 +132,7 @@ describe("hosted autosave authority", () => {
 
   it("keeps an exact catalog purchase atomic and rejects a stale duplicate", async () => {
     const test = hostedSetup();
-    const purchased = { ...test.established, gameState: { ...test.established.gameState, credits: 270,
+    const purchased = { ...test.established, gameState: { ...test.established.gameState, credits: 385,
       inventory: [{ id: "medpac", name: "Medpac", qty: 1, tag: "medical" }] } };
     expect((await putHostedDatapad(test.request(purchased))).status).toBe(200);
     expect(test.cloud().snapshot.gameState).toEqual(purchased.gameState);
@@ -145,7 +152,7 @@ describe("hosted autosave authority", () => {
   it("returns the advancement gate for a hosted autosave purchase without committing it", async () => {
     const test = hostedSetup();
     test.established.character.experience = 1050;
-    const purchased = { ...test.established, gameState: { ...test.established.gameState, credits: 270,
+    const purchased = { ...test.established, gameState: { ...test.established.gameState, credits: 385,
       inventory: [{ id: "medpac", name: "Medpac", qty: 1, tag: "medical" }] } };
     const response = await putHostedDatapad(test.request(purchased));
     expect(response.status).toBe(409);

@@ -12,6 +12,7 @@ import { GALAXY_LOCATIONS, getTravelAccess, getTravelCost, getTravelTime } from 
 import { getEconomicSnapshot } from "@/original/lib/marketCatalog";
 import { BankView } from "@/original/components/BankView";
 import { MarketplaceView } from "@/original/components/MarketplaceView";
+import { NpcOfferMenu } from "@/original/components/NpcOfferMenu";
 import { useAuth } from "@/original/lib/AuthContext";
 import { cleanPlayerMessage, immersiveTurnError, parseImmersiveMessage } from "@/original/lib/immersiveChat";
 import { currentPlayerOptions } from "@/original/lib/sceneDirections";
@@ -279,6 +280,7 @@ function PlayView() {
       <LiveHudStrip gameState={gameState} character={character} />
       {advancement.blocked && <div role="status" className="shrink-0 border-y border-[#22e5c5]/30 bg-[#22e5c5]/5 p-4"><p className="text-[10px] tracking-widest text-[#8fffea]">YOUR NEXT CHAPTER · LEVEL {advancement.level + 1} EARNED</p><p className="text-xs text-[#d7d4cc] mt-2">{advancement.message}</p><Link to={advancement.dossierPath} className="gc-btn inline-block px-4 py-2 text-xs mt-3">DEVELOP YOUR CHARACTER</Link></div>}
       <CombatStatus combat={gameState.combat} />
+      <div className="shrink-0 px-4 sm:px-6 py-2"><NpcOfferMenu gameState={gameState} disabled={sending || !saveReady || Boolean(saveError) || advancement.blocked} onAction={action => { setShowRecap(false); sendTurn(action); }} /></div>
       <div className="shrink-0 flex flex-wrap items-center gap-3 border-b border-white/10 px-4 py-2 text-[11px] text-[#8b93a3]"><button type="button" onClick={() => { setShowRecap(!showRecap); if (scrollRef.current) scrollRef.current.scrollTop = 0; }} className="hover:text-[#22d3ee]">{showRecap ? "Return to scene" : "The story thus far"}</button>{!showRecap && earlierMessages.length > 0 && <button type="button" onClick={() => { followLatest.current = false; setHistoryCount(historyCount ? 0 : 20); }} className="hover:text-[#22d3ee]">{historyCount ? "Close earlier chapters" : "Earlier chapters"}</button>}{transcript.archived.length > 0 && <button type="button" onClick={() => { setShowArchive(!showArchive); setShowRecap(false); followLatest.current = false; }} className="ml-auto hover:text-[#a9adb8]">{showArchive ? "Close archived transmissions" : "Archived transmissions"}</button>}</div>
       <div ref={scrollRef} data-gc-play-transcript role="region" aria-label="Campaign story" tabIndex={0} onScroll={(event) => { const pane = event.currentTarget; followLatest.current = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 100; }} className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-5 space-y-4">
         {showRecap && messages.length > 0 ? <ReturnRecap recap={recap} onContinue={resume} /> : <>
