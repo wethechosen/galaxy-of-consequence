@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { nvidiaModel, nvidiaApiKey } from "./nvidia-models";
-import { parseRetryAfter, planNvidiaSlot } from "./nvidia-rate-budget";
+import { parseRetryAfter, planNvidiaSlot, retryAfterIsEstimated } from "./nvidia-rate-budget";
 afterEach(() => vi.unstubAllEnvs());
 describe("purpose routing and shared request budgeting", () => {
   it("keeps the existing key for mechanical roles and uses a narration-only override", () => {
@@ -33,7 +33,13 @@ describe("purpose routing and shared request budgeting", () => {
   });
   it("parses numeric and date retry headers conservatively", () => {
     expect(parseRetryAfter("12")).toBe(12);
-    expect(parseRetryAfter("invalid")).toBe(60);
+    expect(parseRetryAfter("invalid")).toBe(3900);
+    expect(parseRetryAfter(null)).toBe(3900);
+    expect(parseRetryAfter("0")).toBe(3900);
+    expect(parseRetryAfter("-2")).toBe(3900);
+    expect(retryAfterIsEstimated("-2")).toBe(true);
+    expect(retryAfterIsEstimated("0")).toBe(true);
+    expect(retryAfterIsEstimated("12")).toBe(false);
     expect(parseRetryAfter(new Date(20000).toUTCString(),10000)).toBe(10);
   });
 });
